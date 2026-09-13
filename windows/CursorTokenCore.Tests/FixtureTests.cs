@@ -518,13 +518,15 @@ public class FixtureTests
                 .TrimEnd('=').Replace('+', '-').Replace('/', '_');
             var token = $"user_01SAVE%3A%3A{header}.{payload}.sig";
             var cfg = new AppConfig();
-            cfg.UpsertAccount(token, label: "工作", activate: true);
+            cfg.UpsertAccount(token, label: "工作", email: "Name@Example.COM", password: "s3cret", activate: true);
             Assert.True(cfg.SetActualCny("user_01SAVE", 79));
             Assert.True(cfg.SetChannel("user_01SAVE", "自费"));
             ConfigStore.Save(cfg, dir);
             var loaded = ConfigStore.Load(dir);
             Assert.Single(loaded.Accounts);
             Assert.Equal("工作", loaded.Accounts[0].Label);
+            Assert.Equal("name@example.com", loaded.Accounts[0].Email);
+            Assert.Equal("s3cret", loaded.Accounts[0].Password);
             Assert.Equal(79, loaded.Accounts[0].ActualCny, 3);
             Assert.Equal("self_pay", loaded.Accounts[0].Channel);
             Assert.Equal(79, loaded.ActualCny, 3);
@@ -950,6 +952,16 @@ public class FixtureTests
                 Assert.Equal(kv.Value.GetString(), merged.Accounts.First(a => a.Id == kv.Name).Label);
             foreach (var kv in expected.GetProperty("tokens").EnumerateObject())
                 Assert.Equal(kv.Value.GetString(), merged.Accounts.First(a => a.Id == kv.Name).Token);
+            if (expected.TryGetProperty("emails", out var emails))
+            {
+                foreach (var kv in emails.EnumerateObject())
+                    Assert.Equal(kv.Value.GetString(), merged.Accounts.First(a => a.Id == kv.Name).Email);
+            }
+            if (expected.TryGetProperty("passwords", out var passwords))
+            {
+                foreach (var kv in passwords.EnumerateObject())
+                    Assert.Equal(kv.Value.GetString(), merged.Accounts.First(a => a.Id == kv.Name).Password);
+            }
             Assert.Equal(expected.GetProperty("deleted_ids").EnumerateArray().Select(x => x.GetString()!).ToList(), merged.Deleted.Select(d => d.Id).ToList());
             if (expected.TryGetProperty("settings", out var expSettings))
             {
@@ -1044,6 +1056,28 @@ public class FixtureTests
         }
         cfg.ActiveAccountId = raw.TryGetProperty("active_account_id", out var aid) ? aid.GetString() ?? "" : "";
         return cfg;
+    }
+
+    [Fact]
+    public void PasswordLoginCases()
+    {
+        var root = Load("password_login_cases.json");
+        Assert.Equal(CursorPasswordLogin.LoginUrl, root.GetProperty("login_url").GetString());
+        Assert.Equal(CursorPasswordLogin.TimeoutSeconds, root.GetProperty("timeout_seconds").GetInt32());
+        foreach (var row in root.GetProperty("sanitize_email").EnumerateArray())
+            Assert.Equal(row.GetProperty("output").GetString(), CursorPasswordLogin.SanitizeEmail(row.GetProperty("input").GetString()));
+        foreach (var row in root.GetProperty("default_label").EnumerateArray())
+            Assert.Equal(row.GetProperty("output").GetString(), CursorPasswordLogin.DefaultLabel(row.GetProperty("email").GetString() ?? "", row.GetProperty("existing").GetString()));
+        foreach (var row in root.GetProperty("cookies").EnumerateArray())
+        {
+            var cookies = row.GetProperty("cookies").EnumerateArray()
+                .Select(c => (c.GetProperty("name").GetString() ?? "", c.GetProperty("value").GetString() ?? ""));
+            Assert.Equal(row.GetProperty("token").GetString(), CursorPasswordLogin.TokenFromCookies(cookies) ?? "");
+        }
+        var auto = root.GetProperty("autofill");
+        var script = CursorPasswordLogin.AutofillScript(auto.GetProperty("email").GetString() ?? "", auto.GetProperty("password").GetString() ?? "");
+        foreach (var needle in auto.GetProperty("script_contains").EnumerateArray())
+            Assert.Contains(needle.GetString() ?? "", script);
     }
 
     [Fact]

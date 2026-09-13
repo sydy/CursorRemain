@@ -77,6 +77,90 @@
       }
     },
     {
+      "name": "remote_adds_email_password",
+      "local": {
+        "updated_at": "2026-09-01T00:00:00.000Z",
+        "active_account_id": "user_01A",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "个人",
+            "token": "tok-a",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-01T00:00:00.000Z"
+          }
+        ],
+        "deleted": []
+      },
+      "remote": {
+        "updated_at": "2026-09-03T00:00:00.000Z",
+        "active_account_id": "user_01A",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "name@example.com",
+            "email": "name@example.com",
+            "password": "s3cret",
+            "token": "tok-a2",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-03T00:00:00.000Z"
+          }
+        ],
+        "deleted": []
+      },
+      "expected": {
+        "active_account_id": "user_01A",
+        "ids": ["user_01A"],
+        "labels": { "user_01A": "name@example.com" },
+        "tokens": { "user_01A": "tok-a2" },
+        "emails": { "user_01A": "name@example.com" },
+        "passwords": { "user_01A": "s3cret" },
+        "deleted_ids": []
+      }
+    },
+    {
+      "name": "newer_without_credentials_keeps_password",
+      "local": {
+        "updated_at": "2026-09-01T00:00:00.000Z",
+        "active_account_id": "user_01A",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "工作号",
+            "email": "name@example.com",
+            "password": "s3cret",
+            "token": "tok-a",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-01T00:00:00.000Z"
+          }
+        ],
+        "deleted": []
+      },
+      "remote": {
+        "updated_at": "2026-09-03T00:00:00.000Z",
+        "active_account_id": "user_01A",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "家里",
+            "token": "tok-a2",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-03T00:00:00.000Z"
+          }
+        ],
+        "deleted": []
+      },
+      "expected": {
+        "active_account_id": "user_01A",
+        "ids": ["user_01A"],
+        "labels": { "user_01A": "家里" },
+        "tokens": { "user_01A": "tok-a2" },
+        "emails": { "user_01A": "name@example.com" },
+        "passwords": { "user_01A": "s3cret" },
+        "deleted_ids": []
+      }
+    },
+    {
       "name": "newer_local_label_wins",
       "local": {
         "updated_at": "2026-09-03T00:00:00.000Z",

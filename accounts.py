@@ -22,6 +22,8 @@ MAX_TEMP_VALID_HOURS = 23
 ACCOUNT_KEYS = (
     "id",
     "label",
+    "email",
+    "password",
     "token",
     "membership_type",
     "account_kind",
@@ -112,6 +114,8 @@ def empty_account(*, token: str = "", account_id: str = "", label: str = "") -> 
     return {
         "id": account_id,
         "label": label,
+        "email": "",
+        "password": "",
         "token": token,
         "membership_type": "",
         "account_kind": ACCOUNT_KIND_LONG_TERM,
@@ -145,6 +149,10 @@ def sanitize_account(raw: Any) -> dict[str, Any] | None:
         return None
     acc = empty_account(token=token, account_id=account_id)
     acc["label"] = str(raw.get("label") or "").strip()
+    from cursor_login import sanitize_login_email
+
+    acc["email"] = sanitize_login_email(raw.get("email"))
+    acc["password"] = str(raw.get("password") or "")
     acc["membership_type"] = str(raw.get("membership_type") or "").strip()
     acc["account_kind"] = sanitize_account_kind(raw.get("account_kind"))
     acc["temp_start_at"] = str(raw.get("temp_start_at") or "").strip()
@@ -188,6 +196,9 @@ def display_label(account: dict[str, Any] | None) -> str:
     label = str(account.get("label") or "").strip()
     if label:
         return label
+    email = str(account.get("email") or "").strip()
+    if email:
+        return email
     memb = str(account.get("membership_type") or "").strip()
     if memb:
         return memb
@@ -258,6 +269,8 @@ def upsert_account(
     membership_type: str | None = None,
     remaining: float | None = None,
     error: str | None = None,
+    email: str | None = None,
+    password: str | None = None,
     activate: bool = True,
 ) -> tuple[dict[str, Any], bool]:
     """写入或更新账号。返回 (account, created)。"""
@@ -278,6 +291,23 @@ def upsert_account(
         accounts.append(existing)
     identity_changed = created or existing.get("token") != token
     existing["token"] = token
+    if email is not None:
+        from cursor_login import default_account_label, sanitize_login_email
+
+        new_email = sanitize_login_email(email)
+        if existing.get("email") != new_email:
+            identity_changed = True
+        existing["email"] = new_email
+        if label is None:
+            new_label = default_account_label(new_email, str(existing.get("label") or ""))
+            if existing.get("label") != new_label:
+                identity_changed = True
+            existing["label"] = new_label
+    if password is not None:
+        new_password = str(password)
+        if existing.get("password") != new_password:
+            identity_changed = True
+        existing["password"] = new_password
     if label is not None:
         new_label = str(label).strip()
         if existing.get("label") != new_label:

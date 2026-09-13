@@ -554,13 +554,15 @@ final class UsageParserFixtureTests: XCTestCase {
         let p = payload.base64EncodedString().replacingOccurrences(of: "=", with: "").replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
         let token = "user_01SAVE%3A%3A\(header).\(p).sig"
         var cfg = AppConfig.default
-        _ = try cfg.upsertAccount(token: token, label: "工作", activate: true)
+        _ = try cfg.upsertAccount(token: token, label: "工作", email: "Name@Example.COM", password: "s3cret", activate: true)
         XCTAssertTrue(cfg.setActualCny("user_01SAVE", 79))
         XCTAssertTrue(cfg.setChannel("user_01SAVE", "自费"))
         ConfigStore.save(cfg, to: dir)
         let loaded = ConfigStore.load(from: dir)
         XCTAssertEqual(loaded.accounts.count, 1)
         XCTAssertEqual(loaded.accounts[0].label, "工作")
+        XCTAssertEqual(loaded.accounts[0].email, "name@example.com")
+        XCTAssertEqual(loaded.accounts[0].password, "s3cret")
         XCTAssertEqual(loaded.accounts[0].actualCny, 79, accuracy: 0.001)
         XCTAssertEqual(loaded.accounts[0].channel, "self_pay")
         XCTAssertEqual(loaded.actualCny, 79, accuracy: 0.001)
@@ -872,6 +874,12 @@ final class AccountSyncFixtureTests: XCTestCase {
                 XCTAssertEqual(acc.label, str(labels[acc.id]))
                 XCTAssertEqual(acc.token, str(tokens[acc.id]))
             }
+            if let emails = exp["emails"] as? [String: Any] {
+                for acc in merged.accounts { XCTAssertEqual(acc.email, str(emails[acc.id])) }
+            }
+            if let passwords = exp["passwords"] as? [String: Any] {
+                for acc in merged.accounts { XCTAssertEqual(acc.password, str(passwords[acc.id])) }
+            }
             XCTAssertEqual(merged.deleted.map(\.id), stringArray(exp["deleted_ids"]))
             if let expSettings = exp["settings"] as? [String: Any] {
                 XCTAssertNotNil(merged.settings)
@@ -960,6 +968,39 @@ final class AccountSyncFixtureTests: XCTestCase {
         if let arr = value as? [Any] { return arr.compactMap { $0 as? String } }
         return []
     }
+}
+
+final class PasswordLoginFixtureTests: XCTestCase {
+    func testPasswordLoginCases() throws {
+        let root = try json("password_login_cases.json") as! [String: Any]
+        XCTAssertEqual(CursorPasswordLogin.loginURL, str(root["login_url"]))
+        XCTAssertEqual(CursorPasswordLogin.timeoutSeconds, int(root["timeout_seconds"]))
+        for row in root["sanitize_email"] as? [[String: Any]] ?? [] {
+            XCTAssertEqual(CursorPasswordLogin.sanitizeEmail(str(row["input"])), str(row["output"]))
+        }
+        for row in root["default_label"] as? [[String: Any]] ?? [] {
+            XCTAssertEqual(CursorPasswordLogin.defaultLabel(str(row["email"]), existing: str(row["existing"])), str(row["output"]))
+        }
+        for row in root["cookies"] as? [[String: Any]] ?? [] {
+            let cookies = (row["cookies"] as? [[String: Any]] ?? []).map {
+                (str($0["name"]), str($0["value"]))
+            }
+            XCTAssertEqual(CursorPasswordLogin.tokenFromCookies(cookies) ?? "", str(row["token"]), str(row["name"]))
+        }
+        let auto = root["autofill"] as! [String: Any]
+        let script = CursorPasswordLogin.autofillScript(email: str(auto["email"]), password: str(auto["password"]))
+        for needle in auto["script_contains"] as? [String] ?? [] {
+            XCTAssertTrue(script.contains(needle), needle)
+        }
+    }
+
+    private func json(_ name: String) throws -> Any { try Fixtures.json(name) }
+    private func int(_ value: Any?) -> Int? {
+        if let n = value as? NSNumber { return n.intValue }
+        if let d = value as? Double { return Int(d) }
+        return nil
+    }
+    private func str(_ value: Any?) -> String { value as? String ?? "" }
 }
 
 final class InstanceLockTests: XCTestCase {

@@ -9,6 +9,10 @@ public sealed class Account
 {
     public string Id { get; set; } = "";
     public string Label { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
+    public bool PasswordDecryptFailed { get; set; }
+    public string StoredPassword { get; set; } = "";
     public string Token { get; set; } = "";
     public string MembershipType { get; set; } = "";
     public string AccountKind { get; set; } = AccountValidity.LongTerm;
@@ -37,6 +41,7 @@ public sealed class Account
         get
         {
             if (!string.IsNullOrWhiteSpace(Label)) return Label.Trim();
+            if (!string.IsNullOrWhiteSpace(Email)) return Email.Trim();
             if (!string.IsNullOrWhiteSpace(MembershipType)) return MembershipType.Trim();
             var aid = Id.Trim();
             if (aid.StartsWith("tok_")) return "未命名账号";
@@ -137,7 +142,7 @@ public sealed class AppConfig
         return true;
     }
 
-    public (Account acc, bool created) UpsertAccount(string rawToken, string? label = null, string? membershipType = null, double? remaining = null, string? error = null, bool activate = true)
+    public (Account acc, bool created) UpsertAccount(string rawToken, string? label = null, string? membershipType = null, double? remaining = null, string? error = null, string? email = null, string? password = null, bool activate = true)
     {
         string token;
         try { token = Token.Normalize(rawToken); }
@@ -155,6 +160,25 @@ public sealed class AppConfig
         }
         var identityChanged = created || existing.Token != token;
         existing.Token = token;
+        if (email is not null)
+        {
+            var newEmail = CursorPasswordLogin.SanitizeEmail(email);
+            if (existing.Email != newEmail) identityChanged = true;
+            existing.Email = newEmail;
+            if (label is null)
+            {
+                var fallback = CursorPasswordLogin.DefaultLabel(newEmail, existing.Label);
+                if (existing.Label != fallback) identityChanged = true;
+                existing.Label = fallback;
+            }
+        }
+        if (password is not null)
+        {
+            if (existing.Password != password) identityChanged = true;
+            existing.Password = password;
+            existing.PasswordDecryptFailed = false;
+            existing.StoredPassword = "";
+        }
         if (label is not null)
         {
             var newLabel = label.Trim();
@@ -631,6 +655,18 @@ public static class ConfigStore
             acc.LastError = TokenProtector.DecryptFailedMessage;
         }
         acc.Label = Str(raw, "label").Trim();
+        acc.Email = CursorPasswordLogin.SanitizeEmail(Str(raw, "email"));
+        var storedPassword = Str(raw, "password");
+        if (storedPassword.Length > 0)
+        {
+            var passFailed = !TokenProtector.TryUnprotect(storedPassword, out var passwordRaw);
+            if (passFailed)
+            {
+                acc.PasswordDecryptFailed = true;
+                acc.StoredPassword = storedPassword;
+            }
+            else acc.Password = passwordRaw;
+        }
         var membership = Str(raw, "membership_type");
         if (membership.Length == 0) membership = Str(raw, "membershipType");
         acc.MembershipType = membership.Trim();
@@ -706,6 +742,8 @@ public static class ConfigStore
         {
             ["id"] = a.Id,
             ["label"] = a.Label,
+            ["email"] = a.Email,
+            ["password"] = TokenProtector.DiskToken(a.Password, a.StoredPassword, a.PasswordDecryptFailed),
             ["token"] = TokenProtector.DiskToken(a.Token, a.StoredToken, a.TokenDecryptFailed),
             ["membership_type"] = a.MembershipType,
             ["account_kind"] = AccountValidity.SanitizeKind(a.AccountKind),

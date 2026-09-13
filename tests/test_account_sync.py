@@ -54,6 +54,12 @@ class MergeFixtureTests(unittest.TestCase):
                 tokens = {a["id"]: a["token"] for a in merged["accounts"]}
                 self.assertEqual(labels, exp["labels"])
                 self.assertEqual(tokens, exp["tokens"])
+                if "emails" in exp:
+                    emails = {a["id"]: a.get("email") or "" for a in merged["accounts"]}
+                    self.assertEqual(emails, exp["emails"])
+                if "passwords" in exp:
+                    passwords = {a["id"]: a.get("password") or "" for a in merged["accounts"]}
+                    self.assertEqual(passwords, exp["passwords"])
                 self.assertEqual([d["id"] for d in merged["deleted"]], exp["deleted_ids"])
                 if "settings" in exp:
                     self.assertEqual(merged["settings"]["refresh_interval_minutes"], exp["settings"]["refresh_interval_minutes"])

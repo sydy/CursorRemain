@@ -368,6 +368,29 @@ class GoldenFixtureTests(unittest.TestCase):
                     self.assertEqual(got.event_count, want["event_count"])
                     self.assertEqual(got.total_tokens, want["total_tokens"])
 
+    def test_password_login_fixtures_match_python(self) -> None:
+        from cursor_login import (
+            LOGIN_TIMEOUT_SECONDS,
+            LOGIN_URL,
+            autofill_script,
+            default_account_label,
+            sanitize_login_email,
+            token_from_cookies,
+        )
+
+        data = json.loads((ROOT / "fixtures" / "password_login_cases.json").read_text(encoding="utf-8"))
+        self.assertEqual(LOGIN_URL, data["login_url"])
+        self.assertEqual(LOGIN_TIMEOUT_SECONDS, data["timeout_seconds"])
+        for row in data["sanitize_email"]:
+            self.assertEqual(sanitize_login_email(row["input"]), row["output"])
+        for row in data["default_label"]:
+            self.assertEqual(default_account_label(row["email"], row["existing"]), row["output"])
+        for row in data["cookies"]:
+            self.assertEqual(token_from_cookies(row["cookies"]), row["token"], row["name"])
+        script = autofill_script(data["autofill"]["email"], data["autofill"]["password"])
+        for needle in data["autofill"]["script_contains"]:
+            self.assertIn(needle, script)
+
     @staticmethod
     def _chart_buckets(buckets) -> list[dict]:
         return [

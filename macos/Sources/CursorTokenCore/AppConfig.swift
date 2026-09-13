@@ -63,6 +63,10 @@ public enum AppPaths {
 public struct Account: Equatable, Sendable, Codable {
     public var id: String
     public var label: String
+    public var email: String
+    public var password: String
+    public var passwordDecryptFailed: Bool
+    public var storedPassword: String
     public var token: String
     public var membershipType: String
     public var accountKind: String
@@ -88,6 +92,10 @@ public struct Account: Equatable, Sendable, Codable {
     public init(
         id: String = "",
         label: String = "",
+        email: String = "",
+        password: String = "",
+        passwordDecryptFailed: Bool = false,
+        storedPassword: String = "",
         token: String = "",
         membershipType: String = "",
         accountKind: String = AccountValidity.longTerm,
@@ -112,6 +120,10 @@ public struct Account: Equatable, Sendable, Codable {
     ) {
         self.id = id
         self.label = label
+        self.email = CursorPasswordLogin.sanitizeEmail(email)
+        self.password = password
+        self.passwordDecryptFailed = passwordDecryptFailed
+        self.storedPassword = storedPassword
         self.token = token
         self.membershipType = membershipType
         self.accountKind = AccountValidity.sanitizeKind(accountKind)
@@ -138,6 +150,8 @@ public struct Account: Equatable, Sendable, Codable {
     public var displayLabel: String {
         let label = self.label.trimmingCharacters(in: .whitespaces)
         if !label.isEmpty { return label }
+        let mail = email.trimmingCharacters(in: .whitespaces)
+        if !mail.isEmpty { return mail }
         let memb = membershipType.trimmingCharacters(in: .whitespaces)
         if !memb.isEmpty { return memb }
         let aid = id.trimmingCharacters(in: .whitespaces)
@@ -298,6 +312,8 @@ public struct AppConfig: Equatable, Sendable {
         membershipType: String? = nil,
         remaining: Double? = nil,
         error: String? = nil,
+        email: String? = nil,
+        password: String? = nil,
         activate: Bool = true
     ) throws -> (Account, Bool) {
         let token = (try? Token.normalize(rawToken)) ?? rawToken.trimmingCharacters(in: .whitespaces)
@@ -307,6 +323,22 @@ public struct AppConfig: Equatable, Sendable {
         if let idx = accounts.firstIndex(where: { $0.id == accountId }) {
             var identityChanged = accounts[idx].token != token
             accounts[idx].token = token
+            if let email {
+                let newEmail = CursorPasswordLogin.sanitizeEmail(email)
+                if accounts[idx].email != newEmail { identityChanged = true }
+                accounts[idx].email = newEmail
+                if label == nil {
+                    let fallback = CursorPasswordLogin.defaultLabel(newEmail, existing: accounts[idx].label)
+                    if accounts[idx].label != fallback { identityChanged = true }
+                    accounts[idx].label = fallback
+                }
+            }
+            if let password {
+                if accounts[idx].password != password { identityChanged = true }
+                accounts[idx].password = password
+                accounts[idx].passwordDecryptFailed = false
+                accounts[idx].storedPassword = ""
+            }
             if let label {
                 let newLabel = label.trimmingCharacters(in: .whitespaces)
                 if accounts[idx].label != newLabel { identityChanged = true }
@@ -328,6 +360,11 @@ public struct AppConfig: Equatable, Sendable {
         }
         var acc = Account(id: accountId, token: token)
         if accounts.isEmpty { copyLegacyFlags(into: &acc) }
+        if let email {
+            acc.email = CursorPasswordLogin.sanitizeEmail(email)
+            if label == nil { acc.label = CursorPasswordLogin.defaultLabel(acc.email, existing: acc.label) }
+        }
+        if let password { acc.password = password }
         if let label { acc.label = label.trimmingCharacters(in: .whitespaces) }
         if let membershipType { acc.membershipType = membershipType.trimmingCharacters(in: .whitespaces) }
         if let remaining { acc.lastRemaining = round2(remaining) }
@@ -726,6 +763,17 @@ public enum ConfigStore {
             acc.lastError = TokenProtector.decryptFailedMessage
         }
         acc.label = (raw["label"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        acc.email = CursorPasswordLogin.sanitizeEmail(raw["email"] as? String)
+        let storedPassword = (raw["password"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !storedPassword.isEmpty {
+            let unpackedPass = TokenProtector.tryUnprotect(storedPassword)
+            if unpackedPass.ok {
+                acc.password = unpackedPass.value
+            } else {
+                acc.passwordDecryptFailed = true
+                acc.storedPassword = storedPassword
+            }
+        }
         acc.membershipType = (raw["membershipType"] as? String ?? raw["membership_type"] as? String ?? "")
             .trimmingCharacters(in: .whitespaces)
         acc.accountKind = AccountValidity.sanitizeKind(raw["account_kind"] as? String ?? raw["accountKind"] as? String)
@@ -814,6 +862,12 @@ public enum ConfigStore {
                 var d: [String: Any] = [
                     "id": acc.id,
                     "label": acc.label,
+                    "email": acc.email,
+                    "password": try TokenProtector.diskToken(
+                        plaintext: acc.password,
+                        storedRaw: acc.storedPassword,
+                        decryptFailed: acc.passwordDecryptFailed
+                    ),
                     "token": try TokenProtector.diskToken(
                         plaintext: acc.token,
                         storedRaw: acc.storedToken,
