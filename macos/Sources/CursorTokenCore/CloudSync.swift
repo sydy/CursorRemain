@@ -148,6 +148,9 @@ public enum CloudSync {
         }
         let box = RequestBox()
         let sem = DispatchSemaphore(value: 0)
+        if Thread.isMainThread {
+            throw CursorAPIError("同步不能在主线程等待网络")
+        }
         URLSession.shared.dataTask(with: req) { data, response, error in
             box.data = data
             box.response = response

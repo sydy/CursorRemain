@@ -41,6 +41,7 @@ public static class CloudSync
         cfg.SyncEnabled = false;
     }
 
+    /// <summary>Blocking helper for tests and file tools. Do not call from the UI thread.</summary>
     public static SyncStatus Reconcile(AppConfig cfg, DateTimeOffset? now = null, bool write = true) =>
         ReconcileAsync(cfg, now, write).GetAwaiter().GetResult();
 
