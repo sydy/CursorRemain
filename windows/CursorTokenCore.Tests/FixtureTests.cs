@@ -1078,6 +1078,27 @@ public class FixtureTests
         var script = CursorPasswordLogin.AutofillScript(auto.GetProperty("email").GetString() ?? "", auto.GetProperty("password").GetString() ?? "");
         foreach (var needle in auto.GetProperty("script_contains").EnumerateArray())
             Assert.Contains(needle.GetString() ?? "", script);
+        foreach (var row in root.GetProperty("parse_paste").EnumerateArray())
+        {
+            var name = row.GetProperty("name").GetString();
+            var got = CursorAccountPaste.Parse(row.GetProperty("text").GetString());
+            var expected = row.GetProperty("items").EnumerateArray().ToList();
+            Assert.Equal(expected.Count, got.Count);
+            for (var i = 0; i < expected.Count; i++)
+            {
+                var want = expected[i];
+                Assert.Equal(want.GetProperty("kind").GetString(), got[i].Kind);
+                if (want.TryGetProperty("email", out var email))
+                    Assert.Equal(email.GetString(), got[i].Email);
+                if (want.TryGetProperty("password", out var password))
+                    Assert.Equal(password.GetString(), got[i].Password);
+                if (want.TryGetProperty("token", out var token))
+                    Assert.Equal(token.GetString(), got[i].Token);
+                if (want.TryGetProperty("message", out var message))
+                    Assert.Equal(message.GetString(), got[i].Message);
+            }
+            _ = name;
+        }
     }
 
     [Fact]

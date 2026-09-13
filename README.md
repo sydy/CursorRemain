@@ -15,7 +15,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - 近 7 日剩余趋势折线与日均消耗
 - Token 过期检测、一键打开设置并聚焦 Token 输入框
 - 多档额度告警（默认 50/20/5）与耗尽风险通知
-- **多账号**：保存多个 Cursor 会话，托盘显示当前账号；其余账号后台刷新并独立告警。可粘贴 Token、从 Cursor / 浏览器导入，或填写邮箱密码打开官方登录页自动取 Token。从 Cursor 应用导入的会话可 **登录到 Cursor**（写入客户端并切号）；浏览器 Cookie 和邮箱登录拿到的会话只能查用量，写回去会把 Cursor 登出，因此会被拒绝
+- **多账号**：保存多个 Cursor 会话，托盘显示当前账号；其余账号后台刷新并独立告警。可粘贴 Token、从 Cursor / 浏览器导入，或把邮箱密码粘进同一输入框打开官方登录页自动取 Token。从 Cursor 应用导入的会话可 **登录到 Cursor**（写入客户端并切号）；浏览器 Cookie 和邮箱登录拿到的会话只能查用量，写回去会把 Cursor 登出，因此会被拒绝
 - **云同步**：设置里注册 / 登录后，账号和跨设备配置会加密上传到 `https://sync.harker.cn`。登录密码在本地派生 AES-GCM 密钥，服务器只存密文，看不到 Token。也支持导出 / 导入同一格式的加密包作备份
 - 个人套餐与企业 / 团队套餐兼用：个人按 included usage 百分比；企业账号走 [用量页](https://cursor.com/dashboard/usage) 的金额计费（已用 / 额度）
 - **Grok Bot 周额度**：飞出层单独一条进度（本周已用 %）。这是 Cursor 账号上的独立周池，不计入左侧圆环的月度剩余；套餐不含 Bot、企业池化额度或接口失败时不画这条。周额度用尽后若开了按需，会落到同一条 On-Demand 金额卡
@@ -144,22 +144,21 @@ PR 不上传制品。打 `v*` 标签（例如 `v1.0.0`）会创建正式 GitHub 
 
 **macOS**：优先 Cursor 应用、Safari / Firefox。Safari 若读不到，到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」打开「Cursor 余量」。设置窗会检测权限并提供跳转。Chrome 系仍会尝试钥匙串解密，失败时请改用 Safari / Firefox。
 
-### 方式二：邮箱密码登录
+### 方式二：粘贴 Token 或邮箱密码
 
 1. 托盘 / 菜单栏右键 → **设置…**
-2. 填写 Cursor 邮箱和密码，点 **登录获取 Token**
-3. 会弹出官方登录页并尽量自动填写。若出现验证码或邮箱 OTP，请在窗口里完成
-4. 拿到 Cookie 后会校验用量，并用邮箱作为默认账号名。同一账号再登录会更新 Token 和密码，不覆盖你改过的备注
+2. 在添加账号框里粘贴，每行一个，然后点 **添加**。支持：
+   - Token（`WorkosCursorSessionToken=…`、`user_…::jwt` 等）
+   - `name@example.com:密码`、`name@example.com----密码`、邮箱后跟 Tab / 空格再跟密码
+   - `账号：name@example.com密码：xxxx`（全角 / 半角冒号均可；「账号」也可写成帐号 / 账户 / 邮箱 / 用户名）
+   - 两行：`账号：邮箱` 下一行 `密码：xxxx`
+3. Token 行会立刻写入。邮箱密码行会逐个弹出官方登录页并尽量自动填写；验证码或邮箱 OTP 请在窗口里完成。失败会记下并继续下一个，最后切到成功添加的账号
+4. 新号默认用规范化邮箱当备注；你改过的备注不会被覆盖
 5. 密码只在本机用操作系统加密保存，云同步时封进现有的端对端信封（PBKDF2 + AES-256-GCM），服务器看不到明文
 
-这条路径拿到的是浏览器会话，**只能查用量**，不能「登录到 Cursor」写回客户端。Google / GitHub 账号请仍用浏览器导入，或在弹出窗口里点对应登录按钮。
+邮箱密码这条路径拿到的是浏览器会话，**只能查用量**，不能「登录到 Cursor」写回客户端。Google / GitHub 账号请仍用浏览器导入，或在弹出窗口里点对应登录按钮。
 
-### 方式三：手动粘贴
-
-1. 浏览器登录 [cursor.com/dashboard](https://cursor.com/dashboard/usage)（个人账号也可打开 [Spending](https://cursor.com/dashboard/spending)）
-2. 按 `F12` → **Application**（Safari 为「存储」）→ **Cookies** → `https://cursor.com`
-3. 复制 `WorkosCursorSessionToken` 的值
-4. 托盘 / 菜单栏右键 → **设置…** → 粘贴并保存
+复制 Token 的方法：浏览器登录 [cursor.com/dashboard](https://cursor.com/dashboard/usage)（个人账号也可打开 [Spending](https://cursor.com/dashboard/spending)）→ `F12` → **Application**（Safari 为「存储」）→ **Cookies** → `https://cursor.com` → 复制 `WorkosCursorSessionToken` 的值。
 
 ## 配置文件位置
 

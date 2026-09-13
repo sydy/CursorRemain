@@ -13,9 +13,7 @@ sealed class SettingsForm : Form
         Dock = DockStyle.Top,
         Padding = new Padding(16),
     };
-    readonly TextBox _token = new() { Multiline = true, Height = 64, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
-    readonly TextBox _loginEmail = new() { Width = 220 };
-    readonly TextBox _loginPassword = new() { Width = 220, UseSystemPasswordChar = true };
+    readonly TextBox _token = new() { Multiline = true, Height = 120, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
     readonly TextBox _interval = new() { Width = 80 };
     readonly TextBox _planUsd = new() { Width = 80 };
     readonly TextBox _actualCny = new() { Width = 80 };
@@ -73,11 +71,11 @@ sealed class SettingsForm : Form
         FlowDirection = FlowDirection.LeftToRight,
         Margin = new Padding(0, 0, 0, 4),
     };
-    readonly Label _addCaption = Caption("添加账号（粘贴 Token，请勿分享；已保存的不会显示）");
+    readonly Label _addCaption = Caption("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）");
     readonly Label _status = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _hint = new()
     {
-        Text = "也可填邮箱密码打开官方登录页自动取 Token。验证码请在弹出窗口里完成。此会话只能查用量，不能写回 Cursor。密码会加密保存并随云同步。Windows 还可从 Cursor 应用或 Firefox 导入。",
+        Text = "可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。Windows 还可从 Cursor 应用或 Firefox 导入。",
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 4, 0, 8),
@@ -131,14 +129,10 @@ sealed class SettingsForm : Form
         _root.Controls.Add(_addCaption);
         _root.Controls.Add(_token);
         var cur = ActionButton("从 Cursor 导入");
-        var add = ActionButton("添加此 Token");
+        var add = ActionButton("添加");
         var ff = ActionButton("Firefox 登录");
         var cookie = ActionButton("仅导入 Cookie");
         _root.Controls.Add(Flow(cur, add, ff, cookie));
-        _root.Controls.Add(FieldRow("Cursor 邮箱", _loginEmail));
-        _root.Controls.Add(FieldRow("Cursor 密码", _loginPassword));
-        var pwdLogin = ActionButton("登录获取 Token");
-        _root.Controls.Add(Flow(pwdLogin));
         _root.Controls.Add(_status);
         _root.Controls.Add(_hint);
         _root.Controls.Add(FieldRow("刷新间隔（分钟）", _interval));
@@ -180,7 +174,6 @@ sealed class SettingsForm : Form
             WriteKindFrom(_cfg.ActiveAccount);
             WriteActualCnyFrom(_cfg.ActiveAccount);
             WriteChannelFrom(_cfg.ActiveAccount);
-            WriteLoginFieldsFrom(_cfg.ActiveAccount);
         };
         rename.Click += (_, _) => RenameActive();
         login.Click += async (_, _) => await LoginToCursor();
@@ -203,8 +196,7 @@ sealed class SettingsForm : Form
         _startAt.ValueChanged += (_, _) => OnValidityEdited();
         _days.ValueChanged += (_, _) => OnValidityEdited();
         _hours.ValueChanged += (_, _) => OnValidityEdited();
-        add.Click += (_, _) => AddToken();
-        pwdLogin.Click += async (_, _) => await DoPasswordLogin();
+        add.Click += async (_, _) => await AddPastedAccounts();
         cur.Click += async (_, _) => await DoImport("cursor-app");
         cookie.Click += async (_, _) => await DoImport(null);
         ff.Click += async (_, _) =>
@@ -415,8 +407,7 @@ sealed class SettingsForm : Form
             var idx = cfg.Accounts.FindIndex(a => a.Id == cfg.ActiveAccountId);
             if (idx >= 0) _accounts.SelectedIndex = idx;
             _token.Text = "";
-            _token.PlaceholderText = "粘贴新 Token 以添加或更换账号（已保存的不会显示）";
-            WriteLoginFieldsFrom(cfg.ActiveAccount);
+            _token.PlaceholderText = "每行一个：Token，或 name@example.com:密码，或 账号：邮箱密码：密码";
             _interval.Text = cfg.RefreshIntervalMinutes.ToString();
             var membership = cfg.ActiveAccount?.MembershipType ?? "";
             var plan = cfg.MonthlyPlanUsd > 0 ? cfg.MonthlyPlanUsd : UsageEvents.DefaultMonthlyPlanUsd(membership);
@@ -559,67 +550,83 @@ sealed class SettingsForm : Form
         return cfg.CloudLoggedIn ? "尚未同步" : "";
     }
 
-    void AddToken()
-    {
-        try
-        {
-            _cfg.UpsertAccount(_token.Text, activate: true);
-            Persist(false);
-            _status.Text = "已添加";
-        }
-        catch (Exception ex) { _status.Text = ex.Message; }
-    }
-
-    void WriteLoginFieldsFrom(Account? acc)
-    {
-        _loginEmail.Text = acc?.Email ?? "";
-        _loginPassword.Text = "";
-        _loginPassword.PlaceholderText = !string.IsNullOrEmpty(acc?.Password) || acc is { PasswordDecryptFailed: true }
-            ? "已保存，登录时自动填写（不会显示）"
-            : "请勿分享；已保存的不会显示";
-    }
-
-    async Task DoPasswordLogin()
+    async Task AddPastedAccounts()
     {
         if (_importing) return;
-        var email = CursorPasswordLogin.SanitizeEmail(_loginEmail.Text);
-        var password = _loginPassword.Text;
-        if (password.Length == 0 && _cfg.ActiveAccount is { } acc
-            && string.Equals(acc.Email, email, StringComparison.OrdinalIgnoreCase))
-            password = acc.Password;
-        if (email.Length == 0)
+        var items = CursorAccountPaste.Parse(_token.Text);
+        if (items.Count == 0)
         {
-            _status.Text = "请填写 Cursor 邮箱";
-            return;
-        }
-        if (password.Length == 0)
-        {
-            _status.Text = "请填写 Cursor 密码";
+            _status.Text = "请粘贴 Token 或邮箱密码";
             return;
         }
         _importing = true;
-        _status.Text = "正在打开登录页…";
+        var ok = 0;
+        var fail = 0;
+        string? lastId = null;
         try
         {
-            using var dlg = new PasswordLoginForm(email, password);
-            if (dlg.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
+            foreach (var item in items)
             {
-                if (!IsDisposed) _status.Text = string.IsNullOrWhiteSpace(dlg.Token) ? "未获取到 Token，请完成验证码后重试。" : "已取消";
-                return;
+                if (item.Kind == "token")
+                {
+                    try
+                    {
+                        var (acc, _) = _cfg.UpsertAccount(item.Token, activate: true);
+                        lastId = acc.Id;
+                        ok++;
+                        NotifySaved();
+                    }
+                    catch { fail++; }
+                    continue;
+                }
+                if (item.Kind == "credentials")
+                {
+                    _status.Text = "正在打开登录页…";
+                    using var dlg = new PasswordLoginForm(item.Email, item.Password);
+                    if (dlg.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
+                    {
+                        fail++;
+                        continue;
+                    }
+                    try
+                    {
+                        var snap = await new CursorClient().FetchUsageSummary(dlg.Token);
+                        var (acc, _) = _cfg.UpsertAccount(
+                            dlg.Token,
+                            email: item.Email,
+                            password: item.Password,
+                            membershipType: snap.MembershipType,
+                            remaining: snap.RemainingPercent,
+                            activate: true);
+                        lastId = acc.Id;
+                        ok++;
+                        NotifySaved();
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            var (acc, _) = _cfg.UpsertAccount(
+                                dlg.Token,
+                                email: item.Email,
+                                password: item.Password,
+                                activate: true);
+                            lastId = acc.Id;
+                            ok++;
+                            NotifySaved();
+                        }
+                        catch { fail++; }
+                    }
+                    continue;
+                }
+                fail++;
             }
-            var snap = await new CursorClient().FetchUsageSummary(dlg.Token);
-            _cfg.UpsertAccount(
-                dlg.Token,
-                email: email,
-                password: password,
-                membershipType: snap.MembershipType,
-                remaining: snap.RemainingPercent,
-                activate: true);
-            _loginPassword.Text = "";
+            if (lastId is not null) _cfg.SetActiveAccount(lastId);
+            _token.Text = "";
             Persist(false);
-            _status.Text = $"已登录并校验：剩余 {snap.RemainingPercent:0.0}% · {snap.MembershipType}。此会话只能查用量。";
+            if (!IsDisposed)
+                _status.Text = fail == 0 ? $"已添加 {ok} 个账号" : $"成功 {ok} / 失败 {fail}";
         }
-        catch (Exception ex) { _status.Text = ex.Message; }
         finally { _importing = false; }
     }
 
@@ -723,7 +730,7 @@ sealed class SettingsForm : Form
         _cfg.TrayDisplayMode = _mode.SelectedIndex switch { 1 => "number", 2 => "dot", _ => "ring" };
         _cfg.AutostartEnabled = _auto.Checked;
         ReadKindInto(_cfg.ActiveAccount);
-        if (!string.IsNullOrWhiteSpace(_token.Text))
+        if (CursorAccountPaste.IsSingleToken(_token.Text))
             try { _cfg.UpsertAccount(_token.Text, activate: true); } catch { }
         _onSaved(_cfg);
         LoadFrom(_cfg);

@@ -992,6 +992,27 @@ final class PasswordLoginFixtureTests: XCTestCase {
         for needle in auto["script_contains"] as? [String] ?? [] {
             XCTAssertTrue(script.contains(needle), needle)
         }
+        for row in root["parse_paste"] as? [[String: Any]] ?? [] {
+            let name = str(row["name"])
+            let got = CursorAccountPaste.parse(str(row["text"]))
+            let expected = row["items"] as? [[String: Any]] ?? []
+            XCTAssertEqual(got.count, expected.count, name)
+            for (actual, want) in zip(got, expected) {
+                XCTAssertEqual(actual.kind, str(want["kind"]), name)
+                if want["email"] != nil {
+                    XCTAssertEqual(actual.email, str(want["email"]), name)
+                }
+                if want["password"] != nil {
+                    XCTAssertEqual(actual.password, str(want["password"]), name)
+                }
+                if want["token"] != nil {
+                    XCTAssertEqual(actual.token, str(want["token"]), name)
+                }
+                if want["message"] != nil {
+                    XCTAssertEqual(actual.message, str(want["message"]), name)
+                }
+            }
+        }
     }
 
     private func json(_ name: String) throws -> Any { try Fixtures.json(name) }

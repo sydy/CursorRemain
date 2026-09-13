@@ -33,6 +33,156 @@ def sanitize_login_email(raw: Any) -> str:
     return text
 
 
+_EMAIL_TOKEN = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"
+_EMAIL_LABELS = r"(?:账号|帐号|账户|邮箱|用户名)"
+_LABELED_BOTH = re.compile(
+    rf"^{_EMAIL_LABELS}\s*[：:]\s*({_EMAIL_TOKEN})\s*密码\s*[：:]\s*(.+)$"
+)
+_LABELED_EMAIL = re.compile(rf"^{_EMAIL_LABELS}\s*[：:]\s*({_EMAIL_TOKEN})\s*$")
+_LABELED_PASSWORD = re.compile(r"^密码\s*[：:]\s*(.+)$")
+_EMAIL_AT_START = re.compile(rf"^({_EMAIL_TOKEN})(.*)$")
+
+
+def _paste_item(
+    kind: str,
+    token: str = "",
+    email: str = "",
+    password: str = "",
+    message: str = "",
+) -> dict[str, str]:
+    return {
+        "kind": kind,
+        "token": token,
+        "email": email,
+        "password": password,
+        "message": message,
+    }
+
+
+def looks_like_paste_token(line: Any) -> bool:
+    text = str(line or "").strip()
+    if not text:
+        return False
+    lower = text.lower()
+    if "workoscursorsessiontoken=" in lower:
+        return True
+    if "%3a%3a" in lower or "::" in text:
+        return True
+    parts = text.split(".")
+    return len(parts) == 3 and all(parts)
+
+
+def _parse_labeled_both(line: str) -> tuple[str, str] | None:
+    match = _LABELED_BOTH.match(line)
+    if not match:
+        return None
+    email = sanitize_login_email(match.group(1))
+    password = match.group(2).strip()
+    if not email or not password:
+        return None
+    return email, password
+
+
+def _parse_labeled_email(line: str) -> str:
+    match = _LABELED_EMAIL.match(line)
+    if not match:
+        return ""
+    return sanitize_login_email(match.group(1))
+
+
+def _parse_labeled_password(line: str) -> str | None:
+    match = _LABELED_PASSWORD.match(line)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _parse_email_separator(line: str) -> tuple[str, str] | None:
+    match = _EMAIL_AT_START.match(line)
+    if not match:
+        return None
+    email = sanitize_login_email(match.group(1))
+    if not email:
+        return None
+    rest = match.group(2)
+    if not rest:
+        return None
+    stripped = rest.lstrip()
+    if stripped.startswith("----"):
+        password = stripped[4:].strip()
+    elif stripped[:1] in (":", "："):
+        password = stripped[1:].strip()
+    elif rest[0] in " \t":
+        password = rest.strip()
+    else:
+        return None
+    if not password:
+        return None
+    return email, password
+
+
+def parse_account_paste(text: Any) -> list[dict[str, str]]:
+    raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    items: list[dict[str, str]] = []
+    pending_email = ""
+
+    def flush_pending() -> None:
+        nonlocal pending_email
+        if pending_email:
+            items.append(_paste_item("error", email=pending_email, message="只有账号没有密码"))
+            pending_email = ""
+
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+
+        both = _parse_labeled_both(line)
+        if both:
+            flush_pending()
+            items.append(_paste_item("credentials", email=both[0], password=both[1]))
+            continue
+
+        email_only = _parse_labeled_email(line)
+        if email_only:
+            flush_pending()
+            pending_email = email_only
+            continue
+
+        password_only = _parse_labeled_password(line)
+        if password_only is not None:
+            if pending_email and password_only:
+                items.append(_paste_item("credentials", email=pending_email, password=password_only))
+                pending_email = ""
+            elif pending_email:
+                flush_pending()
+            else:
+                items.append(_paste_item("error", message="只有密码没有账号"))
+            continue
+
+        separated = _parse_email_separator(line)
+        if separated:
+            flush_pending()
+            items.append(_paste_item("credentials", email=separated[0], password=separated[1]))
+            continue
+
+        if looks_like_paste_token(line):
+            flush_pending()
+            items.append(_paste_item("token", token=line))
+            continue
+
+        flush_pending()
+        items.append(_paste_item("error", message="无法识别"))
+
+    flush_pending()
+    return items
+
+
+def is_single_token_paste(text: Any) -> bool:
+    items = parse_account_paste(text)
+    return len(items) == 1 and items[0]["kind"] == "token"
+
+
 def default_account_label(email: str, existing_label: str = "") -> str:
     current = str(existing_label or "").strip()
     if current:
