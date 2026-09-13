@@ -111,6 +111,8 @@ sealed class TrayContext : ApplicationContext
     CompareForm? _compare;
     CancellationTokenSource _cts = new();
     CancellationTokenSource? _delayCts;
+    readonly SemaphoreSlim _reconcileGate = new(1, 1);
+    bool _reconcileAgain;
     bool _refreshNow;
     (int? Remaining, bool Error, string Mode, int Size)? _iconKey;
 
@@ -224,9 +226,8 @@ sealed class TrayContext : ApplicationContext
         {
             try
             {
-                await TryReconcileAsync(save: true);
                 await RefreshAll();
-                await TryReconcileAsync(save: true);
+                _ = TryReconcileAsync(save: true);
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex) { CrashLog.Write(ex); }
@@ -265,7 +266,14 @@ sealed class TrayContext : ApplicationContext
         }
         var activeId = _config.ActiveAccountId;
         var ordered = targets.OrderBy(a => a.Id == activeId ? 0 : 1).ToList();
-        var outcomes = (await Task.WhenAll(ordered.Select(FetchOne))).ToList();
+        var outcomes = new List<RefreshOutcome>(ordered.Count);
+        var remaining = ordered.Select(async acc =>
+        {
+            var o = await FetchOne(acc);
+            ApplyActiveOutcome(o);
+            return o;
+        });
+        outcomes.AddRange(await Task.WhenAll(remaining));
 
         var notices = new List<(string Title, string Body, bool Warn)>();
         AppConfig cfg;
@@ -309,15 +317,22 @@ sealed class TrayContext : ApplicationContext
 
         _config = cfg;
         var active = outcomes.FirstOrDefault(o => o.Id == cfg.ActiveAccountId);
-        if (active?.Snap is { } activeSnap) { _usage = activeSnap; _error = null; _updated = active.Stamp; }
-        else if (active?.Error is not null) { _usage = null; _error = active.Error; _updated = active.Stamp; }
-        else if (cfg.Accounts.Count == 0) { _usage = null; _error = "未配置 Token，请打开设置粘贴"; _updated = null; }
-        UpdateUi();
+        if (active is not null) ApplyActiveOutcome(active);
+        else if (cfg.Accounts.Count == 0) { _usage = null; _error = "未配置 Token，请打开设置粘贴"; _updated = null; UpdateUi(); }
+        else UpdateUi();
         OnUi(() =>
         {
             foreach (var n in notices)
                 _icon.ShowBalloonTip(n.Warn ? 5000 : 4000, n.Title, n.Body, n.Warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
         });
+    }
+
+    void ApplyActiveOutcome(RefreshOutcome o)
+    {
+        if (o.Id != _config.ActiveAccountId) return;
+        if (o.Snap is { } snap) { _usage = snap; _error = null; _updated = o.Stamp; }
+        else if (o.Error is not null) { _usage = null; _error = o.Error; _updated = o.Stamp; }
+        UpdateUi();
     }
 
     async Task<RefreshOutcome> FetchOne((string Id, string Token, bool TokenDecryptFailed) acc)
@@ -530,30 +545,46 @@ sealed class TrayContext : ApplicationContext
     {
         var prevAuto = _config.AutostartEnabled;
         _config = cfg;
-        try { ConfigStore.Save(cfg); }
-        catch (Exception)
-        {
-            OnUi(() => _icon.ShowBalloonTip(4000, "保存失败", "无法写入配置（文件忙碌或加密失败），请稍后再试。", ToolTipIcon.Warning));
-        }
-        _ = TryReconcileAsync(save: true);
         if (prevAuto != cfg.AutostartEnabled) Autostart.Apply(cfg.AutostartEnabled);
         if (refresh) RequestRefresh();
         UpdateUi();
+        _ = PersistAndSyncAsync(cfg);
+    }
+
+    async Task PersistAndSyncAsync(AppConfig cfg)
+    {
+        try { await Task.Run(() => ConfigStore.Save(cfg)); }
+        catch (Exception)
+        {
+            OnUi(() => _icon.ShowBalloonTip(4000, "保存失败", "无法写入配置（文件忙碌或加密失败），请稍后再试。", ToolTipIcon.Warning));
+            return;
+        }
+        await TryReconcileAsync(save: true);
     }
 
     async Task TryReconcileAsync(bool save)
     {
         if (!_config.SyncEnabled) return;
+        if (!await _reconcileGate.WaitAsync(0))
+        {
+            _reconcileAgain = true;
+            return;
+        }
         try
         {
-            var status = await CloudSync.ReconcileAsync(_config);
-            if (save || status.Changed)
+            do
             {
-                try { ConfigStore.Save(_config); } catch { }
-            }
-            if (status.Changed) RequestRefresh();
+                _reconcileAgain = false;
+                var status = await CloudSync.ReconcileAsync(_config);
+                if (save || status.Changed)
+                {
+                    try { await Task.Run(() => ConfigStore.Save(_config)); } catch { }
+                }
+                if (status.Changed) RequestRefresh();
+            } while (_reconcileAgain && _config.SyncEnabled);
         }
         catch (Exception ex) { CrashLog.Write(ex); }
+        finally { _reconcileGate.Release(); }
     }
 
     void Exit()

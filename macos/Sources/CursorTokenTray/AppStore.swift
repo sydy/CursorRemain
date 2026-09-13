@@ -24,6 +24,8 @@ final class AppStore: ObservableObject {
     private var refreshTask: Task<Void, Never>?
     private var waitTask: Task<Void, Never>?
     private var refreshNow = false
+    private var reconcileRunning = false
+    private var reconcileAgain = false
 
     init(directory: URL? = nil) {
         settingsDirectory = directory
@@ -36,9 +38,9 @@ final class AppStore: ObservableObject {
             UsageHistory.adoptLegacyHistory(accountId: acc.id, directory: settingsDirectory ?? AppPaths.configDirectory())
         }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        reconcileAccounts(refresh: false)
         reloadHistory()
         loopRefresh()
+        enqueueReconcile(refresh: false)
         if config.sessionToken.isEmpty {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
@@ -99,13 +101,13 @@ final class AppStore: ObservableObject {
         } else {
             saveError = ""
         }
-        let synced = reconcileAccounts(refresh: false)
         if prevAuto != cfg.autostartEnabled {
             LoginItem.apply(cfg.autostartEnabled)
         }
-        if refresh || prevToken != cfg.sessionToken || prevActive != cfg.activeAccountId || synced {
+        if refresh || prevToken != cfg.sessionToken || prevActive != cfg.activeAccountId {
             requestRefresh()
         }
+        enqueueReconcile(refresh: false)
         objectWillChange.send()
     }
 
@@ -195,26 +197,50 @@ final class AppStore: ObservableObject {
         }
     }
 
+    func enqueueReconcile(refresh: Bool) {
+        Task { await runReconcile(refresh: refresh) }
+    }
+
+    private func runReconcile(refresh: Bool) async {
+        if reconcileRunning {
+            reconcileAgain = true
+            return
+        }
+        reconcileRunning = true
+        defer { reconcileRunning = false }
+        repeat {
+            reconcileAgain = false
+            let changed = await reconcileAccounts()
+            if refresh || changed { requestRefresh() }
+        } while reconcileAgain
+    }
+
     @discardableResult
-    func reconcileAccounts(refresh: Bool) -> Bool {
+    func reconcileAccounts() async -> Bool {
         guard config.syncEnabled else { return false }
-        var cfg = config
-        let status = AccountSync.reconcile(&cfg)
+        let snapshot = config
+        let startedActive = snapshot.activeAccountId
+        let (next, status) = await Task.detached(priority: .utility) {
+            var copy = snapshot
+            let status = CloudSync.reconcile(&copy)
+            return (copy, status)
+        }.value
         if status.ok || status.changed {
-            config = cfg
-            _ = ConfigStore.save(cfg, to: settingsDirectory)
+            var merged = next
+            if config.activeAccountId != startedActive {
+                merged.activeAccountId = config.activeAccountId
+                merged.syncLegacyFields()
+            }
+            config = merged
+            _ = ConfigStore.save(merged, to: settingsDirectory)
         } else {
             config.syncLastError = status.message
-        }
-        if refresh && status.changed {
-            requestRefresh()
         }
         objectWillChange.send()
         return status.changed
     }
 
     func refreshAll() async {
-        reconcileAccounts(refresh: false)
         let targets = config.accounts.map { RefreshTarget(id: $0.id, token: $0.token, decryptFailed: $0.tokenDecryptFailed) }
         if targets.isEmpty {
             usage = nil
@@ -238,6 +264,7 @@ final class AppStore: ObservableObject {
             }
             for await o in group {
                 outcomes.append(o)
+                applyActiveOutcome(o)
             }
         }
         for o in outcomes {
@@ -291,23 +318,31 @@ final class AppStore: ObservableObject {
         }
         config = cfg
         if let active = outcomes.first(where: { $0.id == cfg.activeAccountId }) {
-            if let snap = active.snap {
-                usage = snap
-                errorMessage = nil
-                updatedAt = active.stamp
-            } else if let err = active.error {
-                usage = nil
-                errorMessage = err
-                updatedAt = active.stamp
-            }
+            applyActiveOutcome(active)
         } else if cfg.accounts.isEmpty {
             usage = nil
             errorMessage = "未配置 Token，请打开设置粘贴"
             updatedAt = nil
+            reloadHistory()
+        } else {
+            reloadHistory()
+        }
+        for n in notices { notify(n.0, n.1) }
+        enqueueReconcile(refresh: false)
+    }
+
+    private func applyActiveOutcome(_ o: Outcome) {
+        guard o.id == config.activeAccountId else { return }
+        if let snap = o.snap {
+            usage = snap
+            errorMessage = nil
+            updatedAt = o.stamp
+        } else if let err = o.error {
+            usage = nil
+            errorMessage = err
+            updatedAt = o.stamp
         }
         reloadHistory()
-        for n in notices { notify(n.0, n.1) }
-        _ = reconcileAccounts(refresh: false)
     }
 
     private struct RefreshTarget: Sendable {
