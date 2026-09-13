@@ -374,6 +374,7 @@ class GoldenFixtureTests(unittest.TestCase):
             LOGIN_URL,
             autofill_script,
             default_account_label,
+            parse_account_paste,
             sanitize_login_email,
             token_from_cookies,
         )
@@ -390,6 +391,20 @@ class GoldenFixtureTests(unittest.TestCase):
         script = autofill_script(data["autofill"]["email"], data["autofill"]["password"])
         for needle in data["autofill"]["script_contains"]:
             self.assertIn(needle, script)
+        for row in data["parse_paste"]:
+            got = parse_account_paste(row["text"])
+            expected = row["items"]
+            self.assertEqual(len(got), len(expected), row["name"])
+            for actual, want in zip(got, expected):
+                self.assertEqual(actual["kind"], want["kind"], row["name"])
+                if "email" in want:
+                    self.assertEqual(actual.get("email", ""), want["email"], row["name"])
+                if "password" in want:
+                    self.assertEqual(actual.get("password", ""), want["password"], row["name"])
+                if "token" in want:
+                    self.assertEqual(actual.get("token", ""), want["token"], row["name"])
+                if "message" in want:
+                    self.assertEqual(actual.get("message", ""), want["message"], row["name"])
 
     @staticmethod
     def _chart_buckets(buckets) -> list[dict]:

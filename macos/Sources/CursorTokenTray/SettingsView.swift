@@ -7,8 +7,6 @@ struct SettingsRootView: View {
     @State private var extraOpen = false
     @State private var importing = false
     @State private var tokenText = ""
-    @State private var loginEmail = ""
-    @State private var loginPassword = ""
     @State private var intervalText = "10"
     @State private var planUsdText = "0"
     @State private var actualCnyText = "0"
@@ -34,8 +32,6 @@ struct SettingsRootView: View {
         .frame(width: 540, height: 680)
         .onAppear {
             tokenText = ""
-            loginEmail = store.config.activeAccount?.email ?? ""
-            loginPassword = ""
             intervalText = String(store.config.refreshIntervalMinutes)
             let membership = store.config.activeAccount?.membershipType ?? ""
             let plan = store.config.monthlyPlanUsd > 0
@@ -61,8 +57,6 @@ struct SettingsRootView: View {
         .onChange(of: store.config.activeAccountId) { _ in
             actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
             channel = store.config.activeAccount?.channel ?? ""
-            loginEmail = store.config.activeAccount?.email ?? ""
-            loginPassword = ""
         }
     }
 
@@ -116,28 +110,19 @@ struct SettingsRootView: View {
             Text("仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了则按套餐内费用分摊，优先于月费。按需仍按费用×汇率。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("添加账号（粘贴 Token，请勿分享；已保存的不会显示）").font(.headline).padding(.top, 8)
+            Text("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）").font(.headline).padding(.top, 8)
             TextEditor(text: $tokenText)
                 .font(.system(.body, design: .monospaced))
-                .frame(height: 56)
+                .frame(height: 120)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
                 .focused($tokenFocused)
             HStack {
                 Button("从 Cursor 导入") { Task { await importFrom(prefer: "cursor-app") } }
                     .disabled(importing)
-                Button("添加此 Token") { addToken() }
+                Button("添加") { Task { await addPastedAccounts() } }
+                    .disabled(importing)
             }
-            HStack {
-                Text("Cursor 邮箱")
-                TextField("name@example.com", text: $loginEmail)
-            }
-            HStack {
-                Text("Cursor 密码")
-                SecureField(store.config.activeAccount?.password.isEmpty == false ? "已保存，登录时自动填写" : "请勿分享", text: $loginPassword)
-            }
-            Button("登录获取 Token") { Task { await passwordLogin() } }
-                .disabled(importing)
-            Text("会打开官方登录页并尽量自动填写。验证码请在窗口里完成。此会话只能查用量，不能写回 Cursor。密码会加密保存并随云同步。")
+            Text("可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             DisclosureGroup("其他导入方式", isExpanded: $extraOpen) {
@@ -263,8 +248,6 @@ struct SettingsRootView: View {
                 store.switchAccount(newId)
                 actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
                 channel = store.config.activeAccount?.channel ?? ""
-                loginEmail = store.config.activeAccount?.email ?? ""
-                loginPassword = ""
             }
         )
     }
@@ -357,65 +340,78 @@ struct SettingsRootView: View {
         return cloudPassword.trimmingCharacters(in: .whitespaces)
     }
 
-    func passwordLogin() async {
+    func addPastedAccounts() async {
         if importing { return }
-        let email = CursorPasswordLogin.sanitizeEmail(loginEmail)
-        var password = loginPassword
-        if password.isEmpty,
-           let acc = store.config.activeAccount,
-           acc.email.caseInsensitiveCompare(email) == .orderedSame
-        {
-            password = acc.password
-        }
-        if email.isEmpty {
-            hint = "请填写 Cursor 邮箱"
-            return
-        }
-        if password.isEmpty {
-            hint = "请填写 Cursor 密码"
+        let items = CursorAccountPaste.parse(tokenText)
+        if items.isEmpty {
+            hint = "请粘贴 Token 或邮箱密码"
             return
         }
         importing = true
-        store.importStatus = "正在打开登录页…"
         defer { importing = false }
-        guard let token = await PasswordLoginController.shared.run(email: email, password: password), !token.isEmpty else {
-            store.importStatus = "未获取到 Token，请完成验证码后重试。"
-            hint = store.importStatus
-            return
+        var ok = 0
+        var fail = 0
+        var lastId: String?
+        for item in items {
+            if item.kind == "token" {
+                do {
+                    var cfg = store.config
+                    let (acc, _) = try cfg.upsertAccount(token: item.token, activate: true)
+                    store.applyConfig(cfg, refresh: true)
+                    lastId = acc.id
+                    ok += 1
+                } catch {
+                    fail += 1
+                }
+                continue
+            }
+            if item.kind == "credentials" {
+                store.importStatus = "正在打开登录页…"
+                guard let token = await PasswordLoginController.shared.run(email: item.email, password: item.password), !token.isEmpty else {
+                    fail += 1
+                    continue
+                }
+                do {
+                    let snap = try await store.client.fetchUsageSummary(sessionToken: token)
+                    var cfg = store.config
+                    let (acc, _) = try cfg.upsertAccount(
+                        token: token,
+                        membershipType: snap.membershipType,
+                        remaining: snap.remainingPercent,
+                        email: item.email,
+                        password: item.password,
+                        activate: true
+                    )
+                    store.applyConfig(cfg, refresh: true)
+                    lastId = acc.id
+                    ok += 1
+                } catch {
+                    do {
+                        var cfg = store.config
+                        let (acc, _) = try cfg.upsertAccount(
+                            token: token,
+                            email: item.email,
+                            password: item.password,
+                            activate: true
+                        )
+                        store.applyConfig(cfg, refresh: true)
+                        lastId = acc.id
+                        ok += 1
+                    } catch {
+                        fail += 1
+                    }
+                }
+                continue
+            }
+            fail += 1
         }
-        do {
-            let snap = try await store.client.fetchUsageSummary(sessionToken: token)
-            var cfg = store.config
-            _ = try cfg.upsertAccount(
-                token: token,
-                membershipType: snap.membershipType,
-                remaining: snap.remainingPercent,
-                email: email,
-                password: password,
-                activate: true
-            )
-            store.applyConfig(cfg, refresh: true)
-            loginPassword = ""
-            loginEmail = email
-            store.importStatus = String(format: "已登录并校验：剩余 %.1f%% · %@。此会话只能查用量。", snap.remainingPercent, snap.membershipType)
-            hint = "已导入"
-        } catch {
-            store.importStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
-            hint = store.importStatus
+        if let lastId {
+            store.switchAccount(lastId)
         }
-    }
-
-    func addToken() {
-        do {
-            var cfg = store.config
-            _ = try cfg.upsertAccount(token: tokenText, activate: true)
-            store.applyConfig(cfg, refresh: true)
-            hint = "已添加"
-            store.importStatus = "已写入当前账号"
-            tokenText = ""
-        } catch {
-            hint = error.localizedDescription
-        }
+        tokenText = ""
+        let summary = fail == 0 ? "已添加 \(ok) 个账号" : "成功 \(ok) / 失败 \(fail)"
+        hint = summary
+        store.importStatus = summary
     }
 
     func rename() {
@@ -482,7 +478,7 @@ struct SettingsRootView: View {
             cfg.usdCnyRate = UsageEvents.clampUsdCnyRate(rate)
         }
         cfg.alertThresholds = ConfigStore.parseThresholds(thresholdText)
-        if !tokenText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if CursorAccountPaste.isSingleToken(tokenText) {
             _ = try? cfg.upsertAccount(token: tokenText, activate: true)
         }
         store.applyConfig(cfg, refresh: true)
