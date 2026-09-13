@@ -177,7 +177,7 @@ def _snapshot_remaining(account: dict[str, Any]) -> float | None:
 
 
 def snapshot_account(account: dict[str, Any]) -> dict[str, Any]:
-    return {
+    row = {
         "id": str(account.get("id") or "").strip(),
         "label": str(account.get("label") or "").strip(),
         "token": str(account.get("token") or "").strip(),
@@ -195,6 +195,15 @@ def snapshot_account(account: dict[str, Any]) -> dict[str, Any]:
         "billing_cycle_start": str(account.get("billing_cycle_start") or account.get("billingCycleStart") or "").strip(),
         "billing_cycle_end": str(account.get("billing_cycle_end") or account.get("billingCycleEnd") or "").strip(),
     }
+    from cursor_login import sanitize_login_email
+
+    email = sanitize_login_email(account.get("email"))
+    password = str(account.get("password") or "")
+    if email:
+        row["email"] = email
+    if password:
+        row["password"] = password
+    return row
 
 
 def _has_usage_fields(row: dict[str, Any]) -> bool:
@@ -225,6 +234,14 @@ def _combine_accounts(left: dict[str, Any], right: dict[str, Any]) -> dict[str, 
     else:
         usage = right
     out = dict(ident)
+    if not out.get("email"):
+        fallback_email = left.get("email") or right.get("email") or ""
+        if fallback_email:
+            out["email"] = fallback_email
+    if not out.get("password"):
+        fallback_password = left.get("password") or right.get("password") or ""
+        if fallback_password:
+            out["password"] = fallback_password
     for key in ("last_remaining", "last_error", "usage_updated_at", "billing_cycle_start", "billing_cycle_end"):
         out[key] = usage.get(key)
     return out
@@ -444,6 +461,8 @@ def snapshot_identity(snap: dict[str, Any]) -> tuple:
         (
             a["id"],
             a["label"],
+            a.get("email") or "",
+            a.get("password") or "",
             a["token"],
             a["membership_type"],
             a.get("account_kind") or "",
@@ -525,6 +544,8 @@ def apply_snapshot_to_config(cfg: dict[str, Any], snap: dict[str, Any]) -> bool:
             a.get("id"),
             a.get("token"),
             a.get("label"),
+            a.get("email"),
+            a.get("password"),
             a.get("membership_type"),
             a.get("account_kind"),
             a.get("temp_start_at"),
@@ -581,6 +602,8 @@ def apply_snapshot_to_config(cfg: dict[str, Any], snap: dict[str, Any]) -> bool:
             a.get("id"),
             a.get("token"),
             a.get("label"),
+            a.get("email"),
+            a.get("password"),
             a.get("membership_type"),
             a.get("account_kind"),
             a.get("temp_start_at"),
@@ -608,6 +631,12 @@ def _apply_identity(account: dict[str, Any], ident: dict[str, Any]) -> None:
     account["temp_valid_hours"] = clamp_temp_valid_hours(ident.get("temp_valid_hours"))
     account["actual_cny"] = _snapshot_actual_cny(ident)
     account["channel"] = _snapshot_channel(ident)
+    incoming_email = str(ident.get("email") or "").strip().lower()
+    incoming_password = str(ident.get("password") or "")
+    if incoming_email:
+        account["email"] = incoming_email
+    if incoming_password:
+        account["password"] = incoming_password
     account["sync_updated_at"] = ident["sync_updated_at"]
     if _has_usage_fields(ident):
         account["last_remaining"] = ident.get("last_remaining")

@@ -7,6 +7,8 @@ struct SettingsRootView: View {
     @State private var extraOpen = false
     @State private var importing = false
     @State private var tokenText = ""
+    @State private var loginEmail = ""
+    @State private var loginPassword = ""
     @State private var intervalText = "10"
     @State private var planUsdText = "0"
     @State private var actualCnyText = "0"
@@ -29,9 +31,11 @@ struct SettingsRootView: View {
             syncPage.tabItem { Label("同步", systemImage: "arrow.triangle.2.circlepath") }
         }
         .padding(20)
-        .frame(width: 540, height: 600)
+        .frame(width: 540, height: 680)
         .onAppear {
             tokenText = ""
+            loginEmail = store.config.activeAccount?.email ?? ""
+            loginPassword = ""
             intervalText = String(store.config.refreshIntervalMinutes)
             let membership = store.config.activeAccount?.membershipType ?? ""
             let plan = store.config.monthlyPlanUsd > 0
@@ -57,6 +61,8 @@ struct SettingsRootView: View {
         .onChange(of: store.config.activeAccountId) { _ in
             actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
             channel = store.config.activeAccount?.channel ?? ""
+            loginEmail = store.config.activeAccount?.email ?? ""
+            loginPassword = ""
         }
     }
 
@@ -121,6 +127,19 @@ struct SettingsRootView: View {
                     .disabled(importing)
                 Button("添加此 Token") { addToken() }
             }
+            HStack {
+                Text("Cursor 邮箱")
+                TextField("name@example.com", text: $loginEmail)
+            }
+            HStack {
+                Text("Cursor 密码")
+                SecureField(store.config.activeAccount?.password.isEmpty == false ? "已保存，登录时自动填写" : "请勿分享", text: $loginPassword)
+            }
+            Button("登录获取 Token") { Task { await passwordLogin() } }
+                .disabled(importing)
+            Text("会打开官方登录页并尽量自动填写。验证码请在窗口里完成。此会话只能查用量，不能写回 Cursor。密码会加密保存并随云同步。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             DisclosureGroup("其他导入方式", isExpanded: $extraOpen) {
                 HStack {
                     Button("Safari 登录") { Task { await loginAndImport(prefer: "safari") } }
@@ -244,6 +263,8 @@ struct SettingsRootView: View {
                 store.switchAccount(newId)
                 actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
                 channel = store.config.activeAccount?.channel ?? ""
+                loginEmail = store.config.activeAccount?.email ?? ""
+                loginPassword = ""
             }
         )
     }
@@ -334,6 +355,54 @@ struct SettingsRootView: View {
             return store.config.syncSecret
         }
         return cloudPassword.trimmingCharacters(in: .whitespaces)
+    }
+
+    func passwordLogin() async {
+        if importing { return }
+        let email = CursorPasswordLogin.sanitizeEmail(loginEmail)
+        var password = loginPassword
+        if password.isEmpty,
+           let acc = store.config.activeAccount,
+           acc.email.caseInsensitiveCompare(email) == .orderedSame
+        {
+            password = acc.password
+        }
+        if email.isEmpty {
+            hint = "请填写 Cursor 邮箱"
+            return
+        }
+        if password.isEmpty {
+            hint = "请填写 Cursor 密码"
+            return
+        }
+        importing = true
+        store.importStatus = "正在打开登录页…"
+        defer { importing = false }
+        guard let token = await PasswordLoginController.shared.run(email: email, password: password), !token.isEmpty else {
+            store.importStatus = "未获取到 Token，请完成验证码后重试。"
+            hint = store.importStatus
+            return
+        }
+        do {
+            let snap = try await store.client.fetchUsageSummary(sessionToken: token)
+            var cfg = store.config
+            _ = try cfg.upsertAccount(
+                token: token,
+                membershipType: snap.membershipType,
+                remaining: snap.remainingPercent,
+                email: email,
+                password: password,
+                activate: true
+            )
+            store.applyConfig(cfg, refresh: true)
+            loginPassword = ""
+            loginEmail = email
+            store.importStatus = String(format: "已登录并校验：剩余 %.1f%% · %@。此会话只能查用量。", snap.remainingPercent, snap.membershipType)
+            hint = "已导入"
+        } catch {
+            store.importStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+            hint = store.importStatus
+        }
     }
 
     func addToken() {
@@ -634,7 +703,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         AppDelegate.ensureStatusItemVisible()
         if window == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 540, height: 600),
+                contentRect: NSRect(x: 0, y: 0, width: 540, height: 680),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false

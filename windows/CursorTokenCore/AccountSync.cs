@@ -15,6 +15,8 @@ public sealed class SyncAccount
 {
     public string Id { get; set; } = "";
     public string Label { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Password { get; set; } = "";
     public string Token { get; set; } = "";
     public string MembershipType { get; set; } = "";
     public string AccountKind { get; set; } = AccountValidity.LongTerm;
@@ -173,6 +175,8 @@ public static class AccountSync
     {
         Id = (account.Id ?? "").Trim(),
         Label = (account.Label ?? "").Trim(),
+        Email = CursorPasswordLogin.SanitizeEmail(account.Email),
+        Password = account.Password ?? "",
         Token = (account.Token ?? "").Trim(),
         MembershipType = (account.MembershipType ?? "").Trim(),
         AccountKind = AccountValidity.SanitizeKind(account.AccountKind),
@@ -193,6 +197,8 @@ public static class AccountSync
     {
         Id = (account.Id ?? "").Trim(),
         Label = (account.Label ?? "").Trim(),
+        Email = CursorPasswordLogin.SanitizeEmail(account.Email),
+        Password = account.Password ?? "",
         Token = (account.Token ?? "").Trim(),
         MembershipType = (account.MembershipType ?? "").Trim(),
         AccountKind = AccountValidity.SanitizeKind(account.AccountKind),
@@ -226,6 +232,11 @@ public static class AccountSync
         else if (usageCmp < 0) usage = right;
         else usage = left.LastRemaining is not null || right.LastRemaining is null ? left : right;
         var merged = SnapshotAccount(ident);
+        if (string.IsNullOrEmpty(merged.Email))
+            merged.Email = CursorPasswordLogin.SanitizeEmail(
+                string.IsNullOrEmpty(left.Email) ? right.Email : left.Email);
+        if (string.IsNullOrEmpty(merged.Password))
+            merged.Password = string.IsNullOrEmpty(left.Password) ? right.Password : left.Password;
         merged.LastRemaining = usage.LastRemaining;
         merged.LastError = usage.LastError;
         merged.UsageUpdatedAt = usage.UsageUpdatedAt;
@@ -390,7 +401,7 @@ public static class AccountSync
     public static string SnapshotIdentity(SyncSnapshot snap)
     {
         var accounts = snap.Accounts.OrderBy(a => a.Id, StringComparer.Ordinal)
-            .Select(a => $"{a.Id}\n{a.Label}\n{a.Token}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.LastError}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}");
+            .Select(a => $"{a.Id}\n{a.Label}\n{a.Email}\n{a.Password}\n{a.Token}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.LastError}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}");
         var deleted = snap.Deleted.OrderBy(d => d.Id, StringComparer.Ordinal)
             .Select(d => $"{d.Id}\n{d.DeletedAt}");
         return $"{snap.ActiveAccountId}\n{string.Join("|", accounts)}\n{string.Join("|", deleted)}\n{SettingsIdentity(snap.Settings)}\n{UsageIdentity(snap.Usage)}";
@@ -448,7 +459,7 @@ public static class AccountSync
     public static bool ApplySnapshotToConfig(AppConfig cfg, SyncSnapshot snap)
     {
         string Before() => string.Join("|", cfg.Accounts.Select(a =>
-            $"{a.Id}\n{a.Token}\n{a.Label}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}"));
+            $"{a.Id}\n{a.Token}\n{a.Label}\n{a.Email}\n{a.Password}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}"));
         var before = Before();
         var beforeSettings = SettingsIdentity(SnapshotSettings(cfg));
         var existing = cfg.Accounts.ToDictionary(a => a.Id, StringComparer.Ordinal);
@@ -464,6 +475,8 @@ public static class AccountSync
                     Id = ident.Id,
                     Token = ident.Token,
                     Label = ident.Label,
+                    Email = ident.Email,
+                    Password = ident.Password,
                     MembershipType = ident.MembershipType,
                     AccountKind = ident.AccountKind,
                     TempStartAt = ident.TempStartAt,
@@ -479,6 +492,8 @@ public static class AccountSync
             }
             old.Token = ident.Token;
             old.Label = ident.Label;
+            if (ident.Email.Length > 0) old.Email = ident.Email;
+            if (ident.Password.Length > 0) old.Password = ident.Password;
             if (ident.MembershipType.Length > 0) old.MembershipType = ident.MembershipType;
             old.AccountKind = ident.AccountKind;
             old.TempStartAt = ident.TempStartAt;
@@ -545,6 +560,10 @@ public static class AccountSync
                 extra += $",\"actual_cny\":{CanonicalNumber(a.ActualCny)}";
             if (!string.IsNullOrEmpty(a.Channel))
                 extra += $",\"channel\":{Q(a.Channel)}";
+            if (!string.IsNullOrEmpty(a.Email))
+                extra += $",\"email\":{Q(a.Email)}";
+            if (!string.IsNullOrEmpty(a.Password))
+                extra += $",\"password\":{Q(a.Password)}";
             if (a.LastRemaining is { } remaining)
                 extra += $",\"last_remaining\":{CanonicalNumber(remaining)}";
             if (!string.IsNullOrEmpty(a.LastError))
@@ -678,6 +697,8 @@ public static class AccountSync
                 {
                     Id = Str(item, "id").Trim(),
                     Label = Str(item, "label").Trim(),
+                    Email = CursorPasswordLogin.SanitizeEmail(Str(item, "email")),
+                    Password = Str(item, "password"),
                     Token = Str(item, "token").Trim(),
                     MembershipType = Str(item, "membership_type").Trim(),
                     AccountKind = AccountValidity.SanitizeKind(Str(item, "account_kind")),

@@ -67,6 +67,45 @@ class AccountStateTests(unittest.TestCase):
         self.assertEqual(active_account(cfg)["id"], "user_01OLD")
         self.assertEqual(display_label(accounts[0]), "user_01OLD")
 
+    def test_email_becomes_default_label_and_is_kept(self) -> None:
+        from accounts import upsert_account
+
+        cfg: dict = {"accounts": [], "active_account_id": "", "session_token": ""}
+        acc, created = upsert_account(
+            cfg,
+            _token_for("user_01MAIL"),
+            email="Name@Example.COM",
+            password="s3cret",
+            activate=True,
+        )
+        self.assertTrue(created)
+        self.assertEqual(acc["email"], "name@example.com")
+        self.assertEqual(acc["label"], "name@example.com")
+        self.assertEqual(acc["password"], "s3cret")
+        again, created = upsert_account(
+            cfg,
+            _token_for("user_01MAIL"),
+            email="name@example.com",
+            password="new-pass",
+            activate=True,
+        )
+        self.assertFalse(created)
+        self.assertEqual(again["label"], "name@example.com")
+        self.assertEqual(again["password"], "new-pass")
+        from accounts import rename_account
+
+        rename_account(cfg, acc["id"], "工作号")
+        renamed, created = upsert_account(
+            cfg,
+            _token_for("user_01MAIL"),
+            email="name@example.com",
+            password="new-pass",
+            activate=True,
+        )
+        self.assertFalse(created)
+        self.assertEqual(renamed["label"], "工作号")
+        self.assertEqual(renamed["email"], "name@example.com")
+
     def test_second_account_has_independent_alerts(self) -> None:
         from accounts import list_accounts, upsert_account
 
@@ -196,7 +235,14 @@ class AccountStateTests(unittest.TestCase):
             config.CONFIG_PATH = Path(tmp) / "config.json"
             try:
                 cfg = dict(config.DEFAULT_CONFIG)
-                upsert_account(cfg, _token_for("user_01SAVE"), label="工作", activate=True)
+                upsert_account(
+                    cfg,
+                    _token_for("user_01SAVE"),
+                    label="工作",
+                    email="Name@Example.COM",
+                    password="s3cret",
+                    activate=True,
+                )
                 upsert_account(cfg, _token_for("user_01COST"), label="企业", activate=False)
                 from accounts import set_account_actual_cny
 
@@ -208,6 +254,8 @@ class AccountStateTests(unittest.TestCase):
                 self.assertEqual(len(accounts), 2)
                 by_id = {row["id"]: row for row in accounts}
                 self.assertEqual(by_id["user_01SAVE"]["label"], "工作")
+                self.assertEqual(by_id["user_01SAVE"]["email"], "name@example.com")
+                self.assertEqual(by_id["user_01SAVE"]["password"], "s3cret")
                 self.assertEqual(by_id["user_01SAVE"]["actual_cny"], 79)
                 self.assertEqual(by_id["user_01COST"]["actual_cny"], 128)
                 self.assertEqual(loaded["active_account_id"], "user_01SAVE")
