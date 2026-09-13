@@ -30,8 +30,8 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 
 ## 环境
 
-- Windows 10/11 或 **macOS 13+**
-- 发布包为原生程序：Windows 是 .NET 8 单文件 exe，macOS 是 Swift 菜单栏 `.app`
+- Windows 10/11（需安装 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe) x64）或 **macOS 13+**
+- 发布包为原生程序：Windows 是 .NET 8 框架依赖单文件 exe，macOS 是 Swift 菜单栏 `.app`
 - 配置兼容旧版工具：仍读写同一份 `config.json`
 
 仓库里的 Python 只保留解析对照（`cursor_api` / `usage_report` 等与 `fixtures/`），桌面壳已移除。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
@@ -81,14 +81,15 @@ swift test --package-path macos
 
 ### Windows
 
-1. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
-2. 解压运行 `CursorTokenTray.exe`
-3. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
+1. 本机先安装一次 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。已装过可跳过
+2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
+3. 解压运行 `CursorTokenTray.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
+4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
 
 本地发布：
 
 ```powershell
-dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
+dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
 ```
 
 ### macOS
@@ -114,7 +115,7 @@ open /Applications/CursorTokenTray.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorTokenTray-windows.zip`（.NET 8 单文件 exe）
+3. 在 `windows-latest` 打出 `CursorTokenTray-windows.zip`（.NET 8 框架依赖 exe，需本机 Desktop Runtime）
 4. 在 `macos-latest` 打出 `CursorTokenTray-macos.zip`（Swift `.app`）
 
 合入 `main` 后可在两处下载程序包：

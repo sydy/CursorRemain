@@ -26,7 +26,7 @@ jobs:
     - name: Install test deps
       run: python -m pip install -r requirements.txt -r server/requirements.txt
     - name: Run Python fixture tests
-      run: python -m unittest tests.test_fixtures tests.test_cursor_api tests.test_accounts tests.test_account_sync tests.test_cloud_sync -v
+      run: python -m unittest tests.test_fixtures tests.test_cursor_api tests.test_accounts tests.test_account_sync tests.test_cloud_sync tests.test_windows_packaging -v
     - name: Run sync server tests
       working-directory: server
       run: PYTHONPATH=. python -m unittest tests.test_api -v
@@ -82,20 +82,30 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Publish single-file exe
+      - name: Publish framework-dependent exe
+        shell: pwsh
         run: |
-          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win-files
+          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win-files
           echo "---- largest published files ----"
-          pwsh -NoProfile -Command "Get-ChildItem dist-win-files -File | Sort-Object Length -Descending | Select-Object -First 15 | ForEach-Object { '{0,8:N2} MB  {1}' -f ($_.Length/1MB), $_.Name }"
-          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win
+          Get-ChildItem dist-win-files -File | Sort-Object Length -Descending | Select-Object -First 15 | ForEach-Object { '{0,8:N2} MB  {1}' -f ($_.Length/1MB), $_.Name }
+          $runtime = Get-ChildItem dist-win-files -File | Where-Object { $_.Name -match '^(coreclr|hostfxr|hostpolicy|System\.Private\.CoreLib)\.' }
+          if ($runtime) {
+            throw ("self-contained runtime leaked into publish: " + ($runtime.Name -join ', '))
+          }
+          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win
       - name: Report exe size
         shell: pwsh
         run: |
           Get-ChildItem dist-win | ForEach-Object { '{0} {1:N2} MB' -f $_.Name, ($_.Length / 1MB) }
+          $exe = Get-Item dist-win\CursorTokenTray.exe
+          if ($exe.Length -gt 15MB) {
+            throw ("framework-dependent exe is unexpectedly large: {0:N2} MB" -f ($exe.Length/1MB))
+          }
       - name: Zip onefile
         shell: pwsh
         run: |
-          Compress-Archive -Path dist-win\CursorTokenTray.exe -DestinationPath CursorTokenTray-windows.zip -Force
+          Copy-Item -Force windows\packaging\首次运行.txt dist-win\首次运行.txt
+          Compress-Archive -Path dist-win\CursorTokenTray.exe, dist-win\首次运行.txt -DestinationPath CursorTokenTray-windows.zip -Force
           '{0} {1:N2} MB' -f 'CursorTokenTray-windows.zip', ((Get-Item CursorTokenTray-windows.zip).Length / 1MB)
       - uses: actions/upload-artifact@v6
         if: github.event_name != 'pull_request'
@@ -119,7 +129,7 @@ jobs:
           files: CursorTokenTray-windows.zip
           body: |
             最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 为 .NET 8 单文件 exe，macOS 为 Swift `.app`。
+            Windows 为 .NET 8 框架依赖 exe（需本机已装 Desktop Runtime），macOS 为 Swift `.app`。
             从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorTokenTray.app`。
             正式版请打 `v*` 标签。
       - name: Refresh latest release notes and tag
@@ -172,7 +182,7 @@ jobs:
           files: CursorTokenTray-macos.zip
           body: |
             最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 为 .NET 8 单文件 exe，macOS 为 Swift `.app`。
+            Windows 为 .NET 8 框架依赖 exe（需本机已装 Desktop Runtime），macOS 为 Swift `.app`。
             从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorTokenTray.app`。
             正式版请打 `v*` 标签。
       - name: Refresh latest release notes and tag
