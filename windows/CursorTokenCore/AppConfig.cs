@@ -35,6 +35,8 @@ public sealed class Account
     public string Channel { get; set; } = "";
     public string BillingCycleStart { get; set; } = "";
     public string BillingCycleEnd { get; set; } = "";
+    public string ReportStartDate { get; set; } = "";
+    public string ReportEndDate { get; set; } = "";
 
     public string DisplayLabel
     {
@@ -139,6 +141,15 @@ public sealed class AppConfig
             AccountSync.TouchAccount(acc);
         }
         else acc.Channel = sanitized;
+        return true;
+    }
+
+    public bool SetReportRange(string id, string start, string end)
+    {
+        var acc = Accounts.FirstOrDefault(a => a.Id == id);
+        if (acc is null) return false;
+        acc.ReportStartDate = UsageEvents.SanitizeReportDate(start);
+        acc.ReportEndDate = UsageEvents.SanitizeReportDate(end);
         return true;
     }
 
@@ -693,6 +704,12 @@ public static class ConfigStore
         var cycleEnd = Str(raw, "billing_cycle_end");
         if (cycleEnd.Length == 0) cycleEnd = Str(raw, "billingCycleEnd");
         acc.BillingCycleEnd = cycleEnd.Trim();
+        var reportStart = Str(raw, "report_start_date");
+        if (reportStart.Length == 0) reportStart = Str(raw, "reportStartDate");
+        acc.ReportStartDate = UsageEvents.SanitizeReportDate(reportStart);
+        var reportEnd = Str(raw, "report_end_date");
+        if (reportEnd.Length == 0) reportEnd = Str(raw, "reportEndDate");
+        acc.ReportEndDate = UsageEvents.SanitizeReportDate(reportEnd);
         return acc;
     }
 
@@ -763,6 +780,8 @@ public static class ConfigStore
             ["channel"] = a.Channel,
             ["billing_cycle_start"] = a.BillingCycleStart,
             ["billing_cycle_end"] = a.BillingCycleEnd,
+            ["report_start_date"] = a.ReportStartDate,
+            ["report_end_date"] = a.ReportEndDate,
         }).ToList(),
         active_account_id = cfg.ActiveAccountId,
         refresh_interval_minutes = cfg.RefreshIntervalMinutes,

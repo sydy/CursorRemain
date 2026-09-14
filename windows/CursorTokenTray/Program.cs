@@ -505,7 +505,12 @@ sealed class TrayContext : ApplicationContext
                         _config.ActiveAccountId,
                         usage,
                         usage?.IsTeamAccount == true,
-                        _config.SpendSettings(usage?.MembershipType));
+                        _config.SpendSettings(usage?.MembershipType),
+                        _config.ActiveAccount?.ReportStartDate ?? "",
+                        _config.ActiveAccount?.ReportEndDate ?? "");
+                }, (id, start, end) =>
+                {
+                    _config = ConfigStore.Update(live => live.SetReportRange(id, start, end));
                 });
                 _report.FormClosed += (_, _) => _report = null;
                 _report.Show();

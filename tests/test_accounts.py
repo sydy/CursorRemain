@@ -176,6 +176,30 @@ class AccountStateTests(unittest.TestCase):
         self.assertEqual(a["billing_cycle_end"], "2026-10-01T00:00:00.000Z")
         self.assertEqual(b.get("billing_cycle_start"), "")
 
+    def test_report_range_is_per_account(self) -> None:
+        from accounts import sanitize_account, set_account_report_range, upsert_account
+        from usage_report import sanitize_report_date
+
+        self.assertEqual(sanitize_report_date("2026-09-08"), "2026-09-08")
+        self.assertEqual(sanitize_report_date("2026/09/08"), "")
+        self.assertEqual(sanitize_report_date(""), "")
+
+        cfg: dict = {"accounts": [], "active_account_id": "", "session_token": ""}
+        a, _ = upsert_account(cfg, _token_for("user_01A"), activate=True)
+        b, _ = upsert_account(cfg, _token_for("user_01B"), activate=False)
+        self.assertTrue(set_account_report_range(cfg, a["id"], "2026-09-08", "2026-09-14"))
+        self.assertTrue(set_account_report_range(cfg, b["id"], "", "2026-09-10"))
+        self.assertEqual(a["report_start_date"], "2026-09-08")
+        self.assertEqual(a["report_end_date"], "2026-09-14")
+        self.assertEqual(b["report_start_date"], "")
+        self.assertEqual(b["report_end_date"], "2026-09-10")
+        parsed = sanitize_account(
+            {**a, "report_start_date": "nope", "report_end_date": "2026-09-01"}
+        )
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["report_start_date"], "")
+        self.assertEqual(parsed["report_end_date"], "2026-09-01")
+
     def test_actual_cny_is_per_account(self) -> None:
         from accounts import (
             normalize_account_state,

@@ -45,6 +45,8 @@ public sealed class UsageReportFilter
     public string Model { get; set; } = "";
     public bool? Headless { get; set; }
     public string OwningUser { get; set; } = "";
+    public string StartDate { get; set; } = "";
+    public string EndDate { get; set; } = "";
 }
 
 public sealed class UsageReport
@@ -589,6 +591,30 @@ public static class UsageEvents
         return dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 
+    public static string SanitizeReportDate(string? raw)
+    {
+        var text = (raw ?? "").Trim();
+        if (text.Length == 0) return "";
+        return DateTime.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt)
+            ? dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : "";
+    }
+
+    public static long? ReportDateStartMs(string? raw)
+    {
+        var date = SanitizeReportDate(raw);
+        if (date.Length == 0) return null;
+        var parts = date.Split('-');
+        var beijing = new DateTimeOffset(int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[1], CultureInfo.InvariantCulture), int.Parse(parts[2], CultureInfo.InvariantCulture), 0, 0, 0, DisplayOffset);
+        return beijing.ToUnixTimeMilliseconds();
+    }
+
+    public static long? ReportDateEndMs(string? raw)
+    {
+        var start = ReportDateStartMs(raw);
+        return start is null ? null : start.Value + MsDay;
+    }
+
     public static string EventHour(long timestampMs)
     {
         var dt = DateTimeOffset.FromUnixTimeMilliseconds(FloorHourMs(timestampMs)).ToOffset(DisplayOffset);
@@ -805,6 +831,8 @@ public static class UsageEvents
         var category = (filter.Category ?? "").Trim().ToLowerInvariant();
         var model = (filter.Model ?? "").Trim();
         var owning = (filter.OwningUser ?? "").Trim();
+        var startMs = ReportDateStartMs(filter.StartDate);
+        var endMs = ReportDateEndMs(filter.EndDate);
         var source = events as IList<UsageEvent> ?? events.ToList();
         var (cnyById, planCny, onDemandCny, monthly, rate, actual, usesActual) = CnyById(source, spend);
         var selected = new List<UsageEvent>();
@@ -816,6 +844,8 @@ public static class UsageEvents
             if (model.Length > 0 && ev.Model != model) continue;
             if (filter.Headless is { } h && ev.IsHeadless != h) continue;
             if (owning.Length > 0 && ev.OwningUser != owning) continue;
+            if (startMs is { } s && ev.TimestampMs < s) continue;
+            if (endMs is { } e && ev.TimestampMs >= e) continue;
             var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
             ev.AllocatedCny = cnyById.TryGetValue(key, out var cny) ? cny : 0;
             selected.Add(ev);

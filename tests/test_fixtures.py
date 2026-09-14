@@ -164,6 +164,8 @@ class GoldenFixtureTests(unittest.TestCase):
                     model=filt["model"],
                     headless=filt["headless"],
                     owning_user=filt.get("owning_user", ""),
+                    start_date=filt.get("start_date", ""),
+                    end_date=filt.get("end_date", ""),
                 ),
             )
             exp = cse["expected"]
@@ -205,6 +207,8 @@ class GoldenFixtureTests(unittest.TestCase):
                     model=filt["model"],
                     headless=filt["headless"],
                     owning_user=filt.get("owning_user", ""),
+                    start_date=filt.get("start_date", ""),
+                    end_date=filt.get("end_date", ""),
                 ),
                 CnySpendSettings(
                     monthly_plan_usd=spend_raw["monthly_plan_usd"],

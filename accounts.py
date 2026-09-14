@@ -43,6 +43,8 @@ ACCOUNT_KEYS = (
     "channel",
     "billing_cycle_start",
     "billing_cycle_end",
+    "report_start_date",
+    "report_end_date",
 )
 
 
@@ -135,6 +137,8 @@ def empty_account(*, token: str = "", account_id: str = "", label: str = "") -> 
         "channel": "",
         "billing_cycle_start": "",
         "billing_cycle_end": "",
+        "report_start_date": "",
+        "report_end_date": "",
     }
 
 
@@ -187,6 +191,10 @@ def sanitize_account(raw: Any) -> dict[str, Any] | None:
     acc["channel"] = sanitize_account_channel(raw.get("channel"))
     acc["billing_cycle_start"] = str(raw.get("billing_cycle_start") or raw.get("billingCycleStart") or "").strip()
     acc["billing_cycle_end"] = str(raw.get("billing_cycle_end") or raw.get("billingCycleEnd") or "").strip()
+    from usage_report import sanitize_report_date
+
+    acc["report_start_date"] = sanitize_report_date(raw.get("report_start_date") or raw.get("reportStartDate"))
+    acc["report_end_date"] = sanitize_report_date(raw.get("report_end_date") or raw.get("reportEndDate"))
     return acc
 
 
@@ -363,6 +371,17 @@ def set_account_channel(cfg: dict[str, Any], account_id: str, channel: str) -> b
         touch_account(acc)
     else:
         acc["channel"] = new
+    return True
+
+
+def set_account_report_range(cfg: dict[str, Any], account_id: str, start_date: str = "", end_date: str = "") -> bool:
+    acc = find_account(cfg, account_id)
+    if acc is None:
+        return False
+    from usage_report import sanitize_report_date
+
+    acc["report_start_date"] = sanitize_report_date(start_date)
+    acc["report_end_date"] = sanitize_report_date(end_date)
     return True
 
 

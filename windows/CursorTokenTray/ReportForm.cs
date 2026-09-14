@@ -5,7 +5,7 @@ namespace CursorTokenTray;
 
 sealed class ReportForm : Form
 {
-    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend);
+    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "");
 
     const int DesignWidth = 1100;
     const int DesignHeight = 880;
@@ -17,11 +17,26 @@ sealed class ReportForm : Form
 
     readonly CursorClient _client;
     readonly Func<ReportState> _state;
+    readonly Action<string, string, string>? _persistDates;
     readonly ComboBox _scope = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox _kind = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox _category = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox _model = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     readonly ComboBox _cloud = new() { DropDownStyle = ComboBoxStyle.DropDownList };
+    readonly DateTimePicker _startDate = new()
+    {
+        Format = DateTimePickerFormat.Custom,
+        CustomFormat = "yyyy-MM-dd",
+        ShowCheckBox = true,
+        Checked = false,
+    };
+    readonly DateTimePicker _endDate = new()
+    {
+        Format = DateTimePickerFormat.Custom,
+        CustomFormat = "yyyy-MM-dd",
+        ShowCheckBox = true,
+        Checked = false,
+    };
     readonly Label _status = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 8, 0, 0) };
     readonly Label _kpi = new() { AutoSize = true, Margin = new Padding(0, 8, 0, 8) };
     readonly UsageChartPanel _chart = new();
@@ -43,11 +58,14 @@ sealed class ReportForm : Form
     bool _syncing;
     bool _teamScope;
     bool _ready;
+    bool _loadingDates;
+    string _loadedAccountId = "";
 
-    public ReportForm(CursorClient client, Func<ReportState> state)
+    public ReportForm(CursorClient client, Func<ReportState> state, Action<string, string, string>? persistDates = null)
     {
         _client = client;
         _state = state;
+        _persistDates = persistDates;
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -99,6 +117,8 @@ sealed class ReportForm : Form
         filters.Controls.Add(Tag("额度", _category));
         filters.Controls.Add(Tag("模型", _model));
         filters.Controls.Add(Tag("来源", _cloud));
+        filters.Controls.Add(Tag("开始日期", _startDate));
+        filters.Controls.Add(Tag("结束日期", _endDate));
         filters.Controls.Add(_syncBtn);
         filters.Controls.Add(_exportBtn);
         filters.Controls.Add(_status);
@@ -135,6 +155,8 @@ sealed class ReportForm : Form
         _category.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
         _model.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
         _cloud.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
+        _startDate.ValueChanged += (_, _) => OnDateChanged();
+        _endDate.ValueChanged += (_, _) => OnDateChanged();
         _syncBtn.Click += (_, _) => _ = SyncAsync(true);
         _exportBtn.Click += (_, _) => ExportCsv();
         Shown += (_, _) => _ = SyncAsync(false);
@@ -167,6 +189,8 @@ sealed class ReportForm : Form
         _category.Width = UiLayout.ScalePx(140, dpi);
         _model.Width = UiLayout.ScalePx(280, dpi);
         _cloud.Width = UiLayout.ScalePx(140, dpi);
+        _startDate.Width = UiLayout.ScalePx(130, dpi);
+        _endDate.Width = UiLayout.ScalePx(130, dpi);
         _model.DropDownWidth = Math.Max(_model.Width, UiLayout.ScalePx(360, dpi));
 
         if (_root.RowStyles.Count > 3)
@@ -258,6 +282,7 @@ sealed class ReportForm : Form
         _ready = true;
         _syncBtn.Enabled = false;
         var st = _state();
+        LoadSavedDates(st);
         UpdateScopeVisible(st.IsTeam);
         if (string.IsNullOrWhiteSpace(st.Token))
         {
@@ -314,7 +339,53 @@ sealed class ReportForm : Form
         };
         var model = _model.SelectedIndex > 0 ? _model.SelectedItem?.ToString() ?? "" : "";
         bool? cloud = _cloud.SelectedIndex switch { 1 => false, 2 => true, _ => null };
-        return new UsageReportFilter { Kind = kind, Category = category, Model = model, Headless = cloud };
+        return new UsageReportFilter
+        {
+            Kind = kind,
+            Category = category,
+            Model = model,
+            Headless = cloud,
+            StartDate = _startDate.Checked ? _startDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "",
+            EndDate = _endDate.Checked ? _endDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "",
+        };
+    }
+
+    void LoadSavedDates(ReportState st)
+    {
+        if (st.AccountId == _loadedAccountId) return;
+        _loadingDates = true;
+        ApplyDatePicker(_startDate, st.ReportStartDate);
+        ApplyDatePicker(_endDate, st.ReportEndDate);
+        _loadedAccountId = st.AccountId;
+        _loadingDates = false;
+    }
+
+    static void ApplyDatePicker(DateTimePicker picker, string raw)
+    {
+        var date = UsageEvents.SanitizeReportDate(raw);
+        if (date.Length == 0)
+        {
+            picker.Checked = false;
+            return;
+        }
+        if (DateTime.TryParseExact(date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
+        {
+            if (dt < picker.MinDate) dt = picker.MinDate;
+            if (dt > picker.MaxDate) dt = picker.MaxDate;
+            picker.Value = dt;
+            picker.Checked = true;
+        }
+        else picker.Checked = false;
+    }
+
+    void OnDateChanged()
+    {
+        if (_loadingDates || !_ready) return;
+        var st = _state();
+        var start = _startDate.Checked ? _startDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+        var end = _endDate.Checked ? _endDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+        _persistDates?.Invoke(st.AccountId, start, end);
+        Render();
     }
 
     void FillModels()

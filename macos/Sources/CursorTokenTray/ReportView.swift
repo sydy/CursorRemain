@@ -17,9 +17,20 @@ final class ReportStore: ObservableObject {
     @Published var syncing = false
     @Published var events: [UsageEvent] = []
     @Published var modelNames: [String] = []
+    @Published var startEnabled = false
+    @Published var endEnabled = false
+    @Published var startDate = Date()
+    @Published var endDate = Date()
 
     init(app: AppStore) {
         self.app = app
+        let acc = app.config.activeAccount
+        let start = UsageEvents.sanitizeReportDate(acc?.reportStartDate)
+        let end = UsageEvents.sanitizeReportDate(acc?.reportEndDate)
+        startEnabled = !start.isEmpty
+        endEnabled = !end.isEmpty
+        if let value = UsageEvents.reportDateValue(start) { startDate = value }
+        if let value = UsageEvents.reportDateValue(end) { endDate = value }
     }
 
     var isTeam: Bool { app.usage?.isTeamAccount == true }
@@ -30,7 +41,19 @@ final class ReportStore: ObservableObject {
             category: category,
             model: model,
             headless: cloud == "local" ? false : cloud == "cloud" ? true : nil,
-            owningUser: ""
+            owningUser: "",
+            startDate: startEnabled ? UsageEvents.reportDateString(from: startDate) : "",
+            endDate: endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
+        )
+    }
+
+    func persistDates() {
+        let accountId = app.config.activeAccountId
+        guard !accountId.isEmpty else { return }
+        app.persistReportRange(
+            accountId: accountId,
+            start: startEnabled ? UsageEvents.reportDateString(from: startDate) : "",
+            end: endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
         )
     }
 
@@ -162,9 +185,20 @@ struct ReportRootView: View {
         .onChange(of: store.teamScope) { _ in
             Task { await store.sync() }
         }
+        .onChange(of: store.startEnabled) { _ in store.persistDates() }
+        .onChange(of: store.endEnabled) { _ in store.persistDates() }
+        .onChange(of: store.startDate) { _ in store.persistDates() }
+        .onChange(of: store.endDate) { _ in store.persistDates() }
     }
 
     var filters: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            filterPickers
+            dateFilters
+        }
+    }
+
+    var filterPickers: some View {
         HStack(spacing: 10) {
             if store.isTeam {
                 Picker("范围", selection: $store.teamScope) {
@@ -204,6 +238,22 @@ struct ReportRootView: View {
                 .disabled(store.syncing)
             Button("导出 CSV") { store.exportCSV() }
                 .disabled(store.report.events.isEmpty)
+            Spacer()
+        }
+    }
+
+    var dateFilters: some View {
+        HStack(spacing: 10) {
+            Toggle("开始日期", isOn: $store.startEnabled)
+            DatePicker("", selection: $store.startDate, displayedComponents: .date)
+                .labelsHidden()
+                .disabled(!store.startEnabled)
+                .environment(\.timeZone, TimeZone(secondsFromGMT: 8 * 3600)!)
+            Toggle("结束日期", isOn: $store.endEnabled)
+            DatePicker("", selection: $store.endDate, displayedComponents: .date)
+                .labelsHidden()
+                .disabled(!store.endEnabled)
+                .environment(\.timeZone, TimeZone(secondsFromGMT: 8 * 3600)!)
             Spacer()
         }
     }

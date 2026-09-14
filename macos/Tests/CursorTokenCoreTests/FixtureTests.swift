@@ -229,7 +229,9 @@ final class UsageParserFixtureTests: XCTestCase {
                 category: str(filt["category"]),
                 model: str(filt["model"]),
                 headless: filt["headless"] is NSNull ? nil : (filt["headless"] as? Bool),
-                owningUser: str(filt["owning_user"])
+                owningUser: str(filt["owning_user"]),
+                startDate: str(filt["start_date"]),
+                endDate: str(filt["end_date"])
             ))
             let exp = cse["expected"] as! [String: Any]
             XCTAssertEqual(report.eventCount, int(exp["event_count"]) ?? -1)
@@ -281,7 +283,9 @@ final class UsageParserFixtureTests: XCTestCase {
                     category: str(filt["category"]),
                     model: str(filt["model"]),
                     headless: filt["headless"] is NSNull ? nil : (filt["headless"] as? Bool),
-                    owningUser: str(filt["owning_user"])
+                    owningUser: str(filt["owning_user"]),
+                    startDate: str(filt["start_date"]),
+                    endDate: str(filt["end_date"])
                 ),
                 spend: CnySpendSettings(
                     monthlyPlanUsd: num(spendRaw["monthly_plan_usd"]) ?? 0,
@@ -557,6 +561,7 @@ final class UsageParserFixtureTests: XCTestCase {
         _ = try cfg.upsertAccount(token: token, label: "工作", email: "Name@Example.COM", password: "s3cret", activate: true)
         XCTAssertTrue(cfg.setActualCny("user_01SAVE", 79))
         XCTAssertTrue(cfg.setChannel("user_01SAVE", "自费"))
+        XCTAssertTrue(cfg.setReportRange("user_01SAVE", start: "2026-09-08", end: "2026-09-14"))
         ConfigStore.save(cfg, to: dir)
         let loaded = ConfigStore.load(from: dir)
         XCTAssertEqual(loaded.accounts.count, 1)
@@ -565,6 +570,8 @@ final class UsageParserFixtureTests: XCTestCase {
         XCTAssertEqual(loaded.accounts[0].password, "s3cret")
         XCTAssertEqual(loaded.accounts[0].actualCny, 79, accuracy: 0.001)
         XCTAssertEqual(loaded.accounts[0].channel, "self_pay")
+        XCTAssertEqual(loaded.accounts[0].reportStartDate, "2026-09-08")
+        XCTAssertEqual(loaded.accounts[0].reportEndDate, "2026-09-14")
         XCTAssertEqual(loaded.actualCny, 79, accuracy: 0.001)
         XCTAssertEqual(loaded.activeAccountId, "user_01SAVE")
         XCTAssertEqual(loaded.spendSettings().actualCny, 79, accuracy: 0.001)

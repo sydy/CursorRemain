@@ -181,6 +181,8 @@ class UsageReportFilter:
     model: str = ""
     headless: bool | None = None
     owning_user: str = ""
+    start_date: str = ""
+    end_date: str = ""
 
 
 @dataclass(frozen=True)
@@ -774,6 +776,31 @@ def event_date(timestamp_ms: int) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
+def sanitize_report_date(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return ""
+
+
+def report_date_start_ms(raw: Any) -> int | None:
+    date = sanitize_report_date(raw)
+    if not date:
+        return None
+    dt = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=DISPLAY_TZ)
+    return int(dt.timestamp() * 1000)
+
+
+def report_date_end_ms(raw: Any) -> int | None:
+    start = report_date_start_ms(raw)
+    if start is None:
+        return None
+    return start + _MS_DAY
+
+
 def event_hour(timestamp_ms: int) -> str:
     dt = datetime.fromtimestamp(_floor_hour_ms(timestamp_ms) / 1000.0, tz=DISPLAY_TZ)
     return dt.strftime("%Y-%m-%d %H:00")
@@ -1036,6 +1063,8 @@ def build_usage_report(
     category = (filt.category or "").strip().lower()
     model = (filt.model or "").strip()
     owning = (filt.owning_user or "").strip()
+    start_ms = report_date_start_ms(filt.start_date)
+    end_ms = report_date_end_ms(filt.end_date)
     source = list(events)
     cny_by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual = _cny_by_id(source, spend)
     selected: list[UsageEvent] = []
@@ -1049,6 +1078,10 @@ def build_usage_report(
         if filt.headless is not None and event.is_headless != filt.headless:
             continue
         if owning and event.owning_user != owning:
+            continue
+        if start_ms is not None and event.timestamp_ms < start_ms:
+            continue
+        if end_ms is not None and event.timestamp_ms >= end_ms:
             continue
         key = event.id or f"#{i}"
         selected.append(replace(event, allocated_cny=cny_by_id.get(key, 0.0)))

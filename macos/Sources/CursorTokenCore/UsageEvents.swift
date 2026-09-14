@@ -119,13 +119,17 @@ public struct UsageReportFilter: Equatable, Sendable {
     public var model: String
     public var headless: Bool?
     public var owningUser: String
+    public var startDate: String
+    public var endDate: String
 
-    public init(kind: String = "", category: String = "", model: String = "", headless: Bool? = nil, owningUser: String = "") {
+    public init(kind: String = "", category: String = "", model: String = "", headless: Bool? = nil, owningUser: String = "", startDate: String = "", endDate: String = "") {
         self.kind = kind
         self.category = category
         self.model = model
         self.headless = headless
         self.owningUser = owningUser
+        self.startDate = startDate
+        self.endDate = endDate
     }
 }
 
@@ -751,6 +755,53 @@ public enum UsageEvents {
         return f.string(from: dt)
     }
 
+    public static func sanitizeReportDate(_ raw: Any?) -> String {
+        let text = (raw as? String ?? "").trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = displayTimeZone
+        f.dateFormat = "yyyy-MM-dd"
+        f.isLenient = false
+        return f.date(from: text) == nil ? "" : text
+    }
+
+    public static func reportDateStartMs(_ raw: Any?) -> Int64? {
+        let date = sanitizeReportDate(raw)
+        guard !date.isEmpty else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = displayTimeZone
+        f.dateFormat = "yyyy-MM-dd"
+        f.isLenient = false
+        guard let parsed = f.date(from: date) else { return nil }
+        return Int64((parsed.timeIntervalSince1970 * 1000.0).rounded())
+    }
+
+    public static func reportDateEndMs(_ raw: Any?) -> Int64? {
+        guard let start = reportDateStartMs(raw) else { return nil }
+        return start + msDay
+    }
+
+    public static func reportDateValue(_ raw: Any?) -> Date? {
+        let date = sanitizeReportDate(raw)
+        guard !date.isEmpty else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = displayTimeZone
+        f.dateFormat = "yyyy-MM-dd"
+        f.isLenient = false
+        return f.date(from: date)
+    }
+
+    public static func reportDateString(from date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = displayTimeZone
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
     public static func eventHour(_ timestampMs: Int64) -> String {
         let dt = Date(timeIntervalSince1970: Double(floorHourMs(timestampMs)) / 1000.0)
         let f = DateFormatter()
@@ -984,6 +1035,8 @@ public enum UsageEvents {
         let category = filter.category.trimmingCharacters(in: .whitespaces).lowercased()
         let model = filter.model.trimmingCharacters(in: .whitespaces)
         let owning = filter.owningUser.trimmingCharacters(in: .whitespaces)
+        let startMs = reportDateStartMs(filter.startDate)
+        let endMs = reportDateEndMs(filter.endDate)
         let allocated = cnyById(events, spend: spend)
         var selected: [UsageEvent] = []
         for (i, ev) in events.enumerated() {
@@ -992,6 +1045,8 @@ public enum UsageEvents {
             if !model.isEmpty && ev.model != model { continue }
             if let h = filter.headless, ev.isHeadless != h { continue }
             if !owning.isEmpty && ev.owningUser != owning { continue }
+            if let startMs, ev.timestampMs < startMs { continue }
+            if let endMs, ev.timestampMs >= endMs { continue }
             var copy = ev
             let key = ev.id.isEmpty ? "#\(i)" : ev.id
             copy.allocatedCny = allocated.byId[key] ?? 0

@@ -204,6 +204,8 @@ public class FixtureTests
                 Model = filtEl.GetProperty("model").GetString() ?? "",
                 Headless = NullBool(filtEl, "headless"),
                 OwningUser = NullStr(filtEl, "owning_user") ?? "",
+                StartDate = NullStr(filtEl, "start_date") ?? "",
+                EndDate = NullStr(filtEl, "end_date") ?? "",
             });
             var exp = cse.GetProperty("expected");
             Assert.Equal(exp.GetProperty("event_count").GetInt32(), report.EventCount);
@@ -259,6 +261,8 @@ public class FixtureTests
                 Model = filtEl.GetProperty("model").GetString() ?? "",
                 Headless = NullBool(filtEl, "headless"),
                 OwningUser = NullStr(filtEl, "owning_user") ?? "",
+                StartDate = NullStr(filtEl, "start_date") ?? "",
+                EndDate = NullStr(filtEl, "end_date") ?? "",
             }, new CnySpendSettings(
                 spendEl.GetProperty("monthly_plan_usd").GetDouble(),
                 spendEl.GetProperty("usd_cny_rate").GetDouble(),
@@ -521,6 +525,7 @@ public class FixtureTests
             cfg.UpsertAccount(token, label: "工作", email: "Name@Example.COM", password: "s3cret", activate: true);
             Assert.True(cfg.SetActualCny("user_01SAVE", 79));
             Assert.True(cfg.SetChannel("user_01SAVE", "自费"));
+            Assert.True(cfg.SetReportRange("user_01SAVE", "2026-09-08", "2026-09-14"));
             ConfigStore.Save(cfg, dir);
             var loaded = ConfigStore.Load(dir);
             Assert.Single(loaded.Accounts);
@@ -529,6 +534,8 @@ public class FixtureTests
             Assert.Equal("s3cret", loaded.Accounts[0].Password);
             Assert.Equal(79, loaded.Accounts[0].ActualCny, 3);
             Assert.Equal("self_pay", loaded.Accounts[0].Channel);
+            Assert.Equal("2026-09-08", loaded.Accounts[0].ReportStartDate);
+            Assert.Equal("2026-09-14", loaded.Accounts[0].ReportEndDate);
             Assert.Equal(79, loaded.ActualCny, 3);
             Assert.Equal("user_01SAVE", loaded.ActiveAccountId);
             Assert.Equal(79, loaded.SpendSettings().ActualCny, 3);

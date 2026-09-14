@@ -84,6 +84,12 @@ final class AppStore: ObservableObject {
         CompareWindowController.shared.show(app: self)
     }
 
+    func persistReportRange(accountId: String, start: String, end: String) {
+        config = ConfigStore.update(from: settingsDirectory) { live in
+            _ = live.setReportRange(accountId, start: start, end: end)
+        }
+    }
+
     func persistCompareCycle(accountId: String, membership: String?, start: String?, end: String?) {
         config = ConfigStore.update(from: settingsDirectory) { live in
             live.applySnapshot(to: accountId, membershipType: membership, billingCycleStart: start, billingCycleEnd: end)

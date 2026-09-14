@@ -88,6 +88,8 @@ public struct Account: Equatable, Sendable, Codable {
     public var channel: String
     public var billingCycleStart: String
     public var billingCycleEnd: String
+    public var reportStartDate: String
+    public var reportEndDate: String
 
     public init(
         id: String = "",
@@ -116,7 +118,9 @@ public struct Account: Equatable, Sendable, Codable {
         actualCny: Double = 0,
         channel: String = "",
         billingCycleStart: String = "",
-        billingCycleEnd: String = ""
+        billingCycleEnd: String = "",
+        reportStartDate: String = "",
+        reportEndDate: String = ""
     ) {
         self.id = id
         self.label = label
@@ -145,6 +149,8 @@ public struct Account: Equatable, Sendable, Codable {
         self.channel = UsageEvents.sanitizeChannel(channel)
         self.billingCycleStart = billingCycleStart.trimmingCharacters(in: .whitespaces)
         self.billingCycleEnd = billingCycleEnd.trimmingCharacters(in: .whitespaces)
+        self.reportStartDate = UsageEvents.sanitizeReportDate(reportStartDate)
+        self.reportEndDate = UsageEvents.sanitizeReportDate(reportEndDate)
     }
 
     public var displayLabel: String {
@@ -303,6 +309,13 @@ public struct AppConfig: Equatable, Sendable {
         } else {
             accounts[idx].channel = sanitized
         }
+        return true
+    }
+
+    public mutating func setReportRange(_ accountId: String, start: String, end: String) -> Bool {
+        guard let idx = accounts.firstIndex(where: { $0.id == accountId }) else { return false }
+        accounts[idx].reportStartDate = UsageEvents.sanitizeReportDate(start)
+        accounts[idx].reportEndDate = UsageEvents.sanitizeReportDate(end)
         return true
     }
 
@@ -806,6 +819,8 @@ public enum ConfigStore {
             .trimmingCharacters(in: .whitespaces)
         acc.billingCycleEnd = (raw["billing_cycle_end"] as? String ?? raw["billingCycleEnd"] as? String ?? "")
             .trimmingCharacters(in: .whitespaces)
+        acc.reportStartDate = UsageEvents.sanitizeReportDate(raw["report_start_date"] ?? raw["reportStartDate"])
+        acc.reportEndDate = UsageEvents.sanitizeReportDate(raw["report_end_date"] ?? raw["reportEndDate"])
         return acc
     }
 
@@ -892,6 +907,8 @@ public enum ConfigStore {
                 d["channel"] = acc.channel
                 d["billing_cycle_start"] = acc.billingCycleStart
                 d["billing_cycle_end"] = acc.billingCycleEnd
+                d["report_start_date"] = acc.reportStartDate
+                d["report_end_date"] = acc.reportEndDate
                 return d
             },
             "active_account_id": cfg.activeAccountId,
