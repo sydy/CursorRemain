@@ -36,6 +36,18 @@ public class FixtureTests
         return JsonDocument.Parse(json).RootElement.Clone();
     }
 
+    static IDisposable PinDisplayTzUtc8()
+    {
+        var prev = UsageEvents.DisplayTimeZone;
+        UsageEvents.DisplayTimeZone = TimeZoneInfo.CreateCustomTimeZone("UTC+08", TimeSpan.FromHours(8), "UTC+08", "UTC+08");
+        return new RestoreDisplayTz(prev);
+    }
+
+    sealed class RestoreDisplayTz(TimeZoneInfo prev) : IDisposable
+    {
+        public void Dispose() => UsageEvents.DisplayTimeZone = prev;
+    }
+
     [Fact]
     public void UsageSummaryCases()
     {
@@ -162,6 +174,7 @@ public class FixtureTests
     [Fact]
     public void UsageEventsCases()
     {
+        using var _ = PinDisplayTzUtc8();
         var root = Load("usage_events_cases.json");
         foreach (var row in root.GetProperty("kind").EnumerateArray())
         {
@@ -402,6 +415,7 @@ public class FixtureTests
     [Fact]
     public void UsageChartCases()
     {
+        using var _ = PinDisplayTzUtc8();
         var root = Load("usage_chart_cases.json");
         Assert.Equal(UsageEvents.HourlyChartWindowHours, root.GetProperty("hourly_window_hours").GetInt32());
         foreach (var row in root.GetProperty("model_labels").EnumerateArray())
@@ -836,6 +850,19 @@ public class FixtureTests
         Assert.Equal(1f, UiLayout.DpiScale(0));
         Assert.Equal(1f, UiLayout.ClampUiScale(float.NaN));
         Assert.Equal(3f, UiLayout.ClampUiScale(120f));
+    }
+
+    [Fact]
+    public void FormatLocalUsesSystemTimezone()
+    {
+        const string iso = "2026-09-14T12:37:36.998Z";
+        var got = AccountSync.FormatLocal(iso);
+        var expect = AccountSync.ParseIso(iso)!.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        Assert.Equal(expect, got);
+        Assert.DoesNotContain("Z", got);
+        Assert.DoesNotContain("T", got);
+        Assert.Equal("", AccountSync.FormatLocal(""));
+        Assert.Equal("not-a-date", AccountSync.FormatLocal("not-a-date"));
     }
 
     [Fact]

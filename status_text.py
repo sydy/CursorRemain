@@ -116,7 +116,7 @@ def format_reset_date(iso_value: str, include_time: bool = False) -> str:
     try:
         text = iso_value.replace("Z", "+00:00")
         dt = datetime.fromisoformat(text)
-        if include_time and dt.tzinfo is not None:
+        if dt.tzinfo is not None:
             dt = dt.astimezone()
         text = f"{dt.month}月{dt.day}日"
         if include_time and (dt.hour or dt.minute):

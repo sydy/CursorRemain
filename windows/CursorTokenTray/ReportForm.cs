@@ -95,7 +95,7 @@ sealed class ReportForm : Form
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "次数", FillWeight = 12 });
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "date", HeaderText = "日期 (北京时间)", FillWeight = 16 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "date", HeaderText = "日期 (本地时间)", FillWeight = 16 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "user", HeaderText = "用户", FillWeight = 16 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 9 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 20 });
@@ -305,7 +305,7 @@ sealed class ReportForm : Form
             FillModels();
             Render();
             var extra = result.Truncated ? $"（服务端约 {result.TotalAvailable} 条，已截到最近 {result.Events.Count} 条）" : "";
-            var stamp = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8));
+            var stamp = DateTimeOffset.Now;
             _status.Text = $"已同步 {_all.Count} 条{extra}  ·  {stamp:HH:mm:ss}";
         }
         catch (CursorApiException ex)
@@ -473,7 +473,7 @@ sealed class ReportForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",
-            FileName = $"cursor-usage-{DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)):yyyyMMdd}.csv",
+            FileName = $"cursor-usage-{DateTimeOffset.Now:yyyyMMdd}.csv",
             OverwritePrompt = true,
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;

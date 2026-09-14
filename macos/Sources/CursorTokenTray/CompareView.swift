@@ -70,7 +70,7 @@ final class CompareStore: ObservableObject {
         let stamp: String = {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+            f.timeZone = .current
             f.dateFormat = "HH:mm:ss"
             return f.string(from: Date())
         }()
@@ -88,7 +88,7 @@ final class CompareStore: ObservableObject {
         panel.nameFieldStringValue = {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+            f.timeZone = .current
             f.dateFormat = "yyyyMMdd"
             return "cursor-account-compare-\(f.string(from: Date())).csv"
         }()

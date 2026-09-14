@@ -80,7 +80,7 @@ public static class StatusText
         var text = iso.Replace("Z", "+00:00");
         if (!DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt))
             return iso;
-        var show = includeTime ? dt.ToLocalTime() : dt;
+        var show = dt.ToLocalTime();
         var label = $"{show.Month}月{show.Day}日";
         if (includeTime && (show.Hour != 0 || show.Minute != 0))
             label += $" {show.Hour:00}:{show.Minute:00}";

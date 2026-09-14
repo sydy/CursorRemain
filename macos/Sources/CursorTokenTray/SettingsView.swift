@@ -45,7 +45,7 @@ struct SettingsRootView: View {
             cloudEmail = store.config.cloudEmail
             cloudPassword = ""
             syncStatus = store.config.syncLastError.isEmpty
-                ? (store.config.syncLastAt.isEmpty ? "" : "上次同步 " + store.config.syncLastAt)
+                ? (store.config.syncLastAt.isEmpty ? "" : "上次同步 " + AccountSync.formatLocal(store.config.syncLastAt))
                 : store.config.syncLastError
             if focusToken || store.focusToken {
                 tokenFocused = true

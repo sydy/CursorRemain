@@ -184,6 +184,9 @@ final class UsageParserFixtureTests: XCTestCase {
     }
 
     func testUsageEventsCases() throws {
+        let previous = UsageEvents.displayTimeZone
+        UsageEvents.displayTimeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        defer { UsageEvents.displayTimeZone = previous }
         let root = try XCTUnwrap(try json("usage_events_cases.json") as? [String: Any])
         for row in root["kind"] as! [[String: Any]] {
             XCTAssertEqual(
@@ -411,6 +414,9 @@ final class UsageParserFixtureTests: XCTestCase {
     }
 
     func testUsageChartCases() throws {
+        let previous = UsageEvents.displayTimeZone
+        UsageEvents.displayTimeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        defer { UsageEvents.displayTimeZone = previous }
         let root = try XCTUnwrap(try json("usage_chart_cases.json") as? [String: Any])
         XCTAssertEqual(UsageEvents.hourlyChartWindowHours, int(root["hourly_window_hours"]) ?? -1)
         for row in root["model_labels"] as! [[String: Any]] {
@@ -479,6 +485,21 @@ final class UsageParserFixtureTests: XCTestCase {
 
     private func number64(_ value: Any?) -> Int64? {
         num(value).map { Int64($0.rounded()) }
+    }
+
+    func testFormatLocalUsesSystemTimezone() throws {
+        let iso = "2026-09-14T12:37:36.998Z"
+        let got = AccountSync.formatLocal(iso)
+        XCTAssertFalse(got.contains("Z"))
+        XCTAssertFalse(got.contains("T"))
+        XCTAssertEqual(AccountSync.formatLocal(""), "")
+        XCTAssertEqual(AccountSync.formatLocal("not-a-date"), "not-a-date")
+        let parsed = try XCTUnwrap(AccountSync.parseIso(iso))
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        XCTAssertEqual(got, f.string(from: parsed))
     }
 
     func testSafariBinaryCookies() throws {

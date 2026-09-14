@@ -313,14 +313,13 @@ public enum UsageEvents {
     public static let windowValidity = "validity"
     public static let windowFallback = "fallback"
     static let channelOrder = [channelSelfPay, channelThirdParty, ""]
-    public static let tzLabel = "北京时间"
-    public static let csvHeader = "日期(北京时间),用户,类型,模型,Token,费用,实付,云端Agent"
+    public static let tzLabel = "本地时间"
+    public static let csvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,云端Agent"
     public static let defaultUsdCnyRate = 7.50
     public static let hourlyChartWindowHours = 48
     static let msHour: Int64 = 3_600_000
     static let msDay: Int64 = 86_400_000
-    static let msBeijingOffset: Int64 = 8 * msHour
-    static let displayTimeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+    public static var displayTimeZone = TimeZone.current
 
     public static func kindLabel(_ kind: String?) -> String {
         switch (kind ?? "").trimmingCharacters(in: .whitespaces).lowercased() {
@@ -789,8 +788,11 @@ public enum UsageEvents {
     }
 
     public static func reportDateEndMs(_ raw: Any?) -> Int64? {
-        guard let start = reportDateStartMs(raw) else { return nil }
-        return start + msDay
+        guard let start = reportDateValue(raw) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = displayTimeZone
+        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return nil }
+        return Int64((end.timeIntervalSince1970 * 1000.0).rounded())
     }
 
     public static func reportDateValue(_ raw: Any?) -> Date? {
@@ -856,8 +858,16 @@ public enum UsageEvents {
         } else {
             let lastMs = floorDayMs(events.map(\.timestampMs).max() ?? 0)
             let firstMs = floorDayMs(events.map(\.timestampMs).min() ?? 0)
-            let count = Int((lastMs - firstMs) / msDay + 1)
-            keys = (0..<count).map { eventDate(firstMs + Int64($0) * msDay) }
+            var cal = Calendar(identifier: .gregorian)
+            cal.timeZone = displayTimeZone
+            var day = Date(timeIntervalSince1970: Double(firstMs) / 1000.0)
+            let last = Date(timeIntervalSince1970: Double(lastMs) / 1000.0)
+            keys = []
+            while day <= last {
+                keys.append(eventDate(Int64((day.timeIntervalSince1970 * 1000.0).rounded())))
+                guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
+                day = next
+            }
             keyOf = eventDate
         }
 
@@ -911,8 +921,11 @@ public enum UsageEvents {
     }
 
     static func floorDayMs(_ timestampMs: Int64) -> Int64 {
-        let shifted = max(0, timestampMs) + msBeijingOffset
-        return shifted / msDay * msDay - msBeijingOffset
+        let dt = Date(timeIntervalSince1970: Double(max(0, timestampMs)) / 1000.0)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = displayTimeZone
+        let start = cal.startOfDay(for: dt)
+        return Int64((max(0, start.timeIntervalSince1970) * 1000.0).rounded())
     }
 
     static func chartModels(_ events: [UsageEvent]) -> [String] {

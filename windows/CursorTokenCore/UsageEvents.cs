@@ -176,14 +176,13 @@ public static class UsageEvents
     public const string WindowValidity = "validity";
     public const string WindowFallback = "fallback";
     static readonly string[] ChannelOrder = [ChannelSelfPay, ChannelThirdParty, ""];
-    public const string TzLabel = "北京时间";
-    public const string CsvHeader = "日期(北京时间),用户,类型,模型,Token,费用,实付,云端Agent";
+    public const string TzLabel = "本地时间";
+    public const string CsvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,云端Agent";
     public const double DefaultUsdCnyRate = 7.50;
     public const int HourlyChartWindowHours = 48;
     const long MsHour = 3_600_000;
     const long MsDay = 86_400_000;
-    const long MsBeijingOffset = 8 * MsHour;
-    static readonly TimeSpan DisplayOffset = TimeSpan.FromHours(8);
+    public static TimeZoneInfo DisplayTimeZone { get; set; } = TimeZoneInfo.Local;
 
     static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -590,13 +589,13 @@ public static class UsageEvents
 
     public static string FormatTime(long timestampMs)
     {
-        var dt = DateTimeOffset.FromUnixTimeMilliseconds(Math.Max(0, timestampMs)).ToOffset(DisplayOffset);
+        var dt = ToDisplay(timestampMs);
         return dt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
     }
 
     public static string EventDate(long timestampMs)
     {
-        var dt = DateTimeOffset.FromUnixTimeMilliseconds(Math.Max(0, timestampMs)).ToOffset(DisplayOffset);
+        var dt = ToDisplay(timestampMs);
         return dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     }
 
@@ -614,19 +613,30 @@ public static class UsageEvents
         var date = SanitizeReportDate(raw);
         if (date.Length == 0) return null;
         var parts = date.Split('-');
-        var beijing = new DateTimeOffset(int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[1], CultureInfo.InvariantCulture), int.Parse(parts[2], CultureInfo.InvariantCulture), 0, 0, 0, DisplayOffset);
-        return beijing.ToUnixTimeMilliseconds();
+        var year = int.Parse(parts[0], CultureInfo.InvariantCulture);
+        var month = int.Parse(parts[1], CultureInfo.InvariantCulture);
+        var day = int.Parse(parts[2], CultureInfo.InvariantCulture);
+        var local = new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Unspecified);
+        var offset = DisplayTimeZone.GetUtcOffset(local);
+        return new DateTimeOffset(year, month, day, 0, 0, 0, offset).ToUnixTimeMilliseconds();
     }
 
     public static long? ReportDateEndMs(string? raw)
     {
-        var start = ReportDateStartMs(raw);
-        return start is null ? null : start.Value + MsDay;
+        var date = SanitizeReportDate(raw);
+        if (date.Length == 0) return null;
+        var parts = date.Split('-');
+        var year = int.Parse(parts[0], CultureInfo.InvariantCulture);
+        var month = int.Parse(parts[1], CultureInfo.InvariantCulture);
+        var day = int.Parse(parts[2], CultureInfo.InvariantCulture);
+        var local = new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Unspecified);
+        var offset = DisplayTimeZone.GetUtcOffset(local);
+        return new DateTimeOffset(year, month, day, 0, 0, 0, offset).AddDays(1).ToUnixTimeMilliseconds();
     }
 
     public static string EventHour(long timestampMs)
     {
-        var dt = DateTimeOffset.FromUnixTimeMilliseconds(FloorHourMs(timestampMs)).ToOffset(DisplayOffset);
+        var dt = ToDisplay(FloorHourMs(timestampMs));
         return dt.ToString("yyyy-MM-dd HH:00", CultureInfo.InvariantCulture);
     }
 
@@ -667,8 +677,9 @@ public static class UsageEvents
         {
             var lastMs = FloorDayMs(selected.Max(ev => ev.TimestampMs));
             var firstMs = FloorDayMs(selected.Min(ev => ev.TimestampMs));
-            var count = (int)((lastMs - firstMs) / MsDay + 1);
-            keys = Enumerable.Range(0, count).Select(i => EventDate(firstMs + i * MsDay)).ToList();
+            keys = [];
+            for (var day = ToDisplay(firstMs).Date; day <= ToDisplay(lastMs).Date; day = day.AddDays(1))
+                keys.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             keyOf = EventDate;
         }
 
@@ -711,11 +722,18 @@ public static class UsageEvents
         };
     }
 
+    static DateTimeOffset ToDisplay(long timestampMs)
+    {
+        var utc = DateTimeOffset.FromUnixTimeMilliseconds(Math.Max(0, timestampMs));
+        return TimeZoneInfo.ConvertTime(utc, DisplayTimeZone);
+    }
+
     static long FloorHourMs(long timestampMs) => Math.Max(0, timestampMs) / MsHour * MsHour;
     static long FloorDayMs(long timestampMs)
     {
-        var shifted = Math.Max(0, timestampMs) + MsBeijingOffset;
-        return shifted / MsDay * MsDay - MsBeijingOffset;
+        var local = ToDisplay(timestampMs);
+        var midnight = new DateTimeOffset(local.Year, local.Month, local.Day, 0, 0, 0, local.Offset);
+        return Math.Max(0, midnight.ToUnixTimeMilliseconds());
     }
 
     public static List<string> ChartModels(IEnumerable<UsageEvent> events)

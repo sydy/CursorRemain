@@ -636,7 +636,7 @@ sealed class SettingsForm : Form
     static string SyncStatusText(AppConfig cfg)
     {
         if (!string.IsNullOrWhiteSpace(cfg.SyncLastError)) return cfg.SyncLastError;
-        if (!string.IsNullOrWhiteSpace(cfg.SyncLastAt)) return "上次同步 " + cfg.SyncLastAt;
+        if (!string.IsNullOrWhiteSpace(cfg.SyncLastAt)) return "上次同步 " + AccountSync.FormatLocal(cfg.SyncLastAt);
         return cfg.CloudLoggedIn ? "尚未同步" : "";
     }
 

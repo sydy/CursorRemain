@@ -62,6 +62,13 @@ def now_iso(now: datetime | None = None) -> str:
     return stamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def format_local(value: Any, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    stamp = parse_iso(value)
+    if stamp is None:
+        return str(value or "").strip()
+    return stamp.astimezone().strftime(fmt)
+
+
 def parse_iso(value: Any) -> datetime | None:
     text = str(value or "").strip()
     if not text:
