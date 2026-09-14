@@ -18,7 +18,7 @@ enum AppUpdater {
         confirmApply: ((String) -> Bool)? = nil
     ) async -> String {
         if busy { return "正在检查更新…" }
-        var cfg = store.config
+        let cfg = store.config
         if !manual && !cfg.autoUpdateEnabled { return "" }
         if !manual && !canSelfUpdate { return "" }
         if !AppUpdate.shouldAutoCheck(lastCheckAt: cfg.updateLastCheckAt, manual: manual) {
@@ -189,7 +189,7 @@ enum AppUpdater {
     }
 
     private static func getJSON(_ url: URL, parse: (String) throws -> AppRelease) async throws -> AppRelease {
-        parse(try await getText(url))
+        try parse(try await getText(url))
     }
 
     private static func getText(_ url: URL) async throws -> String {

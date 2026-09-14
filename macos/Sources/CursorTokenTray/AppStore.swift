@@ -188,12 +188,9 @@ final class AppStore: ObservableObject {
     func loopUpdates() {
         updateTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(AppUpdate.startupDelay * 1_000_000_000))
-            guard let self, !Task.isCancelled else { return }
-            await self.checkForUpdate(manual: false)
             while let self, !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: UInt64(AppUpdate.autoCheckInterval * 1_000_000_000))
-                guard !Task.isCancelled else { return }
                 await self.checkForUpdate(manual: false)
+                try? await Task.sleep(nanoseconds: UInt64(AppUpdate.autoCheckInterval * 1_000_000_000))
             }
         }
     }
@@ -203,7 +200,10 @@ final class AppStore: ObservableObject {
         if updateBusy { return updateStatus.isEmpty ? "正在检查更新…" : updateStatus }
         updateBusy = true
         if manual { updateStatus = "正在检查更新…" }
-        let status = await AppUpdater.run(store: self, manual: manual, confirmApply: manual ? confirmUpdate : nil)
+        let confirm: ((String) -> Bool)? = manual
+            ? { [weak self] message in self?.confirmUpdate(message) ?? false }
+            : nil
+        let status = await AppUpdater.run(store: self, manual: manual, confirmApply: confirm)
         updateStatus = status
         updateBusy = false
         if !manual && status.contains("发现新版本") {
