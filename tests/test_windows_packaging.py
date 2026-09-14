@@ -16,7 +16,8 @@ class FrameworkDependentPublishTests(unittest.TestCase):
         self.assertIn("<PublishSingleFile>true</PublishSingleFile>", csproj)
         self.assertIn("<SelfContained>false</SelfContained>", csproj)
         self.assertNotIn("<SelfContained>true</SelfContained>", csproj)
-        self.assertIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
+        self.assertIn("<EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>", csproj)
+        self.assertNotIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
         self.assertIn("<InvariantGlobalization>true</InvariantGlobalization>", csproj)
         self.assertIn("<RollForward>LatestMinor</RollForward>", csproj)
 

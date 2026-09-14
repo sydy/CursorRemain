@@ -19,7 +19,8 @@
     <RollForward>LatestMinor</RollForward>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Compression in a single-file bundle is only supported for self-contained publishes. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- WinForms does not support IL trim; it crashed menus/forms on some machines. -->
     <PublishTrimmed>false</PublishTrimmed>
