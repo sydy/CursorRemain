@@ -187,10 +187,14 @@ sealed class FlyoutForm : Form
             g.DrawPath(border, path);
 
         _hits.Clear();
-        var left = new RectangleF(pad, pad, leftW, Height - pad * 2);
+        var btnH = Px(FlyoutLayout.ToolButtonHeight);
+        var btnGap = 4 * s;
+        var contentBottom = Height - pad - btnH - btnGap;
+        var left = new RectangleF(pad, pad, leftW, Math.Max(0, contentBottom - pad));
         DrawLeft(g, left, pal, s);
-        var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Height - pad * 2);
+        var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Math.Max(0, contentBottom - pad));
         DrawRight(g, right, pal, s);
+        DrawButtons(g, new RectangleF(pad, contentBottom + btnGap, Width - pad * 2, btnH), pal, s);
     }
 
     void DrawLeft(Graphics g, RectangleF box, FlyoutPalette pal, float s)
@@ -343,10 +347,8 @@ sealed class FlyoutForm : Form
             y += 20 * s;
         }
 
-        var btnH = 24 * s;
-        var btnBottom = box.Bottom;
         var sparkTop = y + 4 * s;
-        var sparkBudget = btnBottom - btnH - 8 * s - sparkTop;
+        var sparkBudget = box.Bottom - sparkTop;
         if (_history.Count >= 2 && sparkBudget > 12 * s)
         {
             var sparkH = Math.Min(Px(FlyoutLayout.SparkHeight), sparkBudget - 16 * s);
@@ -361,8 +363,6 @@ sealed class FlyoutForm : Form
                 DrawString(g, trend, smallFont, pal.Secondary, new RectangleF(box.X, sparkTop, box.Width, 14 * s));
             }
         }
-
-        DrawButtons(g, new RectangleF(box.X, btnBottom - btnH, box.Width, btnH), pal, s);
     }
 
     float DrawCard(Graphics g, float x, float y, float width, FlyoutPalette pal, float innerHeight, Action<RectangleF> content)
@@ -437,28 +437,32 @@ sealed class FlyoutForm : Form
         };
         using var font = UiFont(8f);
         using var iconFont = IconFont(8f);
+        using var measure = new StringFormat(StringFormat.GenericTypographic);
+        var padX = 8 * s;
+        var iconSlot = iconFont is null ? 0 : 14 * s;
+        var iconTextGap = iconFont is null ? 0 : 4 * s;
+        var gap = Px(FlyoutLayout.ToolButtonGap);
         var x = box.Right;
         for (var i = items.Length - 1; i >= 0; i--)
         {
             var it = items[i];
-            var textW = g.MeasureString(it.Label, font).Width;
-            var iconW = iconFont is null ? 0 : 14 * s;
-            var w = textW + iconW + 18 * s;
+            var textW = g.MeasureString(it.Label, font, int.MaxValue, measure).Width;
+            var w = Math.Max(box.Height + 18 * s, padX + iconSlot + iconTextGap + textW + padX);
             x -= w;
             var rect = new RectangleF(x, box.Y, w, box.Height);
             var bg = _hover == it.Id ? pal.ButtonHover : pal.Button;
             using (var path = RoundRect(rect, rect.Height / 2))
             using (var brush = new SolidBrush(bg))
                 g.FillPath(brush, path);
-            var tx = rect.X + 8 * s;
+            var tx = rect.X + padX;
             if (iconFont is not null)
             {
-                DrawString(g, it.Icon, iconFont, pal.Secondary, new RectangleF(tx, rect.Y, 14 * s, rect.Height), StringAlignment.Center, StringAlignment.Center);
-                tx += 12 * s;
+                DrawString(g, it.Icon, iconFont, pal.Secondary, new RectangleF(tx, rect.Y, iconSlot, rect.Height), StringAlignment.Center, StringAlignment.Center);
+                tx += iconSlot + iconTextGap;
             }
-            DrawString(g, it.Label, font, pal.Secondary, new RectangleF(tx, rect.Y, rect.Right - tx - 6 * s, rect.Height), StringAlignment.Near, StringAlignment.Center);
+            DrawString(g, it.Label, font, pal.Secondary, new RectangleF(tx, rect.Y, Math.Max(0, rect.Right - padX - tx), rect.Height), StringAlignment.Near, StringAlignment.Center, noWrap: true);
             _hits.Add(new(it.Id, Rectangle.Round(rect)));
-            x -= 6 * s;
+            x -= gap;
         }
     }
 
@@ -542,7 +546,7 @@ sealed class FlyoutForm : Form
     }
 
     static void DrawString(Graphics g, string text, Font font, Color color, RectangleF rect,
-        StringAlignment align = StringAlignment.Near, StringAlignment valign = StringAlignment.Near)
+        StringAlignment align = StringAlignment.Near, StringAlignment valign = StringAlignment.Near, bool noWrap = false)
     {
         using var brush = new SolidBrush(color);
         using var sf = new StringFormat
@@ -550,7 +554,7 @@ sealed class FlyoutForm : Form
             Alignment = align,
             LineAlignment = valign,
             Trimming = StringTrimming.EllipsisCharacter,
-            FormatFlags = StringFormatFlags.LineLimit,
+            FormatFlags = StringFormatFlags.LineLimit | (noWrap ? StringFormatFlags.NoWrap : 0),
         };
         g.DrawString(text, font, brush, rect, sf);
     }
