@@ -10,6 +10,14 @@ rm -rf "$DIST"
 mkdir -p "$DIST/Contents/MacOS" "$DIST/Contents/Resources"
 cp "$BIN" "$DIST/Contents/MacOS/CursorTokenTray"
 cp "$ROOT/Resources/Info.plist" "$DIST/Contents/Info.plist"
+SHA="${SOURCE_REVISION:-}"
+if [[ -z "$SHA" ]]; then
+  SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"
+fi
+if [[ -n "$SHA" ]]; then
+  /usr/libexec/PlistBuddy -c "Add :GitCommit string ${SHA}" "$DIST/Contents/Info.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Set :GitCommit ${SHA}" "$DIST/Contents/Info.plist"
+fi
 if [[ -f "$REPO/assets/app_icon.icns" ]]; then
   cp "$REPO/assets/app_icon.icns" "$DIST/Contents/Resources/AppIcon.icns"
   /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$DIST/Contents/Info.plist" 2>/dev/null || true

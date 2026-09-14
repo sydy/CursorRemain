@@ -14,6 +14,8 @@ final class AppStore: ObservableObject {
     @Published var flyoutVisible = false
     @Published var importStatus = ""
     @Published var saveError = ""
+    @Published var updateStatus = ""
+    @Published var updateBusy = false
     @Published var focusToken = false
     @Published var historyRemaining: [Double] = []
     @Published var dailyAvgBurn: Double?
@@ -22,6 +24,7 @@ final class AppStore: ObservableObject {
     var settingsDirectory: URL?
 
     private var refreshTask: Task<Void, Never>?
+    private var updateTask: Task<Void, Never>?
     private var waitTask: Task<Void, Never>?
     private var refreshNow = false
     private var reconcileRunning = false
@@ -40,6 +43,7 @@ final class AppStore: ObservableObject {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         reloadHistory()
         loopRefresh()
+        loopUpdates()
         enqueueReconcile(refresh: false)
         if config.sessionToken.isEmpty {
             Task { @MainActor in
@@ -52,6 +56,8 @@ final class AppStore: ObservableObject {
     func stop() {
         refreshTask?.cancel()
         refreshTask = nil
+        updateTask?.cancel()
+        updateTask = nil
         waitTask?.cancel()
         waitTask = nil
         InstanceLock.release(directory: settingsDirectory)
@@ -177,6 +183,42 @@ final class AppStore: ObservableObject {
                 relaunch: true
             )
         }.value
+    }
+
+    func loopUpdates() {
+        updateTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(AppUpdate.startupDelay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            await self.checkForUpdate(manual: false)
+            while let self, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(AppUpdate.autoCheckInterval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await self.checkForUpdate(manual: false)
+            }
+        }
+    }
+
+    @discardableResult
+    func checkForUpdate(manual: Bool) async -> String {
+        if updateBusy { return updateStatus.isEmpty ? "正在检查更新…" : updateStatus }
+        updateBusy = true
+        if manual { updateStatus = "正在检查更新…" }
+        let status = await AppUpdater.run(store: self, manual: manual, confirmApply: manual ? confirmUpdate : nil)
+        updateStatus = status
+        updateBusy = false
+        if !manual && status.contains("发现新版本") {
+            notify("自动更新", status)
+        }
+        return status
+    }
+
+    func confirmUpdate(_ message: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "安装更新"
+        alert.informativeText = message + "。安装后会自动重启。"
+        alert.addButton(withTitle: "安装并重启")
+        alert.addButton(withTitle: "取消")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func loopRefresh() {

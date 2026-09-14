@@ -29,6 +29,7 @@ class FrameworkDependentPublishTests(unittest.TestCase):
         self.assertNotIn("EnableCompressionInSingleFile=true", workflow)
         self.assertIn("coreclr", workflow)
         self.assertIn("15MB", workflow)
+        self.assertIn("SourceRevisionId", workflow)
 
     def test_runtime_readme_is_shipped(self) -> None:
         readme = ROOT / "windows" / "packaging" / "首次运行.txt"

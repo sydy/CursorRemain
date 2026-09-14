@@ -1,0 +1,162 @@
+{
+  "extract_sha": [
+    {
+      "name": "full_sha_in_backticks",
+      "text": "提交: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+      "sha": "518192b000000000000000000000000000000000"
+    },
+    {
+      "name": "short_sha_only",
+      "text": "- **提交**: [`abc1234`](https://example.com/abc1234)",
+      "sha": "abc1234"
+    },
+    {
+      "name": "no_sha",
+      "text": "no commit here",
+      "sha": ""
+    }
+  ],
+  "same_sha": [
+    { "left": "518192b000000000000000000000000000000000", "right": "518192b000000000000000000000000000000000", "same": true },
+    { "left": "518192b", "right": "518192b000000000000000000000000000000000", "same": true },
+    { "left": "518192b000000000000000000000000000000000", "right": "518192b", "same": true },
+    { "left": "deadbee", "right": "518192b000000000000000000000000000000000", "same": false },
+    { "left": "", "right": "518192b", "same": false },
+    { "left": "abc", "right": "abcdef0", "same": false }
+  ],
+  "normalize_sha": [
+    { "input": "  518192B  ", "output": "518192b" },
+    { "input": "518192b000000000000000000000000000000000", "output": "518192b000000000000000000000000000000000" },
+    { "input": "not-a-sha", "output": "" },
+    { "input": "zz", "output": "" }
+  ],
+  "allowed_urls": [
+    { "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-windows.zip", "ok": true },
+    { "url": "https://objects.githubusercontent.com/github-production-release-asset-2e65be/1/file", "ok": true },
+    { "url": "https://release-assets.githubusercontent.com/123", "ok": true },
+    { "url": "http://github.com/sydy/CursorTokenTray/releases/download/latest/a.zip", "ok": false },
+    { "url": "https://evil.example/CursorTokenTray-windows.zip", "ok": false },
+    { "url": "https://github.com.evil.example/a.zip", "ok": false }
+  ],
+  "packaged_windows": [
+    { "path": "C:/Users/me/Apps/CursorTokenTray.exe", "ok": true },
+    { "path": "D:/tools/CursorTokenTray.exe", "ok": true },
+    { "path": "C:/repo/windows/CursorTokenTray/bin/Release/net8.0-windows/win-x64/CursorTokenTray.exe", "ok": false },
+    { "path": "C:/repo/windows/CursorTokenTray/obj/CursorTokenTray.exe", "ok": false },
+    { "path": "C:/Users/me/Apps/notepad.exe", "ok": false },
+    { "path": "", "ok": false }
+  ],
+  "packaged_macos": [
+    { "path": "/Applications/CursorTokenTray.app", "ok": true },
+    { "path": "/Applications/CursorTokenTray.app/Contents/MacOS/CursorTokenTray", "ok": true },
+    { "path": "/Users/me/Downloads/CursorTokenTray.app", "ok": true },
+    { "path": "/tmp/.build/release/CursorTokenTray", "ok": false },
+    { "path": "/Users/me/Library/Developer/Xcode/DerivedData/App/CursorTokenTray.app", "ok": false },
+    { "path": "/usr/local/bin/CursorTokenTray", "ok": false },
+    { "path": "", "ok": false }
+  ],
+  "parse_release": [
+    {
+      "name": "latest_with_body_and_assets",
+      "json": {
+        "tag_name": "latest",
+        "html_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
+        "published_at": "2026-09-14T03:20:00Z",
+        "body": "最新 `main` 构建。\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+        "assets": [
+          {
+            "id": 101,
+            "name": "CursorTokenTray-windows.zip",
+            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-windows.zip",
+            "size": 4200000,
+            "updated_at": "2026-09-14T03:21:00Z"
+          },
+          {
+            "id": 102,
+            "name": "CursorTokenTray-macos.zip",
+            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-macos.zip",
+            "size": 5100000,
+            "updated_at": "2026-09-14T03:22:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "tag": "latest",
+        "sha": "518192b000000000000000000000000000000000",
+        "page_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
+        "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-windows.zip",
+        "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-macos.zip",
+        "windows_asset_id": 101,
+        "macos_asset_id": 102,
+        "windows_updated_at": "2026-09-14T03:21:00Z"
+      }
+    }
+  ],
+  "parse_tag_ref": [
+    {
+      "name": "commit_ref",
+      "json": {
+        "ref": "refs/tags/latest",
+        "object": { "sha": "518192b000000000000000000000000000000000", "type": "commit" }
+      },
+      "sha": "518192b000000000000000000000000000000000"
+    }
+  ],
+  "evaluate": [
+    {
+      "name": "same_full_sha_is_current",
+      "current_sha": "518192b000000000000000000000000000000000",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "windows",
+      "available": false,
+      "up_to_date": true
+    },
+    {
+      "name": "short_local_sha_matches_remote",
+      "current_sha": "518192b",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "windows",
+      "available": false,
+      "up_to_date": true
+    },
+    {
+      "name": "different_sha_is_available",
+      "current_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "macos",
+      "available": true,
+      "up_to_date": false
+    },
+    {
+      "name": "empty_current_uses_installed_sha",
+      "current_sha": "",
+      "installed_sha": "518192b000000000000000000000000000000000",
+      "installed_asset_id": 101,
+      "asset": "windows",
+      "available": false,
+      "up_to_date": true
+    },
+    {
+      "name": "empty_current_and_installed_is_available",
+      "current_sha": "",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "windows",
+      "available": true,
+      "up_to_date": false
+    },
+    {
+      "name": "installed_asset_id_matches_when_sha_missing",
+      "current_sha": "",
+      "installed_sha": "",
+      "installed_asset_id": 101,
+      "asset": "windows",
+      "clear_release_sha": true,
+      "available": false,
+      "up_to_date": true
+    }
+  ]
+}

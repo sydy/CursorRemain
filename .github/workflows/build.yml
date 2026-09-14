@@ -85,14 +85,14 @@ jobs:
       - name: Publish framework-dependent exe
         shell: pwsh
         run: |
-          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win-files
+          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win-files
           echo "---- largest published files ----"
           Get-ChildItem dist-win-files -File | Sort-Object Length -Descending | Select-Object -First 15 | ForEach-Object { '{0,8:N2} MB  {1}' -f ($_.Length/1MB), $_.Name }
           $runtime = Get-ChildItem dist-win-files -File | Where-Object { $_.Name -match '^(coreclr|hostfxr|hostpolicy|System\.Private\.CoreLib)\.' }
           if ($runtime) {
             throw ("self-contained runtime leaked into publish: " + ($runtime.Name -join ', '))
           }
-          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -o dist-win
+          dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win
       - name: Report exe size
         shell: pwsh
         run: |
@@ -157,7 +157,7 @@ jobs:
       - name: Package .app
         run: |
           chmod +x macos/scripts/package_app.sh
-          ./macos/scripts/package_app.sh
+          SOURCE_REVISION="${GITHUB_SHA}" ./macos/scripts/package_app.sh
       - name: Zip .app
         run: ditto -c -k macos/dist/release CursorTokenTray-macos.zip
       - uses: actions/upload-artifact@v6

@@ -149,6 +149,7 @@ sealed class TrayContext : ApplicationContext
             if (string.IsNullOrEmpty(_config.SessionToken))
                 OpenSettings(true, false);
             _ = LoopAsync(_cts.Token);
+            _ = UpdateLoopAsync(_cts.Token);
         });
     }
 
@@ -178,6 +179,7 @@ sealed class TrayContext : ApplicationContext
         _menu.Items.Add("在 Cursor 登录当前账号…", null, (_, _) => LoginToCursor());
         _menu.Items.Add("导入 Token…", null, (_, _) => OpenSettings(true, true));
         _menu.Items.Add("设置…", null, (_, _) => OpenSettings(false, false));
+        _menu.Items.Add("检查更新…", null, (_, _) => _ = CheckUpdateAsync(true));
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add("退出", null, (_, _) => Exit());
         _menu.Opening -= MenuOpening;
@@ -537,7 +539,7 @@ sealed class TrayContext : ApplicationContext
                 _settings = new SettingsForm(_config, cfg => ApplyConfig(cfg, true), async prefer =>
                 {
                     return await SessionImporter.ImportAndValidate(_client, SessionImporter.DefaultPreferBrowsers(), SessionImporter.OnlyBrowsers(prefer), _config.ExistingTokenVariants());
-                }, startImport);
+                }, startImport, CheckUpdateAsync);
                 _settings.FormClosed += (_, _) => _settings = null;
                 _settings.Show();
                 if (focusToken) _settings.FocusToken();
@@ -590,6 +592,65 @@ sealed class TrayContext : ApplicationContext
         }
         catch (Exception ex) { CrashLog.Write(ex); }
         finally { _reconcileGate.Release(); }
+    }
+
+    async Task UpdateLoopAsync(CancellationToken ct)
+    {
+        try { await Task.Delay(AppUpdate.StartupDelay, ct); }
+        catch (OperationCanceledException) { return; }
+        await CheckUpdateAsync(false);
+        while (!ct.IsCancellationRequested)
+        {
+            try { await Task.Delay(AppUpdate.AutoCheckInterval, ct); }
+            catch (OperationCanceledException) { return; }
+            await CheckUpdateAsync(false);
+        }
+    }
+
+    async Task<string> CheckUpdateAsync(bool manual)
+    {
+        try
+        {
+            var status = await AppUpdater.RunAsync(
+                _config,
+                manual,
+                manual ? ConfirmUpdate : null,
+                Exit,
+                _cts.Token);
+            try { _config = ConfigStore.Load(); } catch { }
+            OnUi(() =>
+            {
+                _settings?.SetUpdateStatus(status);
+                if (!manual && status.Contains("发现新版本", StringComparison.Ordinal))
+                    _icon.ShowBalloonTip(5000, "自动更新", status, ToolTipIcon.Info);
+                else if (manual && status.StartsWith("检查更新失败", StringComparison.Ordinal))
+                    _icon.ShowBalloonTip(5000, "检查更新", status, ToolTipIcon.Warning);
+            });
+            return status;
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex);
+            return "检查更新失败: " + ex.Message;
+        }
+    }
+
+    bool ConfirmUpdate(string message)
+    {
+        bool Ask() =>
+            MessageBox.Show(
+                message + "。安装后会自动重启。",
+                "安装更新",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Information) == DialogResult.OK;
+        if (_sync.IsDisposed) return Ask();
+        if (_sync.InvokeRequired)
+        {
+            var ok = false;
+            try { _sync.Invoke(() => ok = Ask()); } catch (ObjectDisposedException) { return false; }
+            return ok;
+        }
+        return Ask();
     }
 
     void Exit()

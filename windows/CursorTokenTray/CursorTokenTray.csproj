@@ -11,6 +11,7 @@
     <Product>Cursor 余量</Product>
     <AssemblyTitle>Cursor 余量</AssemblyTitle>
     <Version>2.0.0</Version>
+    <InformationalVersion Condition="'$(SourceRevisionId)' != ''">$(Version)+$(SourceRevisionId)</InformationalVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <PublishSingleFile>true</PublishSingleFile>
