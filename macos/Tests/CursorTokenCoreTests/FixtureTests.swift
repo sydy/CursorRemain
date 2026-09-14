@@ -416,6 +416,28 @@ final class UsageParserFixtureTests: XCTestCase {
         for row in root["model_labels"] as! [[String: Any]] {
             XCTAssertEqual(UsageEvents.chartModelLabel(str(row["input"])), str(row["output"]))
         }
+        for cse in root["legend_wrap"] as! [[String: Any]] {
+            let sizes = (cse["sizes"] as! [[Any]]).map { row in
+                (width: num(row[0]) ?? -1, height: num(row[1]) ?? -1)
+            }
+            let packed = UsageChartLayout.wrapChips(
+                sizes: sizes,
+                containerWidth: num(cse["container"]) ?? -1,
+                hSpacing: num(cse["h_spacing"]) ?? -1,
+                vSpacing: num(cse["v_spacing"]) ?? -1
+            )
+            let exp = cse["expected"] as! [String: Any]
+            XCTAssertEqual(packed.width, num(exp["width"]) ?? -1, accuracy: 0.001, str(cse["name"]))
+            XCTAssertEqual(packed.height, num(exp["height"]) ?? -1, accuracy: 0.001, str(cse["name"]))
+            let frames = exp["frames"] as! [[Any]]
+            XCTAssertEqual(packed.frames.count, frames.count, str(cse["name"]))
+            for (got, row) in zip(packed.frames, frames) {
+                XCTAssertEqual(got.x, num(row[0]) ?? -1, accuracy: 0.001, str(cse["name"]))
+                XCTAssertEqual(got.y, num(row[1]) ?? -1, accuracy: 0.001, str(cse["name"]))
+                XCTAssertEqual(got.width, num(row[2]) ?? -1, accuracy: 0.001, str(cse["name"]))
+                XCTAssertEqual(got.height, num(row[3]) ?? -1, accuracy: 0.001, str(cse["name"]))
+            }
+        }
         for cse in root["cases"] as! [[String: Any]] {
             let events = (cse["events"] as! [[String: Any]]).compactMap(UsageEvents.fromDict)
             let hidden = Set(stringArray(cse["hidden_models"]))

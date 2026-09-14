@@ -406,6 +406,29 @@ public class FixtureTests
         Assert.Equal(UsageEvents.HourlyChartWindowHours, root.GetProperty("hourly_window_hours").GetInt32());
         foreach (var row in root.GetProperty("model_labels").EnumerateArray())
             Assert.Equal(row.GetProperty("output").GetString(), UsageEvents.ChartModelLabel(row.GetProperty("input").GetString()));
+        foreach (var cse in root.GetProperty("legend_wrap").EnumerateArray())
+        {
+            var sizes = cse.GetProperty("sizes").EnumerateArray()
+                .Select(row => (row[0].GetInt32(), row[1].GetInt32()))
+                .ToList();
+            var packed = UsageChartLayout.WrapChips(
+                sizes,
+                cse.GetProperty("container").GetInt32(),
+                cse.GetProperty("h_spacing").GetInt32(),
+                cse.GetProperty("v_spacing").GetInt32());
+            var exp = cse.GetProperty("expected");
+            Assert.Equal(exp.GetProperty("width").GetInt32(), packed.Width);
+            Assert.Equal(exp.GetProperty("height").GetInt32(), packed.Height);
+            var frames = exp.GetProperty("frames").EnumerateArray().ToList();
+            Assert.Equal(frames.Count, packed.Frames.Length);
+            for (var i = 0; i < frames.Count; i++)
+            {
+                Assert.Equal(frames[i][0].GetInt32(), packed.Frames[i].X);
+                Assert.Equal(frames[i][1].GetInt32(), packed.Frames[i].Y);
+                Assert.Equal(frames[i][2].GetInt32(), packed.Frames[i].Width);
+                Assert.Equal(frames[i][3].GetInt32(), packed.Frames[i].Height);
+            }
+        }
         foreach (var cse in root.GetProperty("cases").EnumerateArray())
         {
             var events = cse.GetProperty("events").EnumerateArray()

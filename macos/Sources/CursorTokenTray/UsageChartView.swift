@@ -209,7 +209,10 @@ private struct FlowLegend: View {
     var body: some View {
         // Size each chip to its label. LazyVGrid `.adaptive` columns share one
         // width, which truncates names such as `claude-opus-4-6`.
-        ChipFlowLayout(hSpacing: 8, vSpacing: 6) {
+        ChipFlowLayout(
+            hSpacing: UsageChartLayout.legendChipHSpacing,
+            vSpacing: UsageChartLayout.legendChipVSpacing
+        ) {
             ForEach(models, id: \.self) { name in
                 chip(name)
             }
@@ -262,31 +265,23 @@ private struct ChipFlowLayout: Layout {
 
     private func arrange(in width: CGFloat?, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
         let limit = width ?? .infinity
-        var frames: [CGRect] = []
-        var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowH: CGFloat = 0
-        var maxX: CGFloat = 0
-
-        for subview in subviews {
+        let sizes: [(width: Double, height: Double)] = subviews.map { subview in
             let ideal = subview.sizeThatFits(.unspecified)
-            let size: CGSize
             if limit.isFinite, limit > 0, ideal.width > limit {
-                size = subview.sizeThatFits(ProposedViewSize(width: limit, height: ideal.height))
-            } else {
-                size = ideal
+                let size = subview.sizeThatFits(ProposedViewSize(width: limit, height: ideal.height))
+                return (Double(size.width), Double(size.height))
             }
-            if x > 0, x + size.width > limit {
-                maxX = max(maxX, x - hSpacing)
-                x = 0
-                y += rowH + vSpacing
-                rowH = 0
-            }
-            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
-            x += size.width + hSpacing
-            rowH = max(rowH, size.height)
+            return (Double(ideal.width), Double(ideal.height))
         }
-        maxX = max(maxX, max(0, x - hSpacing))
-        return (CGSize(width: maxX, height: y + rowH), frames)
+        let packed = UsageChartLayout.wrapChips(
+            sizes: sizes,
+            containerWidth: Double(limit),
+            hSpacing: Double(hSpacing),
+            vSpacing: Double(vSpacing)
+        )
+        let frames = packed.frames.map {
+            CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+        }
+        return (CGSize(width: packed.width, height: packed.height), frames)
     }
 }
