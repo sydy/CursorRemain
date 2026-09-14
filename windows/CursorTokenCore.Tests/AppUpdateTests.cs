@@ -61,6 +61,14 @@ public class AppUpdateTests
             Assert.Equal(exp.GetProperty("macos_asset_id").GetInt64(), AppUpdate.FindAsset(parsed, AppUpdate.MacosAssetName)?.Id);
         }
 
+        foreach (var row in root.GetProperty("parse_release_page").EnumerateArray())
+        {
+            var parsed = AppUpdate.ParseReleasePage(row.GetProperty("html").GetString() ?? "");
+            Assert.Equal(row.GetProperty("sha").GetString(), parsed.CommitSha);
+            Assert.Equal(row.GetProperty("windows_url").GetString(), AppUpdate.FindAsset(parsed, AppUpdate.WindowsAssetName)?.Url);
+            Assert.Equal(row.GetProperty("macos_url").GetString(), AppUpdate.FindAsset(parsed, AppUpdate.MacosAssetName)?.Url);
+        }
+
         foreach (var row in root.GetProperty("parse_tag_ref").EnumerateArray())
             Assert.Equal(row.GetProperty("sha").GetString(), AppUpdate.ParseTagRefSha(row.GetProperty("json").GetRawText()));
 
@@ -98,6 +106,9 @@ public class AppUpdateTests
         Assert.Equal("2.0.0 (518192b)", AppUpdate.DisplayVersion("518192b000000000000000000000000000000000"));
         Assert.Equal("518192b", AppUpdate.ShaFromInformationalVersion("2.0.0+518192b"));
         Assert.Equal("", AppUpdate.ShaFromInformationalVersion("2.0.0"));
+        Assert.True(AppUpdate.ShouldFallbackFromApi(403));
+        Assert.True(AppUpdate.ShouldFallbackFromApi(429));
+        Assert.False(AppUpdate.ShouldFallbackFromApi(400));
     }
 
     [Fact]

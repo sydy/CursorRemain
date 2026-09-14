@@ -77,6 +77,8 @@ static class AppUpdater
         {
             var msg = "检查更新失败: " + ex.Message;
             RememberCheck(cfg, msg);
+            if (manual && msg.Contains("无法检查更新", StringComparison.Ordinal))
+                OpenDownloadPage();
             return msg;
         }
         finally
@@ -93,36 +95,84 @@ static class AppUpdater
 
     static async Task<AppRelease> FetchLatest(CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Get, AppUpdate.ApiLatestReleaseUrl);
-        using var resp = await Http.SendAsync(req, ct);
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        if (!resp.IsSuccessStatusCode)
-            throw new InvalidOperationException($"GitHub {((int)resp.StatusCode)}");
-        var release = AppUpdate.ParseRelease(body);
-        if (release.CommitSha.Length == 0)
+        Exception? apiError = null;
+        try
         {
-            try
+            using var apiCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            apiCts.CancelAfter(TimeSpan.FromSeconds(10));
+            using var req = new HttpRequestMessage(HttpMethod.Get, AppUpdate.ApiLatestReleaseUrl);
+            req.Headers.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
+            using var resp = await Http.SendAsync(req, apiCts.Token);
+            var body = await resp.Content.ReadAsStringAsync(apiCts.Token);
+            if (resp.IsSuccessStatusCode)
             {
-                using var refReq = new HttpRequestMessage(HttpMethod.Get, AppUpdate.ApiLatestRefUrl);
-                using var refResp = await Http.SendAsync(refReq, ct);
-                if (refResp.IsSuccessStatusCode)
+                var release = AppUpdate.ParseRelease(body);
+                if (release.CommitSha.Length == 0)
                 {
-                    var sha = AppUpdate.ParseTagRefSha(await refResp.Content.ReadAsStringAsync(ct));
-                    if (sha.Length > 0)
-                        release = new AppRelease
+                    try
+                    {
+                        using var refReq = new HttpRequestMessage(HttpMethod.Get, AppUpdate.ApiLatestRefUrl);
+                        refReq.Headers.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
+                        using var refResp = await Http.SendAsync(refReq, apiCts.Token);
+                        if (refResp.IsSuccessStatusCode)
                         {
-                            Tag = release.Tag,
-                            CommitSha = sha,
-                            PageUrl = release.PageUrl,
-                            PublishedAt = release.PublishedAt,
-                            Assets = release.Assets,
-                        };
+                            var sha = AppUpdate.ParseTagRefSha(await refResp.Content.ReadAsStringAsync(apiCts.Token));
+                            if (sha.Length > 0)
+                                release = new AppRelease
+                                {
+                                    Tag = release.Tag,
+                                    CommitSha = sha,
+                                    PageUrl = release.PageUrl,
+                                    PublishedAt = release.PublishedAt,
+                                    Assets = release.Assets,
+                                };
+                        }
+                    }
+                    catch { }
                 }
+                if (release.Assets.Count == 0)
+                    release = new AppRelease
+                    {
+                        Tag = release.Tag,
+                        CommitSha = release.CommitSha,
+                        PageUrl = release.PageUrl,
+                        PublishedAt = release.PublishedAt,
+                        Assets = AppUpdate.KnownAssets(),
+                    };
+                return release;
             }
-            catch { }
+            if (!AppUpdate.ShouldFallbackFromApi((int)resp.StatusCode))
+                throw new InvalidOperationException(AppUpdate.HttpStatusMessage((int)resp.StatusCode));
+            apiError = new InvalidOperationException(AppUpdate.HttpStatusMessage((int)resp.StatusCode));
         }
-        return release;
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            apiError = ex;
+        }
+
+        try
+        {
+            using var pageCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            pageCts.CancelAfter(TimeSpan.FromSeconds(20));
+            using var req = new HttpRequestMessage(HttpMethod.Get, AppUpdate.LatestReleasePageUrl);
+            req.Headers.Accept.Clear();
+            req.Headers.Accept.ParseAdd("text/html");
+            using var resp = await Http.SendAsync(req, pageCts.Token);
+            var html = await resp.Content.ReadAsStringAsync(pageCts.Token);
+            if (!resp.IsSuccessStatusCode)
+                throw new InvalidOperationException(AppUpdate.HttpStatusMessage((int)resp.StatusCode));
+            return AppUpdate.ParseReleasePage(html);
+        }
+        catch (Exception pageError) when (apiError is not null)
+        {
+            throw new InvalidOperationException(
+                "无法检查更新（" + ShortError(apiError) + "）。也可打开下载页手动安装",
+                pageError);
+        }
     }
+
+    static string ShortError(Exception ex) =>
+        ex is OperationCanceledException or TaskCanceledException ? "连接超时" : ex.Message;
 
     static async Task<string> DownloadAndStage(AppReleaseAsset asset, CancellationToken ct)
     {
