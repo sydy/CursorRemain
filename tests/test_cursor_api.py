@@ -399,6 +399,8 @@ class SourceGuardTests(unittest.TestCase):
             "static let cornerRadius: CGFloat = 16",
             "static let leftWidth: CGFloat = 176",
             "static let ringSize: CGFloat = 148",
+            "static let toolButtonHeight: CGFloat = 24",
+            "static let toolButtonGap: CGFloat = 6",
         ):
             self.assertIn(snippet, mac_flyout)
         for snippet in (
@@ -407,15 +409,25 @@ class SourceGuardTests(unittest.TestCase):
             "public const int CornerRadius = 16",
             "public const int LeftWidth = 176",
             "public const int RingSize = 148",
+            "public const int ToolButtonHeight = 24",
+            "public const int ToolButtonGap = 6",
         ):
             self.assertIn(snippet, win_layout)
         self.assertIn("DrawGauge", win_flyout)
         self.assertIn("DrawCard", win_flyout)
         self.assertIn("DashboardLinkLabel", win_flyout)
         self.assertIn("toolButton", mac_flyout)
+        self.assertIn("var toolBar: some View", mac_flyout)
+        self.assertIn(".fixedSize()", mac_flyout)
+        self.assertIn("DrawButtons(g, new RectangleF(pad, contentBottom + btnGap, Width - pad * 2, btnH)", win_flyout)
         self.assertIn("Grok Bot", win_flyout)
         self.assertIn("Grok Bot", mac_flyout)
         self.assertNotIn("_body.Text", win_flyout)
+        inner = 500 - 16 * 2
+        right = inner - 176 - 16
+        need = 5 * 56 + 4 * 6
+        self.assertGreaterEqual(inner, need)
+        self.assertLess(right, need)
 
     def test_grok_bot_status_lines(self) -> None:
         from datetime import datetime, timezone

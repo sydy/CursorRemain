@@ -902,7 +902,12 @@ public class FixtureTests
         Assert.Equal(8, FlyoutLayout.CardGap);
         Assert.Equal(5, FlyoutLayout.BarHeight);
         Assert.Equal(36, FlyoutLayout.SparkHeight);
+        Assert.Equal(24, FlyoutLayout.ToolButtonHeight);
+        Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.True(FlyoutLayout.LeftWidth + FlyoutLayout.Padding * 2 + FlyoutLayout.ColumnGap < FlyoutLayout.Width);
+        // 复制/刷新/报表/对比/设置 五颗带文字胶囊铺在整行底栏。
+        const int labeledPill = 56;
+        Assert.True(FlyoutLayout.Width - FlyoutLayout.Padding * 2 >= 5 * labeledPill + 4 * FlyoutLayout.ToolButtonGap);
     }
 
     [Theory]

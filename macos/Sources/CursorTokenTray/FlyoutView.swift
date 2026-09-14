@@ -18,15 +18,21 @@ enum FlyoutLayout {
     static let cardGap: CGFloat = 8
     static let barHeight: CGFloat = 5
     static let sparkHeight: CGFloat = 36
+    static let toolButtonHeight: CGFloat = 24
+    static let toolButtonGap: CGFloat = 6
 }
 
 struct FlyoutView: View {
     @ObservedObject var store: AppStore
 
     var body: some View {
-        HStack(alignment: .top, spacing: FlyoutLayout.columnGap) {
-            leftColumn
-            rightColumn
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: FlyoutLayout.columnGap) {
+                leftColumn
+                rightColumn
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            toolBar
         }
         .padding(FlyoutLayout.padding)
         .frame(width: FlyoutLayout.width, height: FlyoutLayout.height)
@@ -135,26 +141,30 @@ struct FlyoutView: View {
                 Text("更新  \(updated)").font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                Spacer()
-                toolButton("复制", "doc.on.doc") { store.copySummary() }
-                toolButton("刷新", "arrow.clockwise") { store.requestRefresh() }
-                toolButton("报表", "chart.bar") {
-                    FlyoutWindowController.shared.close()
-                    store.openReport()
-                }
-                toolButton("对比", "tablecells") {
-                    FlyoutWindowController.shared.close()
-                    store.openCompare()
-                }
-                toolButton("设置", "gearshape") {
-                    FlyoutWindowController.shared.close()
-                    store.openSettings(focusToken: store.errorMessage != nil)
-                }
-            }
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    var toolBar: some View {
+        HStack(spacing: FlyoutLayout.toolButtonGap) {
+            Spacer(minLength: 0)
+            toolButton("复制", "doc.on.doc") { store.copySummary() }
+            toolButton("刷新", "arrow.clockwise") { store.requestRefresh() }
+            toolButton("报表", "chart.bar") {
+                FlyoutWindowController.shared.close()
+                store.openReport()
+            }
+            toolButton("对比", "tablecells") {
+                FlyoutWindowController.shared.close()
+                store.openCompare()
+            }
+            toolButton("设置", "gearshape") {
+                FlyoutWindowController.shared.close()
+                store.openSettings(focusToken: store.errorMessage != nil)
+            }
+        }
+        .padding(.top, 4)
+        .frame(minHeight: FlyoutLayout.toolButtonHeight)
     }
 
     func estimateColor(_ usage: UsageSnapshot) -> Color {
@@ -210,6 +220,8 @@ struct FlyoutView: View {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
                 Text(title)
+                    .lineLimit(1)
+                    .fixedSize()
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -218,6 +230,8 @@ struct FlyoutView: View {
             .background(Color.primary.opacity(0.08), in: Capsule())
         }
         .buttonStyle(.plain)
+        .fixedSize()
+        .layoutPriority(1)
         .help(title)
     }
 

@@ -192,6 +192,8 @@ public static class FlyoutLayout
     public const int CardGap = 8;
     public const int BarHeight = 5;
     public const int SparkHeight = 36;
+    public const int ToolButtonHeight = 24;
+    public const int ToolButtonGap = 6;
 }
 
 public static class RemainingTone
