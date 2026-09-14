@@ -823,6 +823,34 @@ def chart_model_label(name: str) -> str:
     return text[7:] if text.startswith("cursor-") else text
 
 
+def wrap_legend_chips(
+    sizes: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+    container_width: float,
+    h_spacing: float = 8.0,
+    v_spacing: float = 6.0,
+) -> tuple[float, float, list[tuple[float, float, float, float]]]:
+    """按每个标签自身宽度从左到右排列，放不下再换行。"""
+    limit = container_width if container_width and container_width > 0 else float("inf")
+    frames: list[tuple[float, float, float, float]] = []
+    x = 0.0
+    y = 0.0
+    row_h = 0.0
+    max_x = 0.0
+    for raw_w, raw_h in sizes:
+        w = max(0.0, float(raw_w))
+        h = max(0.0, float(raw_h))
+        if x > 0 and x + w > limit:
+            max_x = max(max_x, x - h_spacing)
+            x = 0.0
+            y += row_h + v_spacing
+            row_h = 0.0
+        frames.append((x, y, w, h))
+        x += w + h_spacing
+        row_h = max(row_h, h)
+    max_x = max(max_x, max(0.0, x - h_spacing))
+    return max_x, y + row_h, frames
+
+
 def _floor_hour_ms(timestamp_ms: int) -> int:
     return max(0, timestamp_ms) // _MS_HOUR * _MS_HOUR
 

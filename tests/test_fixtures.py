@@ -269,6 +269,7 @@ class GoldenFixtureTests(unittest.TestCase):
             build_usage_chart,
             chart_model_label,
             usage_event_from_dict,
+            wrap_legend_chips,
         )
 
         data = json.loads((ROOT / "fixtures" / "usage_chart_cases.json").read_text(encoding="utf-8"))
@@ -285,6 +286,18 @@ class GoldenFixtureTests(unittest.TestCase):
                     hidden_models=set(cse["hidden_models"]),
                 )
                 self._assert_chart_series(series, cse["expected"])
+        for cse in data["legend_wrap"]:
+            with self.subTest(cse["name"]):
+                width, height, frames = wrap_legend_chips(
+                    [tuple(size) for size in cse["sizes"]],
+                    cse["container"],
+                    h_spacing=cse["h_spacing"],
+                    v_spacing=cse["v_spacing"],
+                )
+                exp = cse["expected"]
+                self.assertEqual(width, exp["width"])
+                self.assertEqual(height, exp["height"])
+                self.assertEqual([list(frame) for frame in frames], exp["frames"])
 
     def _assert_chart_series(self, series, exp) -> None:
         self.assertEqual(series.hourly, exp["hourly"])

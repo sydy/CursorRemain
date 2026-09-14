@@ -574,5 +574,55 @@
         ]
       }
     }
+  ],
+  "legend_wrap": [
+    {
+      "name": "empty",
+      "container": 400,
+      "h_spacing": 8,
+      "v_spacing": 6,
+      "sizes": [],
+      "expected": {
+        "width": 0,
+        "height": 0,
+        "frames": []
+      }
+    },
+    {
+      "name": "keeps_own_width",
+      "container": 400,
+      "h_spacing": 8,
+      "v_spacing": 6,
+      "sizes": [[140, 22], [80, 22]],
+      "expected": {
+        "width": 228,
+        "height": 22,
+        "frames": [[0, 0, 140, 22], [148, 0, 80, 22]]
+      }
+    },
+    {
+      "name": "wraps_instead_of_equal_columns",
+      "container": 220,
+      "h_spacing": 8,
+      "v_spacing": 6,
+      "sizes": [[140, 22], [80, 22], [90, 22]],
+      "expected": {
+        "width": 178,
+        "height": 50,
+        "frames": [[0, 0, 140, 22], [0, 28, 80, 22], [88, 28, 90, 22]]
+      }
+    },
+    {
+      "name": "single_chip_wider_than_container_keeps_width",
+      "container": 96,
+      "h_spacing": 8,
+      "v_spacing": 6,
+      "sizes": [[140, 22], [80, 22]],
+      "expected": {
+        "width": 140,
+        "height": 50,
+        "frames": [[0, 0, 140, 22], [0, 28, 80, 22]]
+      }
+    }
   ]
 }

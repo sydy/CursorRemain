@@ -207,26 +207,81 @@ private struct FlowLegend: View {
     var onToggle: (String) -> Void
 
     var body: some View {
-        let columns = [GridItem(.adaptive(minimum: 96), spacing: 8, alignment: .leading)]
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 6) {
+        // Size each chip to its label. LazyVGrid `.adaptive` columns share one
+        // width, which truncates names such as `claude-opus-4-6`.
+        ChipFlowLayout(
+            hSpacing: UsageChartLayout.legendChipHSpacing,
+            vSpacing: UsageChartLayout.legendChipVSpacing
+        ) {
             ForEach(models, id: \.self) { name in
-                let on = !hidden.contains(name)
-                let color = UsageChartPalette.color(models: models, name: name)
-                Button { onToggle(name) } label: {
-                    HStack(spacing: 6) {
-                        Circle().fill(on ? color : Color.secondary.opacity(0.4)).frame(width: 8, height: 8)
-                        Text(UsageEvents.chartModelLabel(name)).font(.caption)
-                            .foregroundStyle(on ? Color.primary : Color.secondary)
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(on ? color.opacity(0.18) : Color.clear))
-                    .overlay(Capsule().stroke(on ? color.opacity(0.8) : Color.secondary.opacity(0.35), lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .help("显示 / 隐藏此模型")
+                chip(name)
             }
         }
+    }
+
+    private func chip(_ name: String) -> some View {
+        let on = !hidden.contains(name)
+        let color = UsageChartPalette.color(models: models, name: name)
+        return Button { onToggle(name) } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(on ? color : Color.secondary.opacity(0.4))
+                    .frame(width: 8, height: 8)
+                Text(UsageEvents.chartModelLabel(name))
+                    .font(.caption)
+                    .foregroundStyle(on ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(on ? color.opacity(0.18) : Color.clear))
+            .overlay(Capsule().stroke(on ? color.opacity(0.8) : Color.secondary.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("显示 / 隐藏此模型")
+    }
+}
+
+/// Left-to-right wrap that keeps each subview at its intrinsic size.
+private struct ChipFlowLayout: Layout {
+    var hSpacing: CGFloat
+    var vSpacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(in: proposal.width, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrange(in: bounds.width, subviews: subviews)
+        for (subview, frame) in zip(subviews, result.frames) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.origin.x, y: bounds.minY + frame.origin.y),
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
+    }
+
+    private func arrange(in width: CGFloat?, subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let limit = width ?? .infinity
+        let sizes: [(width: Double, height: Double)] = subviews.map { subview in
+            let ideal = subview.sizeThatFits(.unspecified)
+            if limit.isFinite, limit > 0, ideal.width > limit {
+                let size = subview.sizeThatFits(ProposedViewSize(width: limit, height: ideal.height))
+                return (Double(size.width), Double(size.height))
+            }
+            return (Double(ideal.width), Double(ideal.height))
+        }
+        let packed = UsageChartLayout.wrapChips(
+            sizes: sizes,
+            containerWidth: Double(limit),
+            hSpacing: Double(hSpacing),
+            vSpacing: Double(vSpacing)
+        )
+        let frames = packed.frames.map {
+            CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height)
+        }
+        return (CGSize(width: packed.width, height: packed.height), frames)
     }
 }

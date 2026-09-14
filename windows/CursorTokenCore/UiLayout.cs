@@ -163,6 +163,43 @@ public static class UsageChartLayout
         return (w, h);
     }
 
+    public readonly record struct ChipFrame(int X, int Y, int Width, int Height);
+
+    /// <summary>
+    /// Pack chips left-to-right at their own width and wrap when the next chip
+    /// does not fit. Unlike equal-width grid columns, a long label keeps its size.
+    /// </summary>
+    public static (int Width, int Height, ChipFrame[] Frames) WrapChips(
+        IReadOnlyList<(int Width, int Height)> sizes,
+        int containerWidth,
+        int hSpacing = DesignLegendGap,
+        int vSpacing = 6)
+    {
+        var limit = containerWidth > 0 ? containerWidth : int.MaxValue;
+        var frames = new ChipFrame[sizes.Count];
+        var x = 0;
+        var y = 0;
+        var rowH = 0;
+        var maxX = 0;
+        for (var i = 0; i < sizes.Count; i++)
+        {
+            var w = Math.Max(0, sizes[i].Width);
+            var h = Math.Max(0, sizes[i].Height);
+            if (x > 0 && x + w > limit)
+            {
+                maxX = Math.Max(maxX, x - hSpacing);
+                x = 0;
+                y += rowH + vSpacing;
+                rowH = 0;
+            }
+            frames[i] = new ChipFrame(x, y, w, h);
+            x += w + hSpacing;
+            rowH = Math.Max(rowH, h);
+        }
+        maxX = Math.Max(maxX, Math.Max(0, x - hSpacing));
+        return (maxX, y + rowH, frames);
+    }
+
     public static int LegendHeight(int legendLines, int dpi)
     {
         if (legendLines <= 0) return 0;
