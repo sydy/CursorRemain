@@ -24,6 +24,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - **账号对比**：独立窗口，按渠道标签（自费 / 第三方）分组。每个账号一行，First-party / API / Grok Bot 各占一行，数字按列对齐。窗口按各号自己的最新周期或有效期（没有则近 30 天），日均持有 = 折合月费÷30，窗口实付把月费/实际成本按窗口天数折算后再摊，且不超过所填实际成本。表里同时给出 ¥/百万 Token、¥/次。打开先读本地明细，点「同步」再逐号拉取；可导出 CSV。短期号请把买价折成月费（买价÷天数×30）
 - 默认每 10 分钟刷新（可配置）
 - 开机自启（默认开启；Windows 写当前用户注册表 `Run` 项，macOS 用 `SMAppService` / LaunchAgent）
+- **自动更新**（默认开启）：启动后对照 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest)，有新构建就下载本平台 zip、替换当前程序并重启。设置里的「托盘 / 菜单栏」页可关掉或手动检查；开发运行不会覆盖本机文件，只会打开下载页
 
 悬浮框与 macOS 相同为左右分栏：左侧圆环剩余百分比、套餐说明与用量链接；右侧金额 / First-party·API / Grok Bot 进度卡片、Token 与重置、近 7 日趋势，以及复制 / 刷新 / 报表 / 对比 / 设置。  
 预计可用按本周期已用比例与已过天数估算，并与重置日对比提示「可撑过本周期」或「可能提前耗尽」。企业 / 团队账号打开 [用量页](https://cursor.com/dashboard/usage)，个人账号仍打开账单页。
@@ -84,7 +85,7 @@ swift test --package-path macos
 1. 本机先安装一次 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。已装过可跳过
 2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
 3. 解压运行 `CursorTokenTray.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
-4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
+4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe。之后会自动对照 Latest 更新（可在设置里关闭）
 
 本地发布：
 
@@ -105,7 +106,7 @@ open /Applications/CursorTokenTray.app
 ```
 
 路径按实际位置改。放行一次之后就可以正常打开。  
-5. 开机自启会注册本机登录项（`SMAppService`）
+5. 开机自启会注册本机登录项（`SMAppService`）。之后会自动对照 Latest 更新（可在设置里关闭）
 
 本地打包：`./macos/scripts/package_app.sh`
 
@@ -175,7 +176,7 @@ macOS：`~/Library/Application Support/CursorTokenTray/config.json`
 3. 启动时、保存账号 / 设置时、定时刷新时会自动与云端合并：按账号 `id` 最后写入获胜；删除会留下墓碑。配置（刷新间隔、告警、通知、图标、月费、汇率）按整份最后写入获胜。剩余用量按 `usage_updated_at` 最后写入获胜；用量历史和报表明细按时间戳合并
 4. 加密信封仍是 PBKDF2 + AES-256-GCM，密钥由登录密码在本地派生。本机 `config.json` 里的登录态按操作系统加密保存
 
-同步账号身份、上述跨设备设置、剩余用量、用量历史和报表缓存。开机自启和告警去重仍留本机。  
+同步账号身份、上述跨设备设置、剩余用量、用量历史和报表缓存。开机自启、自动更新和告警去重仍留本机。  
 忘记密码后云端密文无法解密，请先在本机导出备份。服务端部署见 `server/README.md`。
 
 ## 说明
@@ -187,5 +188,5 @@ macOS：`~/Library/Application Support/CursorTokenTray/config.json`
 - macOS：若看不到图标，点菜单栏「•••」或「控制中心」展开隐藏项；也可在「活动监视器」结束「Cursor 余量」后重新打开
 - 首次打开若立刻提示「已在后台运行」，多半是旧进程还在，先在活动监视器里退出再启动
 - macOS 点「设置…」会在**当前菜单栏进程**弹出系统原生设置窗，不另起子进程。打开设置 / 用量报表 / 账号对比时 Dock 可能短暂出现图标；窗口都关掉后图标会收回，菜单栏圆环应还在
-- 升级后请先在「活动监视器」结束旧的「Cursor 余量」，再打开新下载的 `.app`，不要两个版本叠着跑
+- 自动更新会结束当前进程再打开新 `.app`；若手动覆盖安装，请先在「活动监视器」结束旧的「Cursor 余量」，不要两个版本叠着跑
 - Token 过期后请重新导入或粘贴；飞出层会提示并可一键打开设置

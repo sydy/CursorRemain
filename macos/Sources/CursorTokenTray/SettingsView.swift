@@ -191,6 +191,18 @@ struct SettingsRootView: View {
                 Text("仅色点").tag("dot")
             }
             Toggle("开机自启（下次登录生效）", isOn: autostartBinding)
+            Text("更新").font(.headline).padding(.top, 8)
+            Toggle("自动检查并安装更新", isOn: autoUpdateBinding)
+            Text("当前版本  \(AppUpdate.displayVersion())")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("检查更新") {
+                Task { await store.checkForUpdate(manual: true) }
+            }
+            .disabled(store.updateBusy)
+            Text(store.updateStatus.isEmpty ? "对照 GitHub Releases 的 Latest 构建。打包版会下载替换后重启；开发运行则打开下载页。" : store.updateStatus)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Spacer()
             footer
         }
@@ -330,6 +342,13 @@ struct SettingsRootView: View {
         Binding(
             get: { store.config.autostartEnabled },
             set: { v in var c = store.config; c.autostartEnabled = v; store.applyConfig(c, refresh: false) }
+        )
+    }
+
+    var autoUpdateBinding: Binding<Bool> {
+        Binding(
+            get: { store.config.autoUpdateEnabled },
+            set: { v in var c = store.config; c.autoUpdateEnabled = v; store.applyConfig(c, refresh: false) }
         )
     }
 

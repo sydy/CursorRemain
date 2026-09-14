@@ -34,6 +34,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "notify_enabled": True,
     "notify_exhaustion_risk": True,
     "autostart_enabled": True,
+    "auto_update_enabled": True,
+    "update_last_check_at": "",
+    "update_last_error": "",
+    "update_installed_sha": "",
+    "update_installed_asset_id": 0,
     "tray_display_mode": "ring",  # ring | number | dot
     "monthly_plan_usd": 0,  # 0 = 按套餐预填
     "actual_cny": 0,  # 跟随当前账号；0 = 用月费×汇率。每个账号可独立设置
@@ -146,6 +151,14 @@ def _normalize_config(cfg: dict[str, Any], *, raw: dict[str, Any]) -> dict[str, 
     cfg["notify_enabled"] = bool(cfg.get("notify_enabled", True))
     cfg["notify_exhaustion_risk"] = bool(cfg.get("notify_exhaustion_risk", True))
     cfg["autostart_enabled"] = bool(cfg.get("autostart_enabled", True))
+    cfg["auto_update_enabled"] = bool(cfg.get("auto_update_enabled", True))
+    cfg["update_last_check_at"] = str(cfg.get("update_last_check_at") or "").strip()
+    cfg["update_last_error"] = str(cfg.get("update_last_error") or "")
+    cfg["update_installed_sha"] = str(cfg.get("update_installed_sha") or "").strip().lower()
+    try:
+        cfg["update_installed_asset_id"] = max(0, int(cfg.get("update_installed_asset_id") or 0))
+    except (TypeError, ValueError):
+        cfg["update_installed_asset_id"] = 0
     cfg["low_quota_notified"] = bool(cfg.get("low_quota_notified", False))
     cfg["auth_error_notified"] = bool(cfg.get("auth_error_notified", False))
     cfg["exhaustion_notified"] = bool(cfg.get("exhaustion_notified", False))

@@ -44,6 +44,17 @@ sealed class SettingsForm : Form
     readonly CheckBox _exhaust = new() { Text = "启用耗尽风险通知", AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
     readonly ComboBox _mode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 200 };
     readonly CheckBox _auto = new() { Text = "开机自启", AutoSize = true, Margin = new Padding(0, 6, 0, 8) };
+    readonly CheckBox _autoUpdate = new() { Text = "自动检查并安装更新", AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
+    readonly Label _updateVersion = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
+    readonly Label _updateStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 4) };
+    readonly Label _updateHint = new()
+    {
+        Text = "对照 GitHub Releases 的 Latest 构建。打包版会下载替换后重启；开发运行则打开下载页。",
+        AutoSize = true,
+        ForeColor = Color.DimGray,
+        Margin = new Padding(0, 0, 0, 8),
+    };
+    readonly Button _checkUpdate = ActionButton("检查更新");
     readonly TextBox _cloudEmail = new() { Width = 220 };
     readonly TextBox _cloudPassword = new() { Width = 220, UseSystemPasswordChar = true };
     readonly Label _cloudAccount = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
@@ -98,13 +109,14 @@ sealed class SettingsForm : Form
     AppConfig _cfg;
     readonly Action<AppConfig> _onSaved;
     readonly Func<string?, Task<ImportResult>> _import;
+    readonly Func<bool, Task<string>> _checkUpdateAction;
 
     bool _importing;
     bool _loading;
 
-    public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport)
+    public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate)
     {
-        _cfg = cfg; _onSaved = onSaved; _import = import;
+        _cfg = cfg; _onSaved = onSaved; _import = import; _checkUpdateAction = checkUpdate;
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -161,7 +173,13 @@ sealed class SettingsForm : Form
             MakeTab(SettingsLayout.TrayTab,
                 Caption("托盘与启动"),
                 FieldRow("托盘图标", _mode),
-                _auto),
+                _auto,
+                Caption("更新"),
+                _autoUpdate,
+                _updateVersion,
+                Flow(_checkUpdate),
+                _updateStatus,
+                _updateHint),
             MakeTab(SettingsLayout.SyncTab,
                 Caption("云同步"),
                 _cloudAccount,
@@ -235,6 +253,7 @@ sealed class SettingsForm : Form
         _syncNow.Click += async (_, _) => await DoSync();
         _syncExport.Click += (_, _) => DoExport();
         _syncImport.Click += (_, _) => DoImportFile();
+        _checkUpdate.Click += async (_, _) => await DoCheckUpdate();
         ResumeLayout(false);
         if (startImport) BeginInvoke(async () => await DoImport("cursor-app"));
     }
@@ -483,6 +502,12 @@ sealed class SettingsForm : Form
             _exhaust.Checked = cfg.NotifyExhaustionRisk;
             _mode.SelectedIndex = cfg.TrayDisplayMode switch { "number" => 1, "dot" => 2, _ => 0 };
             _auto.Checked = cfg.AutostartEnabled;
+            _autoUpdate.Checked = cfg.AutoUpdateEnabled;
+            _updateVersion.Text = "当前版本  " + AppUpdate.DisplayVersion();
+            if (string.IsNullOrWhiteSpace(_updateStatus.Text))
+                _updateStatus.Text = string.IsNullOrWhiteSpace(cfg.UpdateLastError)
+                    ? (string.IsNullOrWhiteSpace(cfg.UpdateLastCheckAt) ? "" : "上次检查 " + cfg.UpdateLastCheckAt)
+                    : cfg.UpdateLastError;
             _cloudEmail.Text = cfg.CloudEmail;
             _cloudPassword.Text = "";
             _cloudPassword.PlaceholderText = cfg.CloudLoggedIn ? "已保存，登录后用于加密" : "至少 8 位，也用于加密同步数据";
@@ -769,8 +794,39 @@ sealed class SettingsForm : Form
             _cfg.AuthErrorNotified = live.AuthErrorNotified;
             _cfg.AlertNotifiedLevels = [.. live.AlertNotifiedLevels];
             _cfg.ExhaustionNotified = live.ExhaustionNotified;
+            _cfg.UpdateLastCheckAt = live.UpdateLastCheckAt;
+            _cfg.UpdateLastError = live.UpdateLastError;
+            _cfg.UpdateInstalledSha = live.UpdateInstalledSha;
+            _cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
         }
         catch { }
+    }
+
+    public void SetUpdateStatus(string status)
+    {
+        if (IsDisposed) return;
+        _updateStatus.Text = string.IsNullOrWhiteSpace(status) ? _updateStatus.Text : status;
+    }
+
+    async Task DoCheckUpdate()
+    {
+        if (_checkUpdate.Enabled == false) return;
+        Persist(false);
+        _checkUpdate.Enabled = false;
+        _updateStatus.Text = "正在检查更新…";
+        try
+        {
+            var status = await _checkUpdateAction(true);
+            if (!IsDisposed) _updateStatus.Text = status;
+        }
+        catch (Exception ex)
+        {
+            if (!IsDisposed) _updateStatus.Text = "检查更新失败: " + ex.Message;
+        }
+        finally
+        {
+            if (!IsDisposed) _checkUpdate.Enabled = true;
+        }
     }
 
     void NotifySaved()
@@ -794,6 +850,7 @@ sealed class SettingsForm : Form
         _cfg.NotifyExhaustionRisk = _exhaust.Checked;
         _cfg.TrayDisplayMode = _mode.SelectedIndex switch { 1 => "number", 2 => "dot", _ => "ring" };
         _cfg.AutostartEnabled = _auto.Checked;
+        _cfg.AutoUpdateEnabled = _autoUpdate.Checked;
         ReadKindInto(_cfg.ActiveAccount);
         if (CursorAccountPaste.IsSingleToken(_token.Text))
             try { _cfg.UpsertAccount(_token.Text, activate: true); } catch { }

@@ -77,6 +77,11 @@ public sealed class AppConfig
     public bool NotifyEnabled { get; set; } = true;
     public bool NotifyExhaustionRisk { get; set; } = true;
     public bool AutostartEnabled { get; set; } = true;
+    public bool AutoUpdateEnabled { get; set; } = true;
+    public string UpdateLastCheckAt { get; set; } = "";
+    public string UpdateLastError { get; set; } = "";
+    public string UpdateInstalledSha { get; set; } = "";
+    public long UpdateInstalledAssetId { get; set; }
     public string TrayDisplayMode { get; set; } = "ring";
     public double MonthlyPlanUsd { get; set; }
     public double ActualCny { get; set; }
@@ -520,6 +525,17 @@ public static class ConfigStore
         cfg.NotifyEnabled = Bool(raw, "notify_enabled", true);
         cfg.NotifyExhaustionRisk = Bool(raw, "notify_exhaustion_risk", true);
         cfg.AutostartEnabled = Bool(raw, "autostart_enabled", true);
+        cfg.AutoUpdateEnabled = Bool(raw, "auto_update_enabled", true);
+        cfg.UpdateLastCheckAt = Str(raw, "update_last_check_at").Trim();
+        cfg.UpdateLastError = Str(raw, "update_last_error");
+        cfg.UpdateInstalledSha = AppUpdate.NormalizeSha(Str(raw, "update_installed_sha"));
+        if (raw.TryGetProperty("update_installed_asset_id", out var uaid))
+        {
+            if (uaid.ValueKind == JsonValueKind.Number && uaid.TryGetInt64(out var uaidv))
+                cfg.UpdateInstalledAssetId = Math.Max(0, uaidv);
+            else if (uaid.ValueKind == JsonValueKind.String && long.TryParse(uaid.GetString(), out uaidv))
+                cfg.UpdateInstalledAssetId = Math.Max(0, uaidv);
+        }
         cfg.LowQuotaNotified = Bool(raw, "low_quota_notified", false);
         cfg.AuthErrorNotified = Bool(raw, "auth_error_notified", false);
         cfg.ExhaustionNotified = Bool(raw, "exhaustion_notified", false);
@@ -790,6 +806,11 @@ public static class ConfigStore
         notify_enabled = cfg.NotifyEnabled,
         notify_exhaustion_risk = cfg.NotifyExhaustionRisk,
         autostart_enabled = cfg.AutostartEnabled,
+        auto_update_enabled = cfg.AutoUpdateEnabled,
+        update_last_check_at = cfg.UpdateLastCheckAt,
+        update_last_error = cfg.UpdateLastError,
+        update_installed_sha = cfg.UpdateInstalledSha,
+        update_installed_asset_id = cfg.UpdateInstalledAssetId,
         tray_display_mode = cfg.TrayDisplayMode,
         monthly_plan_usd = cfg.MonthlyPlanUsd,
         actual_cny = cfg.ActualCny,

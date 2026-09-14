@@ -171,6 +171,7 @@ final class StatusItemController: NSObject {
         menu.addItem(withTitle: "在 Cursor 登录当前账号…", action: #selector(loginCursor), keyEquivalent: "").target = self
         menu.addItem(withTitle: "导入 Token…", action: #selector(importToken), keyEquivalent: "").target = self
         menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "检查更新…", action: #selector(checkUpdate), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出", action: #selector(quit), keyEquivalent: "q").target = self
         guard let button = item.button else { return }
@@ -205,6 +206,11 @@ final class StatusItemController: NSObject {
         }
     }
     @objc private func openSettings() { store.openSettings() }
+    @objc private func checkUpdate() {
+        Task { @MainActor in
+            _ = await store.checkForUpdate(manual: true)
+        }
+    }
     @objc private func switchAccount(_ sender: NSMenuItem) {
         if let id = sender.representedObject as? String { store.switchAccount(id) }
     }

@@ -198,6 +198,11 @@ public struct AppConfig: Equatable, Sendable {
     public var notifyEnabled: Bool
     public var notifyExhaustionRisk: Bool
     public var autostartEnabled: Bool
+    public var autoUpdateEnabled: Bool
+    public var updateLastCheckAt: String
+    public var updateLastError: String
+    public var updateInstalledSha: String
+    public var updateInstalledAssetId: Int64
     public var trayDisplayMode: String
     public var monthlyPlanUsd: Double
     public var actualCny: Double
@@ -239,6 +244,11 @@ public struct AppConfig: Equatable, Sendable {
         notifyEnabled: true,
         notifyExhaustionRisk: true,
         autostartEnabled: true,
+        autoUpdateEnabled: true,
+        updateLastCheckAt: "",
+        updateLastError: "",
+        updateInstalledSha: "",
+        updateInstalledAssetId: 0,
         trayDisplayMode: "ring",
         monthlyPlanUsd: 0,
         actualCny: 0,
@@ -641,6 +651,11 @@ public enum ConfigStore {
         if let v = raw["notify_enabled"] as? Bool { cfg.notifyEnabled = v }
         if let v = raw["notify_exhaustion_risk"] as? Bool { cfg.notifyExhaustionRisk = v }
         if let v = raw["autostart_enabled"] as? Bool { cfg.autostartEnabled = v }
+        if let v = raw["auto_update_enabled"] as? Bool { cfg.autoUpdateEnabled = v }
+        if let v = raw["update_last_check_at"] as? String { cfg.updateLastCheckAt = v.trimmingCharacters(in: .whitespaces) }
+        if let v = raw["update_last_error"] as? String { cfg.updateLastError = v }
+        if let v = raw["update_installed_sha"] as? String { cfg.updateInstalledSha = AppUpdate.normalizeSha(v) }
+        if let v = intValue(raw["update_installed_asset_id"]) { cfg.updateInstalledAssetId = Int64(max(0, v)) }
         if let v = raw["low_quota_notified"] as? Bool { cfg.lowQuotaNotified = v }
         if let v = raw["auth_error_notified"] as? Bool { cfg.authErrorNotified = v }
         if let v = raw["exhaustion_notified"] as? Bool { cfg.exhaustionNotified = v }
@@ -918,6 +933,11 @@ public enum ConfigStore {
             "notify_enabled": cfg.notifyEnabled,
             "notify_exhaustion_risk": cfg.notifyExhaustionRisk,
             "autostart_enabled": cfg.autostartEnabled,
+            "auto_update_enabled": cfg.autoUpdateEnabled,
+            "update_last_check_at": cfg.updateLastCheckAt,
+            "update_last_error": cfg.updateLastError,
+            "update_installed_sha": cfg.updateInstalledSha,
+            "update_installed_asset_id": cfg.updateInstalledAssetId,
             "tray_display_mode": cfg.trayDisplayMode,
             "monthly_plan_usd": cfg.monthlyPlanUsd,
             "actual_cny": cfg.actualCny,
