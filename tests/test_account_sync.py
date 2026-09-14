@@ -269,5 +269,19 @@ class ConfigRoundtripTests(unittest.TestCase):
                 config.CONFIG_PATH = old_path
 
 
+class LocalTimeTests(unittest.TestCase):
+    def test_format_local_uses_system_timezone(self) -> None:
+        from account_sync import format_local, parse_iso
+
+        iso = "2026-09-14T12:37:36.998Z"
+        got = format_local(iso)
+        expect = parse_iso(iso).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+        self.assertEqual(got, expect)
+        self.assertNotIn("Z", got)
+        self.assertNotIn("T", got)
+        self.assertEqual(format_local(""), "")
+        self.assertEqual(format_local("not-a-date"), "not-a-date")
+
+
 if __name__ == "__main__":
     unittest.main()

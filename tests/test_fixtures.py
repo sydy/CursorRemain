@@ -1,5 +1,6 @@
 import json
 import unittest
+from datetime import timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +111,11 @@ class GoldenFixtureTests(unittest.TestCase):
                 self.assertEqual(got["days_remaining"], exp["days_remaining"])
 
     def test_usage_events_fixtures_match_python(self) -> None:
+        import usage_report
+
+        prev = usage_report.DISPLAY_TZ
+        usage_report.DISPLAY_TZ = timezone(timedelta(hours=8))
+        self.addCleanup(setattr, usage_report, "DISPLAY_TZ", prev)
         from usage_report import (
             CATEGORY_LABELS,
             CSV_HEADER,
@@ -264,6 +270,11 @@ class GoldenFixtureTests(unittest.TestCase):
             self.assertEqual(event_hour(ts), row["hour"])
 
     def test_usage_chart_fixtures_match_python(self) -> None:
+        import usage_report
+
+        prev = usage_report.DISPLAY_TZ
+        usage_report.DISPLAY_TZ = timezone(timedelta(hours=8))
+        self.addCleanup(setattr, usage_report, "DISPLAY_TZ", prev)
         from usage_report import (
             HOURLY_CHART_WINDOW_HOURS,
             build_usage_chart,

@@ -182,6 +182,17 @@ public enum AccountSync {
         return fmt.string(from: stamp)
     }
 
+    public static func formatLocal(_ value: String?, format: String = "yyyy-MM-dd HH:mm:ss") -> String {
+        guard let stamp = parseIso(value) else {
+            return (value ?? "").trimmingCharacters(in: .whitespaces)
+        }
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = .current
+        fmt.dateFormat = format
+        return fmt.string(from: stamp)
+    }
+
     public static func parseIso(_ value: String?) -> Date? {
         let text = (value ?? "").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return nil }
@@ -577,10 +588,8 @@ public enum AccountSync {
         account.usageUpdatedAt = ident.usageUpdatedAt
         account.billingCycleStart = ident.billingCycleStart
         account.billingCycleEnd = ident.billingCycleEnd
-        if let stamp = parseIso(account.usageUpdatedAt) {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "HH:mm:ss"
-            account.updatedAt = fmt.string(from: stamp)
+        if parseIso(account.usageUpdatedAt) != nil {
+            account.updatedAt = formatLocal(account.usageUpdatedAt, format: "HH:mm:ss")
         }
     }
 

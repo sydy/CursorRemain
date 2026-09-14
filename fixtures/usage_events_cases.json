@@ -696,7 +696,7 @@
       "output": "$1.67"
     }
   ],
-  "csv_header": "日期(北京时间),用户,类型,模型,Token,费用,实付,云端Agent",
+  "csv_header": "日期(本地时间),用户,类型,模型,Token,费用,实付,云端Agent",
   "cny_spend": {
     "defaults": [
       { "membership": "Pro", "output": 20 },

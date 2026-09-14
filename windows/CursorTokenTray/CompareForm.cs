@@ -184,7 +184,7 @@ sealed class CompareForm : Form
             }
             _report = BuildReport();
             Render();
-            var stamp = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            var stamp = DateTimeOffset.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
             _status.Text = fail == 0
                 ? $"已同步 {ok} 个账号  ·  {stamp}"
                 : $"已同步 {ok} 个账号，{fail} 个失败  ·  {stamp}";
@@ -316,7 +316,7 @@ sealed class CompareForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",
-            FileName = $"cursor-account-compare-{DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)):yyyyMMdd}.csv",
+            FileName = $"cursor-account-compare-{DateTimeOffset.Now:yyyyMMdd}.csv",
             OverwritePrompt = true,
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;

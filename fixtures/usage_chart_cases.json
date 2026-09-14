@@ -14,7 +14,7 @@
       "events": [],
       "expected": {
         "hourly": false,
-        "caption": "按日 Token（北京时间）",
+        "caption": "按日 Token（本地时间）",
         "models": [],
         "buckets": []
       }
@@ -26,7 +26,7 @@
       "events": [],
       "expected": {
         "hourly": true,
-        "caption": "按小时 Token（北京时间）",
+        "caption": "按小时 Token（本地时间）",
         "models": [],
         "buckets": []
       }
@@ -56,7 +56,7 @@
       ],
       "expected": {
         "hourly": false,
-        "caption": "按日 Token（北京时间 · 2026-08-28）",
+        "caption": "按日 Token（本地时间 · 2026-08-28）",
         "models": ["cursor-grok-4.6-high-fast"],
         "buckets": [
           {
@@ -136,7 +136,7 @@
       ],
       "expected": {
         "hourly": false,
-        "caption": "按日 Token（北京时间 · 2026-08-22 至 2026-08-24）",
+        "caption": "按日 Token（本地时间 · 2026-08-22 至 2026-08-24）",
         "models": ["cursor-grok-4.6-high-fast", "cursor-grok-4.6-high", "auto"],
         "buckets": [
           {
@@ -245,7 +245,7 @@
       ],
       "expected": {
         "hourly": false,
-        "caption": "按日 Token（北京时间 · 2026-08-22 至 2026-08-24）",
+        "caption": "按日 Token（本地时间 · 2026-08-22 至 2026-08-24）",
         "models": ["cursor-grok-4.6-high-fast", "cursor-grok-4.6-high", "auto"],
         "buckets": [
           {
@@ -348,7 +348,7 @@
       ],
       "expected": {
         "hourly": true,
-        "caption": "按小时 Token（北京时间 · 2026-08-28 09:00–11:00）",
+        "caption": "按小时 Token（本地时间 · 2026-08-28 09:00–11:00）",
         "models": ["cursor-grok-4.6-high-fast", "cursor-grok-4.6-high"],
         "buckets": [
           {
@@ -457,7 +457,7 @@
       ],
       "expected": {
         "hourly": true,
-        "caption": "按小时 Token（北京时间 · 2026-08-26 21:00 至 2026-08-28 20:00）",
+        "caption": "按小时 Token（本地时间 · 2026-08-26 21:00 至 2026-08-28 20:00）",
         "models": ["cursor-grok-4.6-high-fast", "cursor-grok-4.6-high"],
         "bucket_count": 48,
         "first_key": "2026-08-26 21:00",
@@ -538,7 +538,7 @@
       ],
       "expected": {
         "hourly": false,
-        "caption": "按日 Token（北京时间 · 2026-08-28 至 2026-08-29）",
+        "caption": "按日 Token（本地时间 · 2026-08-28 至 2026-08-29）",
         "models": ["cursor-grok-4.6-high-fast", "cursor-grok-4.6-high"],
         "buckets": [
           {

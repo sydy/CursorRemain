@@ -35,7 +35,7 @@ sealed class UsageChartPanel : Panel
     {
         AutoSize = true,
         ForeColor = Color.DimGray,
-        Text = "按日 Token（北京时间）",
+        Text = "按日 Token（本地时间）",
         Margin = new Padding(0, 4, 8, 4),
         Anchor = AnchorStyles.Left | AnchorStyles.Top,
     };

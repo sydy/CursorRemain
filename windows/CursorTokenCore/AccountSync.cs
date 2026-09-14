@@ -92,6 +92,13 @@ public static class AccountSync
         return stamp.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
     }
 
+    public static string FormatLocal(string? value, string format = "yyyy-MM-dd HH:mm:ss")
+    {
+        var stamp = ParseIso(value);
+        if (stamp is null) return (value ?? "").Trim();
+        return stamp.Value.ToLocalTime().ToString(format, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public static DateTimeOffset? ParseIso(string? value)
     {
         var text = (value ?? "").Trim();

@@ -66,8 +66,9 @@ WINDOW_LABELS = {
     WINDOW_FALLBACK: "近30天",
 }
 
-DISPLAY_TZ = timezone(timedelta(hours=8))
-TZ_LABEL = "北京时间"
+# Tests may pin this to UTC+8 so golden fixtures stay portable.
+DISPLAY_TZ = datetime.now().astimezone().tzinfo or timezone.utc
+TZ_LABEL = "本地时间"
 CSV_HEADER = f"日期({TZ_LABEL}),用户,类型,模型,Token,费用,实付,云端Agent"
 DEFAULT_USD_CNY_RATE = 7.50
 _PLAN_USD = {
@@ -807,10 +808,11 @@ def report_date_start_ms(raw: Any) -> int | None:
 
 
 def report_date_end_ms(raw: Any) -> int | None:
-    start = report_date_start_ms(raw)
-    if start is None:
+    date = sanitize_report_date(raw)
+    if not date:
         return None
-    return start + _MS_DAY
+    start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=DISPLAY_TZ)
+    return int((start + timedelta(days=1)).timestamp() * 1000)
 
 
 def event_hour(timestamp_ms: int) -> str:
@@ -856,8 +858,9 @@ def _floor_hour_ms(timestamp_ms: int) -> int:
 
 
 def _floor_day_ms(timestamp_ms: int) -> int:
-    shifted = max(0, timestamp_ms) + 8 * _MS_HOUR
-    return (shifted // _MS_DAY * _MS_DAY) - 8 * _MS_HOUR
+    dt = datetime.fromtimestamp(max(0, timestamp_ms) / 1000.0, tz=DISPLAY_TZ)
+    midnight = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(0, int(midnight.timestamp() * 1000))
 
 
 def _chart_models(events: list[UsageEvent]) -> tuple[str, ...]:
@@ -924,10 +927,12 @@ def build_usage_chart(
     else:
         last_ms = _floor_day_ms(max(ev.timestamp_ms for ev in selected))
         first_ms = _floor_day_ms(min(ev.timestamp_ms for ev in selected))
-        keys = [
-            event_date(first_ms + i * _MS_DAY)
-            for i in range((last_ms - first_ms) // _MS_DAY + 1)
-        ]
+        cursor = datetime.fromtimestamp(first_ms / 1000.0, tz=DISPLAY_TZ)
+        last = datetime.fromtimestamp(last_ms / 1000.0, tz=DISPLAY_TZ)
+        keys = []
+        while cursor <= last:
+            keys.append(cursor.strftime("%Y-%m-%d"))
+            cursor += timedelta(days=1)
         key_of = event_date
 
     cells: dict[tuple[str, str], list[int | float]] = {}

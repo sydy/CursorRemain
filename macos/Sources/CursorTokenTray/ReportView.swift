@@ -113,7 +113,7 @@ final class ReportStore: ObservableObject {
             let stamp: String = {
                 let f = DateFormatter()
                 f.locale = Locale(identifier: "en_US_POSIX")
-                f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+                f.timeZone = .current
                 f.dateFormat = "HH:mm:ss"
                 return f.string(from: Date())
             }()
@@ -135,7 +135,7 @@ final class ReportStore: ObservableObject {
         panel.nameFieldStringValue = {
             let f = DateFormatter()
             f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
+            f.timeZone = .current
             f.dateFormat = "yyyyMMdd"
             return "cursor-usage-\(f.string(from: Date())).csv"
         }()
@@ -248,12 +248,12 @@ struct ReportRootView: View {
             DatePicker("", selection: $store.startDate, displayedComponents: .date)
                 .labelsHidden()
                 .disabled(!store.startEnabled)
-                .environment(\.timeZone, TimeZone(secondsFromGMT: 8 * 3600)!)
+                .environment(\.timeZone, TimeZone.current)
             Toggle("结束日期", isOn: $store.endEnabled)
             DatePicker("", selection: $store.endDate, displayedComponents: .date)
                 .labelsHidden()
                 .disabled(!store.endEnabled)
-                .environment(\.timeZone, TimeZone(secondsFromGMT: 8 * 3600)!)
+                .environment(\.timeZone, TimeZone.current)
             Spacer()
         }
     }
@@ -299,7 +299,7 @@ struct ReportRootView: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("明细").font(.caption).foregroundStyle(.secondary)
             Table(store.report.events) {
-                TableColumn("日期 (北京时间)") { ev in Text(UsageEvents.formatTime(ev.timestampMs)) }
+                TableColumn("日期 (本地时间)") { ev in Text(UsageEvents.formatTime(ev.timestampMs)) }
                 TableColumn("用户") { ev in Text(ev.userEmail) }
                 TableColumn("类型") { ev in Text(UsageEvents.kindLabel(ev.kind)) }
                 TableColumn("模型") { ev in Text(ev.model) }
