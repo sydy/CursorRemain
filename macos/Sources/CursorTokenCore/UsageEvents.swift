@@ -844,7 +844,7 @@ public enum UsageEvents {
             return UsageChartSeries(hourly: hourly, caption: chartCaption(hourly: hourly, keys: []), models: models, buckets: [])
         }
 
-        let keys: [String]
+        var keys: [String]
         let keyOf: (Int64) -> String
         if hourly {
             let lastMs = floorHourMs(events.map(\.timestampMs).max() ?? 0)
