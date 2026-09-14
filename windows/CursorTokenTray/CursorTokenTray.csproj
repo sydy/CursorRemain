@@ -14,10 +14,13 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>true</SelfContained>
+    <!-- Framework-dependent: do not bundle CLR/BCL. Users install .NET 8 Desktop Runtime once. -->
+    <SelfContained>false</SelfContained>
+    <RollForward>LatestMinor</RollForward>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- NETSDK1176: single-file compression requires a self-contained publish. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- WinForms does not support IL trim; it crashed menus/forms on some machines. -->
     <PublishTrimmed>false</PublishTrimmed>

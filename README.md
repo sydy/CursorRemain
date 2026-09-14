@@ -19,7 +19,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - **云同步**：设置里注册 / 登录后，账号和跨设备配置会加密上传到 `https://sync.harker.cn`。登录密码在本地派生 AES-GCM 密钥，服务器只存密文，看不到 Token。也支持导出 / 导入同一格式的加密包作备份
 - 个人套餐与企业 / 团队套餐兼用：个人按 included usage 百分比；企业账号走 [用量页](https://cursor.com/dashboard/usage) 的金额计费（已用 / 额度）
 - **Grok Bot 周额度**：飞出层单独一条进度（本周已用 %）。这是 Cursor 账号上的独立周池，不计入左侧圆环的月度剩余；套餐不含 Bot、企业池化额度或接口失败时不画这条。周额度用尽后若开了按需，会落到同一条 On-Demand 金额卡
-- 中文设置窗口（Windows 为 WinForms，macOS 为 SwiftUI；账号列表、Token、刷新间隔、月费与汇率、每账号渠道与折合月费、告警、通知、显示模式、开机自启）
+- 中文设置窗口（Windows 为 WinForms，macOS 为 SwiftUI；账户 / 通知 / 托盘或菜单栏 / 同步分页）
 - **用量报表**：打开窗口时增量拉取 [Usage 页](https://cursor.com/dashboard/usage) 按次明细，本地缓存；总览、按日趋势、按模型排行、明细表与 CSV 导出。默认当前账号，团队管理员可切全员。可按计费类型、额度（First-party / API / Grok Bot）、模型与来源筛选。可填写月费与汇率，或为每个账号单独填「实际成本（人民币）」按套餐内费用分摊并加上按需实扣；企业 / 团队额度只作展示，不是真实支出
 - **账号对比**：独立窗口，按渠道标签（自费 / 第三方）分组。每个账号一行，First-party / API / Grok Bot 各占一行，数字按列对齐。窗口按各号自己的最新周期或有效期（没有则近 30 天），日均持有 = 折合月费÷30，窗口实付把月费按窗口天数折算后再摊。表里同时给出 ¥/百万 Token、¥/次。打开先读本地明细，点「同步」再逐号拉取；可导出 CSV。短期号请把买价折成月费（买价÷天数×30）
 - 默认每 10 分钟刷新（可配置）
@@ -30,8 +30,8 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 
 ## 环境
 
-- Windows 10/11 或 **macOS 13+**
-- 发布包为原生程序：Windows 是 .NET 8 单文件 exe，macOS 是 Swift 菜单栏 `.app`
+- Windows 10/11（需安装 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe) x64）或 **macOS 13+**
+- 发布包为原生程序：Windows 是 .NET 8 框架依赖单文件 exe，macOS 是 Swift 菜单栏 `.app`
 - 配置兼容旧版工具：仍读写同一份 `config.json`
 
 仓库里的 Python 只保留解析对照（`cursor_api` / `usage_report` 等与 `fixtures/`），桌面壳已移除。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
@@ -81,14 +81,15 @@ swift test --package-path macos
 
 ### Windows
 
-1. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
-2. 解压运行 `CursorTokenTray.exe`
-3. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
+1. 本机先安装一次 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。已装过可跳过
+2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
+3. 解压运行 `CursorTokenTray.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
+4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
 
 本地发布：
 
 ```powershell
-dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o dist
+dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
 ```
 
 ### macOS
@@ -114,7 +115,7 @@ open /Applications/CursorTokenTray.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorTokenTray-windows.zip`（.NET 8 单文件 exe）
+3. 在 `windows-latest` 打出 `CursorTokenTray-windows.zip`（.NET 8 框架依赖 exe，需本机 Desktop Runtime）
 4. 在 `macos-latest` 打出 `CursorTokenTray-macos.zip`（Swift `.app`）
 
 合入 `main` 后可在两处下载程序包：

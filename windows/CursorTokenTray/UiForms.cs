@@ -7,13 +7,19 @@ sealed class SettingsForm : Form
 {
     readonly TableLayoutPanel _root = new()
     {
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
         ColumnCount = 1,
-        Dock = DockStyle.Top,
-        Padding = new Padding(16),
+        Dock = DockStyle.Fill,
+        Padding = new Padding(12, 12, 12, 8),
     };
-    readonly TextBox _token = new() { Multiline = true, Height = 120, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill };
+    readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
+    readonly TextBox _token = new()
+    {
+        Multiline = true,
+        Height = 120,
+        MinimumSize = new Size(0, 120),
+        ScrollBars = ScrollBars.Vertical,
+        Dock = DockStyle.Fill,
+    };
     readonly TextBox _interval = new() { Width = 80 };
     readonly TextBox _planUsd = new() { Width = 80 };
     readonly TextBox _actualCny = new() { Width = 80 };
@@ -21,7 +27,14 @@ sealed class SettingsForm : Form
     readonly TextBox _cnyRate = new() { Width = 80 };
     readonly Label _spendHint = new()
     {
-        Text = "月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本按当前账号单独填写。",
+        Text = "月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。",
+        AutoSize = true,
+        ForeColor = Color.DimGray,
+        Margin = new Padding(0, 0, 0, 8),
+    };
+    readonly Label _actualHint = new()
+    {
+        Text = "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了则按套餐内费用分摊，优先于月费。按需仍按费用×汇率。",
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 0, 0, 8),
@@ -44,6 +57,8 @@ sealed class SettingsForm : Form
     };
     readonly FlowLayoutPanel _cloudAuth = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly FlowLayoutPanel _cloudActions = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
+    readonly TableLayoutPanel _cloudEmailRow;
+    readonly TableLayoutPanel _cloudPasswordRow;
     readonly Button _cloudLogin = ActionButton("登录");
     readonly Button _cloudRegister = ActionButton("注册");
     readonly Button _cloudLogout = ActionButton("退出登录");
@@ -93,75 +108,82 @@ sealed class SettingsForm : Form
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96F, 96F);
-        AutoScroll = true;
         Text = AppPaths.SettingsTitle;
         var icon = AppWindow.CreateIcon();
         if (icon is not null) Icon = icon;
-        ClientSize = new Size(540, 760);
-        MinimumSize = new Size(480, 360);
+        ClientSize = new Size(SettingsLayout.DesignWidth, SettingsLayout.DesignHeight);
+        MinimumSize = new Size(SettingsLayout.MinWidth, SettingsLayout.MinHeight);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _root.Controls.Add(Caption("当前账号"));
-        _root.Controls.Add(_accounts);
         var rename = ActionButton("重命名");
         var del = ActionButton("删除");
         var login = ActionButton("登录到 Cursor");
-        _root.Controls.Add(Flow(rename, del, login));
-        _kind.Items.AddRange(["长期账号", "临时账号"]);
-        _root.Controls.Add(FieldRow("账号类型", _kind));
-        _tempFields.Controls.Add(LabeledSpin("开始时间", _startAt));
-        _tempFields.Controls.Add(LabeledSpin("有效", _days, "天"));
-        _tempFields.Controls.Add(LabeledSpin("", _hours, "小时"));
-        _root.Controls.Add(_tempFields);
-        _root.Controls.Add(_endAt);
-        _channel.Items.AddRange(["未标", "自费", "第三方"]);
-        _root.Controls.Add(FieldRow("渠道", _channel));
-        _root.Controls.Add(FieldRow("实际成本（人民币）", _actualCny));
-        _root.Controls.Add(new Label
-        {
-            Text = "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了则按套餐内费用分摊，优先于月费。按需仍按费用×汇率。",
-            AutoSize = true,
-            ForeColor = Color.DimGray,
-            Margin = new Padding(0, 0, 0, 8),
-        });
-        _root.Controls.Add(_addCaption);
-        _root.Controls.Add(_token);
         var cur = ActionButton("从 Cursor 导入");
         var add = ActionButton("添加");
         var ff = ActionButton("Firefox 登录");
         var cookie = ActionButton("仅导入 Cookie");
-        _root.Controls.Add(Flow(cur, add, ff, cookie));
-        _root.Controls.Add(_status);
-        _root.Controls.Add(_hint);
-        _root.Controls.Add(FieldRow("刷新间隔（分钟）", _interval));
-        _root.Controls.Add(FieldRow("月费（美元）", _planUsd));
-        _root.Controls.Add(FieldRow("美元兑人民币", _cnyRate));
-        _root.Controls.Add(_spendHint);
-        _root.Controls.Add(FieldRow("告警阈值", _thresholds));
-        _root.Controls.Add(_notify);
-        _root.Controls.Add(_exhaust);
+        _kind.Items.AddRange(["长期账号", "临时账号"]);
+        _tempFields.Controls.Add(LabeledSpin("开始时间", _startAt));
+        _tempFields.Controls.Add(LabeledSpin("有效", _days, "天"));
+        _tempFields.Controls.Add(LabeledSpin("", _hours, "小时"));
+        _channel.Items.AddRange(["未标", "自费", "第三方"]);
         _mode.Items.AddRange(["圆环百分比", "纯数字", "仅色点"]);
-        _root.Controls.Add(FieldRow("托盘图标", _mode));
-        _root.Controls.Add(_auto);
-        _root.Controls.Add(Caption("云同步"));
-        _root.Controls.Add(_cloudAccount);
-        _root.Controls.Add(FieldRow("邮箱", _cloudEmail));
-        _root.Controls.Add(FieldRow("密码", _cloudPassword));
+        _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
+        _cloudPasswordRow = FieldRow("密码", _cloudPassword);
         _cloudAuth.Controls.AddRange([_cloudLogin, _cloudRegister]);
         _cloudActions.Controls.AddRange([_syncNow, _cloudLogout, _syncExport, _syncImport]);
-        _root.Controls.Add(_cloudAuth);
-        _root.Controls.Add(_cloudActions);
-        _root.Controls.Add(_syncStatus);
-        _root.Controls.Add(_syncHint);
+        _tabs.TabPages.AddRange([
+            MakeTab(SettingsLayout.AccountTab,
+                Caption("当前账号"),
+                _accounts,
+                Flow(rename, del, login),
+                FieldRow("账号类型", _kind),
+                _tempFields,
+                _endAt,
+                FieldRow("渠道", _channel),
+                FieldRow("实际成本（人民币）", _actualCny),
+                _actualHint,
+                _addCaption,
+                _token,
+                Flow(cur, add, ff, cookie),
+                _status,
+                _hint),
+            MakeTab(SettingsLayout.NotifyTab,
+                Caption("刷新与通知"),
+                FieldRow("刷新间隔（分钟）", _interval),
+                FieldRow("月费（美元）", _planUsd),
+                FieldRow("美元兑人民币", _cnyRate),
+                _spendHint,
+                FieldRow("告警阈值", _thresholds),
+                _notify,
+                _exhaust),
+            MakeTab(SettingsLayout.TrayTab,
+                Caption("托盘与启动"),
+                FieldRow("托盘图标", _mode),
+                _auto),
+            MakeTab(SettingsLayout.SyncTab,
+                Caption("云同步"),
+                _cloudAccount,
+                _cloudEmailRow,
+                _cloudPasswordRow,
+                _cloudAuth,
+                _cloudActions,
+                _syncStatus,
+                _syncHint),
+        ]);
         var cancel = ActionButton("取消");
         var apply = ActionButton("应用");
         var save = ActionButton("保存");
         var actions = Flow(save, apply, cancel);
         actions.FlowDirection = FlowDirection.RightToLeft;
         actions.Dock = DockStyle.Fill;
-        _root.Controls.Add(actions);
+        _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _root.RowCount = 2;
+        _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _root.Controls.Add(_tabs, 0, 0);
+        _root.Controls.Add(actions, 0, 1);
         Controls.Add(_root);
         LoadFrom(_cfg);
         _accounts.SelectedIndexChanged += (_, _) =>
@@ -238,18 +260,23 @@ sealed class SettingsForm : Form
     void FitToContent()
     {
         WrapText();
-        _root.PerformLayout();
-        var pref = _root.PreferredSize;
         var work = Screen.FromControl(this).WorkingArea;
-        var (w, h) = UiLayout.FitDialog(pref.Width, pref.Height, 520, 420, work.Width, work.Height);
+        var (w, h) = UiLayout.FitWindow(
+            SettingsLayout.DesignWidth,
+            SettingsLayout.DesignHeight,
+            SettingsLayout.MinWidth,
+            SettingsLayout.MinHeight,
+            DeviceDpi,
+            work.Width,
+            work.Height);
         ClientSize = new Size(w, h);
         WrapText();
     }
 
     void WrapText()
     {
-        var inner = Math.Max(200, ClientSize.Width - _root.Padding.Horizontal - 8);
-        foreach (var label in new[] { _addCaption, _status, _hint, _syncStatus, _syncHint, _endAt, _spendHint })
+        var inner = Math.Max(200, ClientSize.Width - 56);
+        foreach (var label in new[] { _addCaption, _status, _hint, _actualHint, _syncStatus, _syncHint, _endAt, _spendHint })
             label.MaximumSize = new Size(inner, 0);
     }
 
@@ -288,6 +315,29 @@ sealed class SettingsForm : Form
         if (prompt.ShowDialog(this) != DialogResult.OK) return;
         _cfg.RenameAccount(_cfg.ActiveAccount.Id, field.Text);
         LoadFrom(_cfg); NotifySaved();
+    }
+
+    static TabPage MakeTab(string title, params Control[] children)
+    {
+        var page = new TabPage(title)
+        {
+            AutoScroll = true,
+            UseVisualStyleBackColor = true,
+            Padding = new Padding(4),
+        };
+        var body = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Top,
+            Padding = new Padding(8),
+        };
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (var child in children)
+            body.Controls.Add(child);
+        page.Controls.Add(body);
+        return page;
     }
 
     static Label Caption(string text) => new()
@@ -391,9 +441,22 @@ sealed class SettingsForm : Form
         return row;
     }
 
-    public void FocusToken() { _token.Focus(); _token.SelectAll(); }
+    public void FocusToken()
+    {
+        _tabs.SelectedIndex = 0;
+        BeginInvoke(() =>
+        {
+            if (IsDisposed) return;
+            _token.Focus();
+            _token.SelectAll();
+        });
+    }
 
-    public void StartImport() => BeginInvoke(async () => await DoImport("cursor-app"));
+    public void StartImport()
+    {
+        _tabs.SelectedIndex = 0;
+        BeginInvoke(async () => await DoImport("cursor-app"));
+    }
 
     void LoadFrom(AppConfig cfg)
     {
@@ -426,6 +489,8 @@ sealed class SettingsForm : Form
             _cloudAccount.Text = cfg.CloudLoggedIn ? "已登录  " + cfg.CloudEmail : "未登录";
             _cloudEmail.Enabled = !cfg.CloudLoggedIn;
             _cloudPassword.Enabled = !cfg.CloudLoggedIn;
+            _cloudEmailRow.Visible = !cfg.CloudLoggedIn;
+            _cloudPasswordRow.Visible = !cfg.CloudLoggedIn;
             _cloudAuth.Visible = !cfg.CloudLoggedIn;
             _cloudLogout.Visible = cfg.CloudLoggedIn;
             _syncNow.Visible = cfg.CloudLoggedIn;
@@ -526,7 +591,7 @@ sealed class SettingsForm : Form
         var show = _kind.SelectedIndex == 1;
         _tempFields.Visible = show;
         _endAt.Visible = show;
-        if (IsHandleCreated) BeginInvoke(FitToContent);
+        if (IsHandleCreated) BeginInvoke(WrapText);
     }
 
     void UpdateEndLabel()
