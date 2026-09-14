@@ -86,15 +86,15 @@
             "plan_cny": 150,
             "daily_holding_cny": 5,
             "window_plan_cny": 75,
-            "on_demand_cny": 7.5,
-            "total_cny": 82.5,
+            "on_demand_cny": 37.5,
+            "total_cny": 75,
             "event_count": 3,
             "total_tokens": 2100000,
-            "cny_per_million": 39.285714,
-            "cny_per_request": 27.5,
-            "first_party": { "count": 1, "tokens": 1000000, "cny": 37.5 },
-            "api": { "count": 1, "tokens": 100000, "cny": 7.5 },
-            "grok_bot": { "count": 1, "tokens": 1000000, "cny": 37.5 }
+            "cny_per_million": 35.714286,
+            "cny_per_request": 25,
+            "first_party": { "count": 1, "tokens": 1000000, "cny": 18.75 },
+            "api": { "count": 1, "tokens": 100000, "cny": 37.5 },
+            "grok_bot": { "count": 1, "tokens": 1000000, "cny": 18.75 }
           },
           {
             "account_id": "user_01B",
@@ -119,7 +119,7 @@
           {
             "channel": "self_pay",
             "daily_holding_cny": 5,
-            "total_cny": 82.5,
+            "total_cny": 75,
             "event_count": 3,
             "total_tokens": 2100000
           },

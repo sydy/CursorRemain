@@ -288,6 +288,13 @@ public static class UsageEvents
         return key is not KindOnDemand and not KindFree;
     }
 
+    public static bool IsCostPoolKind(string? kind, bool usesActual)
+    {
+        var key = (kind ?? "").Trim().ToLowerInvariant();
+        if (key == KindFree) return false;
+        return usesActual || IsPlanCovered(key);
+    }
+
     public static string SanitizeChannel(string? raw)
     {
         var key = (raw ?? "").Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "");
@@ -389,9 +396,11 @@ public static class UsageEvents
         var resolved = ResolvePlanCny(spend);
         var dailyHolding = resolved.planCny > 0 ? resolved.planCny / HoldingDays : 0;
         var windowPlan = dailyHolding * windowDays;
-        var included = windowEvents.Where(ev => IsPlanCovered(ev.Kind)).ToList();
-        var includedCostSum = included.Sum(CostCents);
-        var includedCount = included.Count;
+        if (resolved.usesActual && resolved.actual > 0)
+            windowPlan = Math.Min(windowPlan, resolved.actual);
+        var pool = windowEvents.Where(ev => IsCostPoolKind(ev.Kind, resolved.usesActual)).ToList();
+        var includedCostSum = pool.Sum(CostCents);
+        var includedCount = pool.Count;
         var cats = new Dictionary<string, (int count, long tokens, double cny)>(StringComparer.Ordinal)
         {
             [CategoryFirstParty] = (0, 0, 0),
@@ -403,7 +412,7 @@ public static class UsageEvents
         var totalTokens = 0L;
         foreach (var ev in windowEvents)
         {
-            var amount = AllocateEventCny(ev, includedCostSum, includedCount, windowPlan, resolved.rate);
+            var amount = AllocateEventCny(ev, includedCostSum, includedCount, windowPlan, resolved.rate, resolved.usesActual);
             totalCny += amount;
             totalTokens += ev.Tokens;
             if (ev.Kind == KindOnDemand) onDemandCny += amount;
@@ -545,10 +554,10 @@ public static class UsageEvents
         return FormatCny(amount ?? ev.AllocatedCny);
     }
 
-    public static double AllocateEventCny(UsageEvent ev, double includedCostSum, int includedCount, double planCny, double rate)
+    public static double AllocateEventCny(UsageEvent ev, double includedCostSum, int includedCount, double planCny, double rate, bool usesActual = false)
     {
         if (ev.Kind == KindFree) return 0;
-        if (ev.Kind == KindOnDemand) return CostCents(ev) / 100.0 * rate;
+        if (ev.Kind == KindOnDemand && !usesActual) return CostCents(ev) / 100.0 * rate;
         var cents = CostCents(ev);
         if (includedCostSum > 1e-9) return planCny * (cents / includedCostSum);
         if (includedCount > 0 && planCny > 0) return planCny / includedCount;
@@ -562,16 +571,16 @@ public static class UsageEvents
         var resolved = ResolvePlanCny(spend.Value);
         var rate = resolved.rate;
         var monthly = resolved.monthly;
-        var included = events.Where(ev => IsPlanCovered(ev.Kind)).ToList();
-        var includedCostSum = included.Sum(CostCents);
-        var includedCount = included.Count;
+        var pool = events.Where(ev => IsCostPoolKind(ev.Kind, resolved.usesActual)).ToList();
+        var includedCostSum = pool.Sum(CostCents);
+        var includedCount = pool.Count;
         var planCny = resolved.planCny;
         var byId = new Dictionary<string, double>(StringComparer.Ordinal);
         var onDemandCny = 0.0;
         for (var i = 0; i < events.Count; i++)
         {
             var ev = events[i];
-            var amount = AllocateEventCny(ev, includedCostSum, includedCount, planCny, rate);
+            var amount = AllocateEventCny(ev, includedCostSum, includedCount, planCny, rate, resolved.usesActual);
             var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
             byId[key] = amount;
             if (ev.Kind == KindOnDemand) onDemandCny += amount;

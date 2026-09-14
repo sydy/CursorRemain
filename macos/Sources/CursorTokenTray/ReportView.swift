@@ -269,10 +269,13 @@ struct ReportRootView: View {
             text += "    企业额度 \(UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents))"
         }
         if report.planCny > 0 || report.onDemandCny > 0 {
-            let expected = report.planCny + report.onDemandCny
             let rate = String(format: "%.2f", report.usdCnyRate)
-            let planLabel = report.usesActualCny ? "成本" : "月费"
-            text += "    预计实付 \(UsageEvents.formatCNY(expected))（\(planLabel) \(UsageEvents.formatCNY(report.planCny)) + 按需 \(UsageEvents.formatCNY(report.onDemandCny))）· 汇率 \(rate)"
+            if report.usesActualCny {
+                text += "    预计实付 \(UsageEvents.formatCNY(report.planCny))（成本 \(UsageEvents.formatCNY(report.planCny))，按需已计入）· 汇率 \(rate)"
+            } else {
+                let expected = report.planCny + report.onDemandCny
+                text += "    预计实付 \(UsageEvents.formatCNY(expected))（月费 \(UsageEvents.formatCNY(report.planCny)) + 按需 \(UsageEvents.formatCNY(report.onDemandCny))）· 汇率 \(rate)"
+            }
         }
         return text
     }

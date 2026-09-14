@@ -1124,6 +1124,53 @@
         }
       },
       {
+        "name": "actual_cny_includes_on_demand",
+        "spend": { "monthly_plan_usd": 16, "usd_cny_rate": 7.5, "membership_type": "ultra", "actual_cny": 80 },
+        "filter": { "kind": "", "category": "", "model": "", "headless": null, "owning_user": "" },
+        "events": [
+          {
+            "id": "inc",
+            "timestamp_ms": 3000,
+            "model": "composer-1.5",
+            "kind": "included",
+            "user_email": "",
+            "owning_user": "",
+            "tokens": 1000,
+            "charged_cents": 50.0,
+            "total_cents": 50.0,
+            "is_headless": false,
+            "is_chargeable": false
+          },
+          {
+            "id": "od",
+            "timestamp_ms": 1000,
+            "model": "gpt-5",
+            "kind": "on_demand",
+            "user_email": "",
+            "owning_user": "",
+            "tokens": 2000,
+            "charged_cents": 150.0,
+            "total_cents": 150.0,
+            "is_headless": false,
+            "is_chargeable": true
+          }
+        ],
+        "expected": {
+          "monthly_plan_usd": 16.0,
+          "usd_cny_rate": 7.5,
+          "plan_cny": 80.0,
+          "on_demand_cny": 60.0,
+          "total_cny": 80.0,
+          "actual_cny": 80.0,
+          "uses_actual_cny": true,
+          "event_cny": [20.0, 60.0],
+          "models": [
+            { "name": "gpt-5", "cny": 60.0 },
+            { "name": "composer-1.5", "cny": 20.0 }
+          ]
+        }
+      },
+      {
         "name": "enterprise_explicit_monthly_keeps_weighted",
         "spend": { "monthly_plan_usd": 16, "usd_cny_rate": 7.5, "membership_type": "enterprise" },
         "filter": { "kind": "", "category": "", "model": "", "headless": null, "owning_user": "" },

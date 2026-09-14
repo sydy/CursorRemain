@@ -16,7 +16,7 @@ sealed class CompareForm : Form
     readonly Label _status = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 8, 0, 0) };
     readonly Label _hint = new()
     {
-        Text = "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。",
+        Text = "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。",
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 4, 0, 8),

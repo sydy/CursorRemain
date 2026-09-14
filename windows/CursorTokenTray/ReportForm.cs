@@ -458,10 +458,11 @@ sealed class ReportForm : Form
     static string SpendKpi(UsageReport report)
     {
         if (report.PlanCny <= 0 && report.OnDemandCny <= 0) return "";
-        var expected = report.PlanCny + report.OnDemandCny;
         var rate = report.UsdCnyRate.ToString("0.00", CultureInfo.InvariantCulture);
-        var planLabel = report.UsesActualCny ? "成本" : "月费";
-        return $"    预计实付 {UsageEvents.FormatCny(expected)}（{planLabel} {UsageEvents.FormatCny(report.PlanCny)} + 按需 {UsageEvents.FormatCny(report.OnDemandCny)}）· 汇率 {rate}";
+        if (report.UsesActualCny)
+            return $"    预计实付 {UsageEvents.FormatCny(report.PlanCny)}（成本 {UsageEvents.FormatCny(report.PlanCny)}，按需已计入）· 汇率 {rate}";
+        var expected = report.PlanCny + report.OnDemandCny;
+        return $"    预计实付 {UsageEvents.FormatCny(expected)}（月费 {UsageEvents.FormatCny(report.PlanCny)} + 按需 {UsageEvents.FormatCny(report.OnDemandCny)}）· 汇率 {rate}";
     }
 
     void ExportCsv()

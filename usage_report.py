@@ -443,6 +443,15 @@ def is_plan_covered_kind(kind: str | None) -> bool:
     return key not in {KIND_ON_DEMAND, KIND_FREE}
 
 
+def is_cost_pool_kind(kind: str | None, uses_actual: bool) -> bool:
+    key = (kind or "").strip().lower()
+    if key == KIND_FREE:
+        return False
+    if uses_actual:
+        return True
+    return is_plan_covered_kind(key)
+
+
 def format_cny(amount: float | None) -> str:
     if amount is None:
         return "—"
@@ -520,9 +529,11 @@ def build_account_compare_row(item: AccountCompareInput, *, now_ms: int | None =
     plan_cny = actual if uses_actual else monthly * rate
     daily_holding = plan_cny / HOLDING_DAYS if plan_cny > 0 else 0.0
     window_plan = daily_holding * window_days
-    included = [ev for ev in window_events if is_plan_covered_kind(ev.kind)]
-    included_cost_sum = sum(event_cost_cents(ev) for ev in included)
-    included_count = len(included)
+    if uses_actual and actual > 0:
+        window_plan = min(window_plan, actual)
+    pool = [ev for ev in window_events if is_cost_pool_kind(ev.kind, uses_actual)]
+    included_cost_sum = sum(event_cost_cents(ev) for ev in pool)
+    included_count = len(pool)
     cats = {
         CATEGORY_FIRST_PARTY: [0, 0, 0.0],
         CATEGORY_API: [0, 0, 0.0],
@@ -532,7 +543,7 @@ def build_account_compare_row(item: AccountCompareInput, *, now_ms: int | None =
     total_cny = 0.0
     total_tokens = 0
     for ev in window_events:
-        amount = allocate_event_cny(ev, included_cost_sum, included_count, window_plan, rate)
+        amount = allocate_event_cny(ev, included_cost_sum, included_count, window_plan, rate, uses_actual=uses_actual)
         total_cny += amount
         total_tokens += ev.tokens
         if ev.kind == KIND_ON_DEMAND:
@@ -728,10 +739,11 @@ def allocate_event_cny(
     included_count: int,
     plan_cny: float,
     rate: float,
+    uses_actual: bool = False,
 ) -> float:
     if event.kind == KIND_FREE:
         return 0.0
-    if event.kind == KIND_ON_DEMAND:
+    if event.kind == KIND_ON_DEMAND and not uses_actual:
         return event_cost_cents(event) / 100.0 * rate
     cents = event_cost_cents(event)
     if included_cost_sum > 1e-9:
@@ -752,13 +764,13 @@ def _cny_by_id(
     actual = clamp_actual_cny(spend.actual_cny)
     uses_actual = actual > 0
     plan_cny = actual if uses_actual else monthly * rate
-    included = [ev for ev in events if is_plan_covered_kind(ev.kind)]
-    included_cost_sum = sum(event_cost_cents(ev) for ev in included)
-    included_count = len(included)
+    pool = [ev for ev in events if is_cost_pool_kind(ev.kind, uses_actual)]
+    included_cost_sum = sum(event_cost_cents(ev) for ev in pool)
+    included_count = len(pool)
     by_id: dict[str, float] = {}
     on_demand_cny = 0.0
     for i, ev in enumerate(events):
-        amount = allocate_event_cny(ev, included_cost_sum, included_count, plan_cny, rate)
+        amount = allocate_event_cny(ev, included_cost_sum, included_count, plan_cny, rate, uses_actual=uses_actual)
         key = ev.id or f"#{i}"
         by_id[key] = amount
         if ev.kind == KIND_ON_DEMAND:

@@ -416,6 +416,12 @@ public enum UsageEvents {
         return key != kindOnDemand && key != kindFree
     }
 
+    public static func isCostPoolKind(_ kind: String?, usesActual: Bool) -> Bool {
+        let key = (kind ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        if key == kindFree { return false }
+        return usesActual || isPlanCovered(key)
+    }
+
     public static func sanitizeChannel(_ raw: String?) -> String {
         let key = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: "-", with: "_")
@@ -523,10 +529,13 @@ public enum UsageEvents {
         let spend = item.spend ?? CnySpendSettings()
         let resolved = resolvePlanCny(spend)
         let dailyHolding = resolved.planCny > 0 ? resolved.planCny / holdingDays : 0
-        let windowPlan = dailyHolding * windowDays
-        let included = windowEvents.filter { isPlanCovered($0.kind) }
-        let includedCostSum = included.reduce(0.0) { $0 + costCents($1) }
-        let includedCount = included.count
+        var windowPlan = dailyHolding * windowDays
+        if resolved.usesActual && resolved.actual > 0 {
+            windowPlan = min(windowPlan, resolved.actual)
+        }
+        let pool = windowEvents.filter { isCostPoolKind($0.kind, usesActual: resolved.usesActual) }
+        let includedCostSum = pool.reduce(0.0) { $0 + costCents($1) }
+        let includedCount = pool.count
         var cats: [String: (Int, Int, Double)] = [
             categoryFirstParty: (0, 0, 0),
             categoryAPI: (0, 0, 0),
@@ -536,7 +545,7 @@ public enum UsageEvents {
         var totalCny = 0.0
         var totalTokens = 0
         for ev in windowEvents {
-            let amount = allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: windowPlan, rate: resolved.rate)
+            let amount = allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: windowPlan, rate: resolved.rate, usesActual: resolved.usesActual)
             totalCny += amount
             totalTokens += ev.tokens
             if ev.kind == kindOnDemand { onDemandCny += amount }
@@ -710,10 +719,11 @@ public enum UsageEvents {
         includedCostSum: Double,
         includedCount: Int,
         planCny: Double,
-        rate: Double
+        rate: Double,
+        usesActual: Bool = false
     ) -> Double {
         if ev.kind == kindFree { return 0 }
-        if ev.kind == kindOnDemand { return costCents(ev) / 100.0 * rate }
+        if ev.kind == kindOnDemand && !usesActual { return costCents(ev) / 100.0 * rate }
         let cents = costCents(ev)
         if includedCostSum > 1e-9 { return planCny * (cents / includedCostSum) }
         if includedCount > 0 && planCny > 0 { return planCny / Double(includedCount) }
@@ -723,13 +733,13 @@ public enum UsageEvents {
     static func cnyById(_ events: [UsageEvent], spend: CnySpendSettings?) -> (byId: [String: Double], planCny: Double, onDemandCny: Double, monthly: Double, rate: Double, actual: Double, usesActual: Bool) {
         guard let spend else { return ([:], 0, 0, 0, 0, 0, false) }
         let resolved = resolvePlanCny(spend)
-        let included = events.filter { isPlanCovered($0.kind) }
-        let includedCostSum = included.reduce(0.0) { $0 + costCents($1) }
-        let includedCount = included.count
+        let pool = events.filter { isCostPoolKind($0.kind, usesActual: resolved.usesActual) }
+        let includedCostSum = pool.reduce(0.0) { $0 + costCents($1) }
+        let includedCount = pool.count
         var byId: [String: Double] = [:]
         var onDemandCny = 0.0
         for (i, ev) in events.enumerated() {
-            let amount = allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: resolved.planCny, rate: resolved.rate)
+            let amount = allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: resolved.planCny, rate: resolved.rate, usesActual: resolved.usesActual)
             let key = ev.id.isEmpty ? "#\(i)" : ev.id
             byId[key] = amount
             if ev.kind == kindOnDemand { onDemandCny += amount }

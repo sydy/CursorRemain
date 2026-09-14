@@ -352,6 +352,7 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("CategoryFirstParty", win_report)
         self.assertIn("企业额度", win_report)
         self.assertIn("UsesActualCny", win_report)
+        self.assertIn("按需已计入", win_report)
         win_settings = (root / "windows" / "CursorTokenTray" / "UiForms.cs").read_text(encoding="utf-8")
         mac_settings = (root / "macos" / "Sources" / "CursorTokenTray" / "SettingsView.swift").read_text(encoding="utf-8")
         for src in (win_settings, mac_settings):
@@ -366,6 +367,7 @@ class SourceGuardTests(unittest.TestCase):
         for src in (win_compare, mac_compare):
             self.assertIn("账号对比", src)
             self.assertIn("日均持有", src)
+            self.assertIn("按需不再按官网标价另加", src)
             self.assertIn("First-party", src)
             self.assertIn("Grok Bot", src)
         self.assertIn("BuildAccountCompareReport", win_compare)
@@ -379,6 +381,7 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("setReportRange", (root / "macos" / "Sources" / "CursorTokenCore" / "AppConfig.swift").read_text(encoding="utf-8"))
         self.assertIn("categoryFirstParty", mac_report)
         self.assertIn("企业额度", mac_report)
+        self.assertIn("按需已计入", mac_report)
         self.assertIn("按小时", mac_chart)
         self.assertIn("buildChart", mac_report)
         self.assertNotIn("dailyChart", mac_report)
