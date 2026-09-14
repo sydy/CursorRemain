@@ -16,7 +16,8 @@ class FrameworkDependentPublishTests(unittest.TestCase):
         self.assertIn("<PublishSingleFile>true</PublishSingleFile>", csproj)
         self.assertIn("<SelfContained>false</SelfContained>", csproj)
         self.assertNotIn("<SelfContained>true</SelfContained>", csproj)
-        self.assertIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
+        self.assertIn("<EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>", csproj)
+        self.assertNotIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
         self.assertIn("<InvariantGlobalization>true</InvariantGlobalization>", csproj)
         self.assertIn("<RollForward>LatestMinor</RollForward>", csproj)
 
@@ -24,6 +25,8 @@ class FrameworkDependentPublishTests(unittest.TestCase):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         self.assertIn("--self-contained false", workflow)
         self.assertNotIn("--self-contained true", workflow)
+        self.assertIn("EnableCompressionInSingleFile=false", workflow)
+        self.assertNotIn("EnableCompressionInSingleFile=true", workflow)
         self.assertIn("coreclr", workflow)
         self.assertIn("15MB", workflow)
 
