@@ -83,7 +83,17 @@ public enum AppUpdate {
         URL(string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/git/refs/tags/\(latestTag)")!
     }
 
-    public static var userAgent: String { "CursorTokenTray/\(productVersion)" }
+    public static var userAgent: String {
+        "CursorTokenTray/\(productVersion) (+https://github.com/\(repoOwner)/\(repoName))"
+    }
+
+    public static func assetDownloadURL(_ assetName: String) -> String {
+        "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(latestTag)/\(assetName)"
+    }
+
+    public static func shouldFallbackFromApi(_ statusCode: Int) -> Bool {
+        statusCode == 401 || statusCode == 403 || statusCode == 404 || statusCode == 429 || statusCode >= 500
+    }
 
     public static var platformAssetName: String {
         #if os(Windows)
@@ -231,6 +241,36 @@ public enum AppUpdate {
             publishedAt: stringValue(raw["published_at"]),
             assets: assets
         )
+    }
+
+    public static func knownAssets() -> [AppReleaseAsset] {
+        [
+            AppReleaseAsset(name: windowsAssetName, url: assetDownloadURL(windowsAssetName)),
+            AppReleaseAsset(name: macosAssetName, url: assetDownloadURL(macosAssetName)),
+        ]
+    }
+
+    public static func parseReleasePage(_ html: String) throws -> AppRelease {
+        var sha = extractSha(html)
+        if sha.isEmpty, let match = firstMatch(html, pattern: #"(?i)/commit/([0-9a-f]{7,40})"#) {
+            sha = normalizeSha(match)
+        }
+        if sha.isEmpty { throw CursorAPIError("发布页里找不到提交哈希") }
+        return AppRelease(
+            tag: latestTag,
+            commitSha: sha,
+            pageUrl: latestReleasePageURL.absoluteString,
+            assets: knownAssets()
+        )
+    }
+
+    public static func httpStatusMessage(_ statusCode: Int) -> String {
+        switch statusCode {
+        case 401, 403: return "GitHub 接口拒绝访问（403）"
+        case 404: return "找不到 Latest 发布"
+        case 429: return "GitHub 请求过于频繁，请稍后重试"
+        default: return "GitHub \(statusCode)"
+        }
     }
 
     public static func parseTagRefSha(_ json: String) -> String {

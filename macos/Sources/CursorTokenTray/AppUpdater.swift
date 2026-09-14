@@ -59,6 +59,9 @@ enum AppUpdater {
         } catch {
             let msg = "检查更新失败: \((error as? CursorAPIError)?.message ?? error.localizedDescription)"
             rememberCheck(store: store, error: msg)
+            if manual && msg.contains("无法检查更新") {
+                openDownloadPage()
+            }
             return msg
         }
     }
@@ -69,16 +72,29 @@ enum AppUpdater {
     }
 
     private static func fetchLatest() async throws -> AppRelease {
-        var release = try await getJSON(AppUpdate.apiLatestReleaseURL, parse: AppUpdate.parseRelease)
-        if release.commitSha.isEmpty {
-            if let sha = try? await getText(AppUpdate.apiLatestRefURL) {
-                let parsed = AppUpdate.parseTagRefSha(sha)
-                if !parsed.isEmpty {
-                    release.commitSha = parsed
+        do {
+            var release = try await getJSON(AppUpdate.apiLatestReleaseURL, parse: AppUpdate.parseRelease, timeout: 10)
+            if release.commitSha.isEmpty {
+                if let sha = try? await getText(AppUpdate.apiLatestRefURL, accept: "application/vnd.github+json", timeout: 8) {
+                    let parsed = AppUpdate.parseTagRefSha(sha)
+                    if !parsed.isEmpty { release.commitSha = parsed }
                 }
             }
+            if release.assets.isEmpty {
+                release.assets = AppUpdate.knownAssets()
+            }
+            return release
+        } catch {
+            if let status = (error as? CursorAPIError)?.statusCode, !AppUpdate.shouldFallbackFromApi(status), status > 0 {
+                throw error
+            }
+            do {
+                let html = try await getText(AppUpdate.latestReleasePageURL, accept: "text/html", timeout: 20)
+                return try AppUpdate.parseReleasePage(html)
+            } catch {
+                throw CursorAPIError("无法检查更新（\(shortError(error))）。也可打开下载页手动安装")
+            }
         }
-        return release
     }
 
     private static func downloadAndStage(_ asset: AppReleaseAsset) async throws -> URL {
@@ -188,19 +204,29 @@ enum AppUpdater {
         }
     }
 
-    private static func getJSON(_ url: URL, parse: (String) throws -> AppRelease) async throws -> AppRelease {
-        try parse(try await getText(url))
+    private static func getJSON(_ url: URL, parse: (String) throws -> AppRelease, timeout: TimeInterval) async throws -> AppRelease {
+        try parse(try await getText(url, accept: "application/vnd.github+json", timeout: timeout))
     }
 
-    private static func getText(_ url: URL) async throws -> String {
-        var req = URLRequest(url: url)
+    private static func getText(_ url: URL, accept: String, timeout: TimeInterval) async throws -> String {
+        var req = URLRequest(url: url, timeoutInterval: timeout)
         req.setValue(AppUpdate.userAgent, forHTTPHeaderField: "User-Agent")
-        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        req.setValue(accept, forHTTPHeaderField: "Accept")
+        if accept.contains("github") {
+            req.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        }
         let (data, resp) = try await URLSession.shared.data(for: req)
         if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw CursorAPIError("GitHub \(http.statusCode)")
+            throw CursorAPIError(AppUpdate.httpStatusMessage(http.statusCode), statusCode: http.statusCode)
         }
         return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    private static func shortError(_ error: Error) -> String {
+        if let api = error as? CursorAPIError { return api.message }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorTimedOut { return "连接超时" }
+        return error.localizedDescription
     }
 
     private static func run(_ launchPath: String, _ arguments: [String]) throws {

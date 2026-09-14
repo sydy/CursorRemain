@@ -39,6 +39,12 @@ final class AppUpdateTests: XCTestCase {
             XCTAssertEqual(AppUpdate.findAsset(parsed, name: AppUpdate.windowsAssetName)?.id, int64(exp["windows_asset_id"]))
             XCTAssertEqual(AppUpdate.findAsset(parsed, name: AppUpdate.macosAssetName)?.id, int64(exp["macos_asset_id"]))
         }
+        for row in root["parse_release_page"] as! [[String: Any]] {
+            let parsed = try AppUpdate.parseReleasePage(row["html"] as? String ?? "")
+            XCTAssertEqual(parsed.commitSha, row["sha"] as? String, row["name"] as? String ?? "?")
+            XCTAssertEqual(AppUpdate.findAsset(parsed, name: AppUpdate.windowsAssetName)?.url, row["windows_url"] as? String)
+            XCTAssertEqual(AppUpdate.findAsset(parsed, name: AppUpdate.macosAssetName)?.url, row["macos_url"] as? String)
+        }
         for row in root["parse_tag_ref"] as! [[String: Any]] {
             let data = try JSONSerialization.data(withJSONObject: row["json"] as Any)
             let json = String(data: data, encoding: .utf8)!
@@ -69,6 +75,9 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(AppUpdate.displayVersion("518192b000000000000000000000000000000000"), "2.0.0 (518192b)")
         XCTAssertEqual(AppUpdate.shaFromInformationalVersion("2.0.0+518192b"), "518192b")
         XCTAssertEqual(AppUpdate.shaFromInformationalVersion("2.0.0"), "")
+        XCTAssertTrue(AppUpdate.shouldFallbackFromApi(403))
+        XCTAssertTrue(AppUpdate.shouldFallbackFromApi(429))
+        XCTAssertFalse(AppUpdate.shouldFallbackFromApi(400))
     }
 
     func testShouldAutoCheckRespectsInterval() {

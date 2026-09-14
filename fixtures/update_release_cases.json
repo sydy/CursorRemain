@@ -92,6 +92,15 @@
       }
     }
   ],
+  "parse_release_page": [
+    {
+      "name": "github_html_commit_and_notes",
+      "html": "<a href=\"/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000\">commit</a><li><strong>提交</strong>: <code>518192b000000000000000000000000000000000</code></li>",
+      "sha": "518192b000000000000000000000000000000000",
+      "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-windows.zip",
+      "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-macos.zip"
+    }
+  ],
   "parse_tag_ref": [
     {
       "name": "commit_ref",

@@ -54,7 +54,13 @@ public static class AppUpdate
     public static string ApiLatestRefUrl =>
         $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/refs/tags/{LatestTag}";
 
-    public static string UserAgent => $"CursorTokenTray/{ProductVersion}";
+    public static string UserAgent => $"CursorTokenTray/{ProductVersion} (+https://github.com/{RepoOwner}/{RepoName})";
+
+    public static string AssetDownloadUrl(string assetName) =>
+        $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{LatestTag}/{assetName}";
+
+    public static bool ShouldFallbackFromApi(int statusCode) =>
+        statusCode is 401 or 403 or 404 or 429 or >= 500;
 
     public static string PlatformAssetName =>
         OperatingSystem.IsWindows() ? WindowsAssetName : MacosAssetName;
@@ -228,6 +234,39 @@ public static class AppUpdate
             Assets = assets,
         };
     }
+
+    public static List<AppReleaseAsset> KnownAssets() =>
+    [
+        new() { Name = WindowsAssetName, Url = AssetDownloadUrl(WindowsAssetName) },
+        new() { Name = MacosAssetName, Url = AssetDownloadUrl(MacosAssetName) },
+    ];
+
+    public static AppRelease ParseReleasePage(string html)
+    {
+        var sha = ExtractSha(html);
+        if (sha.Length == 0)
+        {
+            var commit = Regex.Match(html ?? "", @"(?i)/commit/([0-9a-f]{7,40})");
+            if (commit.Success) sha = NormalizeSha(commit.Groups[1].Value);
+        }
+        if (sha.Length == 0)
+            throw new InvalidOperationException("发布页里找不到提交哈希");
+        return new AppRelease
+        {
+            Tag = LatestTag,
+            CommitSha = sha,
+            PageUrl = LatestReleasePageUrl,
+            Assets = KnownAssets(),
+        };
+    }
+
+    public static string HttpStatusMessage(int statusCode) => statusCode switch
+    {
+        401 or 403 => "GitHub 接口拒绝访问（403）",
+        404 => "找不到 Latest 发布",
+        429 => "GitHub 请求过于频繁，请稍后重试",
+        _ => $"GitHub {statusCode}",
+    };
 
     public static string ParseTagRefSha(string json)
     {
