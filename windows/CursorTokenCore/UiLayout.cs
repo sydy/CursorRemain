@@ -100,6 +100,25 @@ public static class UiLayout
 }
 
 /// <summary>
+/// Settings dialog metrics shared with the macOS <c>SettingsRootView</c> (design pixels at 96 DPI).
+/// Windows uses 托盘 instead of 菜单栏.
+/// </summary>
+public static class SettingsLayout
+{
+    public const int DesignWidth = 540;
+    public const int DesignHeight = 680;
+    public const int MinWidth = 480;
+    public const int MinHeight = 420;
+
+    public const string AccountTab = "账户";
+    public const string NotifyTab = "通知";
+    public const string TrayTab = "托盘";
+    public const string SyncTab = "同步";
+
+    public static readonly string[] TabTitles = [AccountTab, NotifyTab, TrayTab, SyncTab];
+}
+
+/// <summary>
 /// Usage-report chart metrics shared with the macOS <c>UsageChartView</c> (design pixels at 96 DPI).
 /// </summary>
 public static class UsageChartLayout

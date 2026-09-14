@@ -809,6 +809,22 @@ public class FixtureTests
     }
 
     [Fact]
+    public void SettingsWindowUsesPagedDesignSize()
+    {
+        Assert.Equal(new[] { "账户", "通知", "托盘", "同步" }, SettingsLayout.TabTitles);
+        var at100 = UiLayout.FitWindow(
+            SettingsLayout.DesignWidth, SettingsLayout.DesignHeight,
+            SettingsLayout.MinWidth, SettingsLayout.MinHeight,
+            96, 1920, 1080);
+        Assert.Equal((540, 680), at100);
+        var at150 = UiLayout.FitWindow(
+            SettingsLayout.DesignWidth, SettingsLayout.DesignHeight,
+            SettingsLayout.MinWidth, SettingsLayout.MinHeight,
+            144, 1920, 1080);
+        Assert.Equal((810, 1020), at150);
+    }
+
+    [Fact]
     public void FitWindowGrowsForHighDpiAndClampsToWorkArea()
     {
         var at100 = UiLayout.FitWindow(1040, 760, 900, 600, 96, 1920, 1080);
