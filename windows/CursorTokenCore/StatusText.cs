@@ -69,7 +69,7 @@ public static class StatusText
     public static string FormatEstimateCaption(UsageSnapshot usage)
     {
         var text = FormatEstimatedDays(usage);
-        if (text.Contains("可撑过本周期")) return "预计可撑过本周期";
+        if (text.Contains("可撑过本周期")) return "预计能撑到重置";
         if (text.Contains("提前耗尽")) return "预计可能提前耗尽";
         if (text == "已耗尽") return "额度已耗尽";
         return text;

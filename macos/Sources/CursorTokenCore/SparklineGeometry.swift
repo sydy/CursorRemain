@@ -2,8 +2,8 @@ import Foundation
 
 public enum SparklineCopy {
     public static let title = "近 7 日剩余额度"
-    public static let emptyHint = "刷新几次后将显示近 7 日剩余趋势"
-    public static let flat = "近 7 日剩余几乎没变"
+    public static let emptyHint = "刷新几次后显示近日消耗"
+    public static let flat = "几乎没消耗"
     public static let axisStart = "7天前"
     public static let axisEnd = "现在"
     public static let reset = "重置"
@@ -201,12 +201,14 @@ public enum SparklineGeometry {
         let last = current ?? lastPt.remaining
         let t1 = max(nowTs, lastPt.ts)
         let window = windowLabel(spanSeconds: t1 - first.ts)
-        let range = "\(formatPercent(first.remaining)) → \(formatPercent(last))"
-        if let burn = dailyAvg, burn >= SparklineCopy.flatBurnEpsilon {
-            let rate = String(format: "%@%.1f%%", SparklineCopy.minus, burn)
-            return "\(window)  \(range) · 日均约 \(rate)"
+        let used = first.remaining - last
+        if used >= SparklineCopy.flatBurnEpsilon {
+            return "\(window)用掉 \(formatPercent(used))"
         }
-        return "\(window)  \(range) · 剩余几乎没变"
+        if used <= -SparklineCopy.flatBurnEpsilon {
+            return "\(window)剩余回升了 \(formatPercent(-used))"
+        }
+        return "\(window)\(SparklineCopy.flat)"
     }
 
     public static func formatPercent(_ remaining: Double) -> String {

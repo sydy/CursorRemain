@@ -5,7 +5,7 @@ import SwiftUI
 
 enum FlyoutLayout {
     static let width: CGFloat = 500
-    static let height: CGFloat = 320
+    static let height: CGFloat = 280
     static let size = CGSize(width: width, height: height)
     static let cornerRadius: CGFloat = 16
     static let padding: CGFloat = 16
@@ -17,7 +17,6 @@ enum FlyoutLayout {
     static let cardPadding: CGFloat = 10
     static let cardGap: CGFloat = 8
     static let barHeight: CGFloat = 5
-    static let trendLineHeight: CGFloat = 32
     static let toolButtonHeight: CGFloat = 24
     static let toolButtonGap: CGFloat = 6
 }
@@ -122,16 +121,15 @@ struct FlyoutView: View {
                     }
                 }
                 card {
-                    HStack(spacing: 12) {
-                        if let tokens = usage.totalTokens, tokens > 0 {
-                            Text("Token  \(UsageParser.formatTokenCount(Double(tokens)))")
-                        }
-                        if let end = usage.billingCycleEnd {
-                            Text("\(StatusText.cycleEndLabel(usage))  \(StatusText.formatResetDate(end, includeTime: usage.billingCycleEndOverridden))")
-                        }
+                    let meta = infoMeta(usage)
+                    if !meta.isEmpty {
+                        Text(meta)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Text(trendText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(StatusText.formatEstimateCaption(usage))
                         .font(.caption)
                         .foregroundStyle(estimateColor(usage))
@@ -139,7 +137,6 @@ struct FlyoutView: View {
             } else if let updated = store.updatedAt {
                 Text("更新  \(updated)").font(.caption).foregroundStyle(.secondary)
             }
-            trendLine
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -169,7 +166,7 @@ struct FlyoutView: View {
 
     func estimateColor(_ usage: UsageSnapshot) -> Color {
         let text = StatusText.formatEstimateCaption(usage)
-        if text.contains("可撑过") { return Color(red: 48 / 255, green: 209 / 255, blue: 88 / 255) }
+        if text.contains("撑到") || text.contains("可撑过") { return Color(red: 48 / 255, green: 209 / 255, blue: 88 / 255) }
         if text.contains("耗尽") || text.contains("紧张") { return Color(red: 231 / 255, green: 76 / 255, blue: 60 / 255) }
         return .secondary
     }
@@ -235,21 +232,25 @@ struct FlyoutView: View {
         .help(title)
     }
 
-    var trendLine: some View {
+    func infoMeta(_ usage: UsageSnapshot) -> String {
+        var parts: [String] = []
+        if let tokens = usage.totalTokens, tokens > 0 {
+            parts.append("Token \(UsageParser.formatTokenCount(Double(tokens)))")
+        }
+        if let end = usage.billingCycleEnd {
+            parts.append("\(StatusText.cycleEndLabel(usage)) \(StatusText.formatResetDate(end, includeTime: usage.billingCycleEndOverridden))")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    var trendText: String {
         let points = store.historyPoints
-        let current = remaining ?? points.last?.remaining
-        let text = SparklineGeometry.trendSummary(
+        return SparklineGeometry.trendSummary(
             points: points,
             dailyAvg: store.dailyAvgBurn,
-            current: current,
+            current: remaining ?? points.last?.remaining,
             nowTs: Date().timeIntervalSince1970
         )
-        return Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, minHeight: FlyoutLayout.trendLineHeight, alignment: .topLeading)
-            .padding(.top, 2)
     }
 }
 
