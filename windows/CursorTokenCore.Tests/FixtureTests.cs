@@ -940,7 +940,7 @@ public class FixtureTests
     public void FlyoutLayoutMatchesMacosMetrics()
     {
         Assert.Equal(500, FlyoutLayout.Width);
-        Assert.Equal(328, FlyoutLayout.Height);
+        Assert.Equal(376, FlyoutLayout.Height);
         Assert.Equal(16, FlyoutLayout.CornerRadius);
         Assert.Equal(16, FlyoutLayout.Padding);
         Assert.Equal(16, FlyoutLayout.ColumnGap);
@@ -951,7 +951,10 @@ public class FixtureTests
         Assert.Equal(10, FlyoutLayout.CardPadding);
         Assert.Equal(8, FlyoutLayout.CardGap);
         Assert.Equal(5, FlyoutLayout.BarHeight);
-        Assert.Equal(36, FlyoutLayout.SparkHeight);
+        Assert.Equal(48, FlyoutLayout.SparkHeight);
+        Assert.Equal(14, FlyoutLayout.SparkTitleHeight);
+        Assert.Equal(12, FlyoutLayout.SparkAxisHeight);
+        Assert.Equal(14, FlyoutLayout.SparkCaptionHeight);
         Assert.Equal(24, FlyoutLayout.ToolButtonHeight);
         Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
@@ -1019,18 +1022,90 @@ public class FixtureTests
     }
 
     [Fact]
-    public void SparklineGeometryPadsFlatSeriesAndMapsEndpoints()
+    public void SparklineGeometryUsesFixedPercentScale()
     {
-        var values = new[] { 50.0, 50.0, 50.0 };
-        var (minV, maxV) = SparklineGeometry.Range(values);
-        Assert.True(maxV - minV > 1);
+        var (minV, maxV) = SparklineGeometry.Range(new[] { 50.0, 50.0, 50.0 });
+        Assert.Equal(0, minV);
+        Assert.Equal(100, maxV);
         var pts = SparklineGeometry.Points(new[] { 10.0, 90.0 }, 100, 40);
         Assert.Equal(2, pts.Length);
         Assert.Equal(0, pts[0].X, 3);
         Assert.Equal(100, pts[1].X, 3);
+        Assert.Equal(36, pts[0].Y, 3);
+        Assert.Equal(4, pts[1].Y, 3);
         Assert.True(pts[0].Y > pts[1].Y);
-        Assert.InRange(pts[0].Y, 0, 40);
-        Assert.InRange(pts[1].Y, 0, 40);
+    }
+
+    [Fact]
+    public void SparklineLayoutIsTimeProportionalAndFillsTowardZero()
+    {
+        var now = 1_800_000_000.0;
+        var points = new List<HistoryPoint>
+        {
+            new(now - 7 * 86400, 80, null, null),
+            new(now - 3.5 * 86400, 60, null, null),
+            new(now, 40, null, null),
+        };
+        var plot = SparklineGeometry.Layout(points, 200, 40, now);
+        Assert.Equal(3, plot.Points.Length);
+        Assert.Equal(0, plot.Points[0].X, 3);
+        Assert.Equal(100, plot.Points[1].X, 3);
+        Assert.Equal(200, plot.Points[2].X, 3);
+        Assert.Equal(SparklineGeometry.YAt(80, 40), plot.Points[0].Y, 3);
+        Assert.Equal(SparklineGeometry.YAt(40, 40), plot.Points[2].Y, 3);
+        Assert.True(plot.Points[2].Y > plot.Points[0].Y);
+        Assert.Null(plot.Reset);
+        Assert.Equal(1, SparklineGeometry.HitIndex(plot.Points, 100));
+    }
+
+    [Fact]
+    public void SparklineDetectsResetFromJumpAndCycleStart()
+    {
+        var now = 1_800_000_000.0;
+        var dropThenReset = new List<HistoryPoint>
+        {
+            new(now - 5 * 86400, 22, null, null),
+            new(now - 3 * 86400, 8, null, null),
+            new(now - 2 * 86400, 95, null, null),
+            new(now, 88, null, null),
+        };
+        var jumped = SparklineGeometry.Layout(dropThenReset, 140, 40, now);
+        Assert.NotNull(jumped.Reset);
+        Assert.Equal(2, jumped.Reset.Value.Index);
+        Assert.Equal(95, jumped.Reset.Value.Remaining, 3);
+
+        var cycleStart = now - 2 * 86400;
+        var fromCycle = SparklineGeometry.Layout(dropThenReset, 140, 40, now, cycleStart);
+        Assert.NotNull(fromCycle.Reset);
+        Assert.Equal(-1, fromCycle.Reset.Value.Index);
+        Assert.Equal(cycleStart, fromCycle.Reset.Value.Ts, 3);
+        Assert.Equal(100, fromCycle.Reset.Value.X, 1);
+
+        var flat = SparklineGeometry.Layout(
+            new List<HistoryPoint> { new(now - 86400, 81, null, null), new(now, 80, null, null) },
+            100, 40, now);
+        Assert.Null(flat.Reset);
+    }
+
+    [Fact]
+    public void SparklineCaptionAndHoverCopy()
+    {
+        Assert.Equal(SparklineCopy.EmptyHint, SparklineGeometry.Caption(0, null, null));
+        Assert.Equal(SparklineCopy.EmptyHint, SparklineGeometry.Caption(1, null, 80));
+        Assert.Equal(SparklineCopy.Flat, SparklineGeometry.Caption(3, 0, 80));
+        Assert.Equal(SparklineCopy.Flat, SparklineGeometry.Caption(3, 0.04, 80));
+        Assert.Equal("当前 80%", SparklineGeometry.Caption(2, null, 80));
+        Assert.Equal("日均约 −1.5% · 当前 80.7%", SparklineGeometry.Caption(4, 1.5, 80.7));
+        Assert.Equal("85%", SparklineGeometry.FormatPercent(85));
+        Assert.Equal("80.7%", SparklineGeometry.FormatPercent(80.74));
+
+        var ts = new DateTimeOffset(2026, 9, 12, 14, 20, 0, TimeSpan.Zero).ToUnixTimeSeconds();
+        var local = DateTimeOffset.FromUnixTimeSeconds(ts).ToLocalTime();
+        var stamp = $"{local.Month}月{local.Day}日 {local.Hour:00}:{local.Minute:00}";
+        Assert.Equal(stamp, SparklineGeometry.FormatLocalStamp(ts));
+        Assert.Equal($"{stamp} · 剩余 83.4%", SparklineGeometry.FormatHover(ts, 83.4));
+        Assert.Equal($"{stamp} · 剩余 83.4%（−1.2%）", SparklineGeometry.FormatHover(ts, 83.4, 84.6));
+        Assert.Equal($"{stamp} · 剩余 95.0%（+70.0%）", SparklineGeometry.FormatHover(ts, 95, 25));
     }
 
     [Fact]

@@ -217,7 +217,7 @@ public static class UsageChartLayout
 public static class FlyoutLayout
 {
     public const int Width = 500;
-    public const int Height = 328;
+    public const int Height = 376;
     public const int CornerRadius = 16;
     public const int Padding = 16;
     public const int ColumnGap = 16;
@@ -228,7 +228,10 @@ public static class FlyoutLayout
     public const int CardPadding = 10;
     public const int CardGap = 8;
     public const int BarHeight = 5;
-    public const int SparkHeight = 36;
+    public const int SparkHeight = 48;
+    public const int SparkTitleHeight = 14;
+    public const int SparkAxisHeight = 12;
+    public const int SparkCaptionHeight = 14;
     public const int ToolButtonHeight = 24;
     public const int ToolButtonGap = 6;
     public const int ToolButtonPadX = 8;
@@ -318,35 +321,176 @@ public static class RemainingTone
     }
 }
 
+public static class SparklineCopy
+{
+    public const string Title = "近 7 日剩余额度";
+    public const string EmptyHint = "刷新几次后将显示近 7 日剩余趋势";
+    public const string Flat = "近 7 日剩余几乎没变";
+    public const string AxisStart = "7天前";
+    public const string AxisEnd = "现在";
+    public const string Reset = "重置";
+    public const string Minus = "\u2212";
+    public const int WindowDays = 7;
+    public const double FlatBurnEpsilon = 0.05;
+    public const double ResetJump = 15;
+}
+
+public readonly record struct SparkMappedPoint(float X, float Y, double Ts, double Remaining, int Index);
+
+public sealed record SparkPlot(SparkMappedPoint[] Points, SparkMappedPoint? Reset, double T0, double T1);
+
 public static class SparklineGeometry
 {
-    public static (double Min, double Max) Range(IReadOnlyList<double> values)
-    {
-        if (values.Count == 0) return (0, 100);
-        var minV = values.Min();
-        var maxV = values.Max();
-        if (maxV - minV < 1)
-        {
-            minV -= 0.5;
-            maxV += 0.5;
-        }
-        var pad = (maxV - minV) * 0.08;
-        return (minV - pad, maxV + pad);
-    }
+    public static (double Min, double Max) Range(IReadOnlyList<double> values) => (0, 100);
 
     public static (float X, float Y)[] Points(IReadOnlyList<double> values, float width, float height)
     {
-        var (minV, maxV) = Range(values);
-        var span = maxV - minV;
-        if (span <= 0) span = 1;
         var n = Math.Max(values.Count - 1, 1);
         var pts = new (float X, float Y)[values.Count];
         for (var i = 0; i < values.Count; i++)
         {
-            pts[i] = (
-                width * i / n,
-                height * (1 - (float)((values[i] - minV) / span)));
+            var rem = Math.Clamp(values[i], 0, 100);
+            pts[i] = (width * i / n, YAt(rem, height));
         }
         return pts;
+    }
+
+    public static float YAt(double remaining, float height) =>
+        height * (1f - (float)(Math.Clamp(remaining, 0, 100) / 100.0));
+
+    public static SparkPlot Layout(
+        IReadOnlyList<HistoryPoint> points,
+        float width,
+        float height,
+        double nowTs,
+        double? cycleStartTs = null,
+        int windowDays = SparklineCopy.WindowDays)
+    {
+        var t1 = nowTs;
+        var t0 = nowTs - Math.Max(1, windowDays) * 86400.0;
+        var span = t1 - t0;
+        if (span <= 0) span = 1;
+
+        var mapped = new SparkMappedPoint[points.Count];
+        var minTs = double.MaxValue;
+        var maxTs = double.MinValue;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var p = points[i];
+            if (p.Ts < minTs) minTs = p.Ts;
+            if (p.Ts > maxTs) maxTs = p.Ts;
+            var xFrac = (p.Ts - t0) / span;
+            if (double.IsNaN(xFrac) || double.IsInfinity(xFrac)) xFrac = 0;
+            mapped[i] = new SparkMappedPoint(
+                (float)(width * Math.Clamp(xFrac, 0, 1)),
+                YAt(p.Remaining, height),
+                p.Ts,
+                p.Remaining,
+                i);
+        }
+
+        if (mapped.Length >= 2 && maxTs - minTs < 1)
+        {
+            var n = Math.Max(mapped.Length - 1, 1);
+            for (var i = 0; i < mapped.Length; i++)
+            {
+                var p = mapped[i];
+                mapped[i] = p with { X = width * i / n };
+            }
+        }
+
+        return new SparkPlot(mapped, FindReset(mapped, width, height, t0, t1, cycleStartTs), t0, t1);
+    }
+
+    public static SparkMappedPoint? FindReset(
+        IReadOnlyList<SparkMappedPoint> points,
+        float width,
+        float height,
+        double t0,
+        double t1,
+        double? cycleStartTs)
+    {
+        var span = t1 - t0;
+        if (span <= 0) span = 1;
+        if (cycleStartTs is { } cs && cs >= t0 && cs <= t1)
+        {
+            var x = (float)(width * (cs - t0) / span);
+            return new SparkMappedPoint(x, YAt(0, height), cs, 0, -1);
+        }
+
+        var best = -1;
+        var bestJump = SparklineCopy.ResetJump;
+        for (var i = 1; i < points.Count; i++)
+        {
+            var jump = points[i].Remaining - points[i - 1].Remaining;
+            if (jump >= bestJump)
+            {
+                bestJump = jump;
+                best = i;
+            }
+        }
+        return best >= 0 ? points[best] : null;
+    }
+
+    public static int? HitIndex(IReadOnlyList<SparkMappedPoint> points, float x)
+    {
+        if (points.Count == 0) return null;
+        var best = 0;
+        var bestDist = Math.Abs(points[0].X - x);
+        for (var i = 1; i < points.Count; i++)
+        {
+            var d = Math.Abs(points[i].X - x);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = i;
+            }
+        }
+        return best;
+    }
+
+    public static string Caption(int pointCount, double? dailyAvg, double? current)
+    {
+        if (pointCount < 2) return SparklineCopy.EmptyHint;
+        if (dailyAvg is { } burn && burn >= SparklineCopy.FlatBurnEpsilon)
+        {
+            var rate = $"{SparklineCopy.Minus}{burn.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%";
+            return current is { } cur
+                ? $"日均约 {rate} · 当前 {FormatPercent(cur)}"
+                : $"日均约 {rate}";
+        }
+        if (dailyAvg is null && current is { } only)
+            return $"当前 {FormatPercent(only)}";
+        return SparklineCopy.Flat;
+    }
+
+    public static string FormatPercent(double remaining)
+    {
+        var v = Math.Clamp(remaining, 0, 100);
+        var rounded = Math.Round(v, 1, MidpointRounding.AwayFromZero);
+        if (Math.Abs(rounded - Math.Round(rounded)) < 0.05)
+            return $"{Math.Round(rounded).ToString("0", System.Globalization.CultureInfo.InvariantCulture)}%";
+        return $"{rounded.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%";
+    }
+
+    public static string FormatLocalStamp(double unixSeconds)
+    {
+        var dt = DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(unixSeconds * 1000.0)).ToLocalTime();
+        return $"{dt.Month}月{dt.Day}日 {dt.Hour:00}:{dt.Minute:00}";
+    }
+
+    public static string FormatHover(double ts, double remaining, double? previous = null)
+    {
+        var text = $"{FormatLocalStamp(ts)} · 剩余 {remaining.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%";
+        if (previous is { } prev)
+        {
+            var delta = remaining - prev;
+            if (Math.Abs(delta) >= 0.05)
+            {
+                var sign = delta > 0 ? "+" : SparklineCopy.Minus;
+                text += $"（{sign}{Math.Abs(delta).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%）";
+            }
+        }
+        return text;
     }
 }
