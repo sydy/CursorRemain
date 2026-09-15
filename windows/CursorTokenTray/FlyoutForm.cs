@@ -438,31 +438,38 @@ sealed class FlyoutForm : Form
         using var font = UiFont(8f);
         using var iconFont = IconFont(8f);
         using var measure = new StringFormat(StringFormat.GenericTypographic);
-        var padX = 8 * s;
-        var iconSlot = iconFont is null ? 0 : 14 * s;
-        var iconTextGap = iconFont is null ? 0 : 4 * s;
+        var hasIcon = iconFont is not null;
+        var sizes = new (float Width, float Height)[items.Length];
+        for (var i = 0; i < items.Length; i++)
+        {
+            var text = g.MeasureString(items[i].Label, font, int.MaxValue, measure);
+            sizes[i] = FlyoutLayout.ToolButtonSize(text.Width, text.Height, hasIcon, s);
+        }
         var gap = Px(FlyoutLayout.ToolButtonGap);
-        var x = box.Right;
-        for (var i = items.Length - 1; i >= 0; i--)
+        var (_, _, frames) = FlyoutLayout.ArrangeToolButtons(sizes, box.Width, gap);
+        var padX = FlyoutLayout.ToolButtonPadX * s;
+        var iconSlot = hasIcon ? FlyoutLayout.ToolButtonIcon * s : 0;
+        var iconTextGap = hasIcon ? FlyoutLayout.ToolButtonIconGap * s : 0;
+        for (var i = 0; i < items.Length; i++)
         {
             var it = items[i];
-            var textW = g.MeasureString(it.Label, font, int.MaxValue, measure).Width;
-            var w = Math.Max(box.Height + 18 * s, padX + iconSlot + iconTextGap + textW + padX);
-            x -= w;
-            var rect = new RectangleF(x, box.Y, w, box.Height);
+            var fr = frames[i];
+            var text = g.MeasureString(it.Label, font, int.MaxValue, measure);
+            var contentW = iconSlot + iconTextGap + text.Width;
+            var rect = new RectangleF(box.X + fr.X, box.Y + Math.Max(0, (box.Height - fr.Height) / 2), fr.Width, Math.Max(box.Height, fr.Height));
             var bg = _hover == it.Id ? pal.ButtonHover : pal.Button;
             using (var path = RoundRect(rect, rect.Height / 2))
             using (var brush = new SolidBrush(bg))
                 g.FillPath(brush, path);
-            var tx = rect.X + padX;
-            if (iconFont is not null)
+            var inner = Math.Max(0, rect.Width - padX * 2);
+            var tx = rect.X + padX + Math.Max(0, (inner - contentW) / 2);
+            if (hasIcon)
             {
-                DrawString(g, it.Icon, iconFont, pal.Secondary, new RectangleF(tx, rect.Y, iconSlot, rect.Height), StringAlignment.Center, StringAlignment.Center);
+                DrawFittedString(g, it.Icon, iconFont!, pal.Secondary, new RectangleF(tx, rect.Y, iconSlot, rect.Height), StringAlignment.Center, StringAlignment.Center);
                 tx += iconSlot + iconTextGap;
             }
-            DrawString(g, it.Label, font, pal.Secondary, new RectangleF(tx, rect.Y, Math.Max(0, rect.Right - padX - tx), rect.Height), StringAlignment.Near, StringAlignment.Center, noWrap: true);
+            DrawFittedString(g, it.Label, font, pal.Secondary, new RectangleF(tx, rect.Y, Math.Max(0, rect.Right - padX - tx), rect.Height), StringAlignment.Near, StringAlignment.Center);
             _hits.Add(new(it.Id, Rectangle.Round(rect)));
-            x -= gap;
         }
     }
 
@@ -555,6 +562,20 @@ sealed class FlyoutForm : Form
             LineAlignment = valign,
             Trimming = StringTrimming.EllipsisCharacter,
             FormatFlags = StringFormatFlags.LineLimit | (noWrap ? StringFormatFlags.NoWrap : 0),
+        };
+        g.DrawString(text, font, brush, rect, sf);
+    }
+
+    static void DrawFittedString(Graphics g, string text, Font font, Color color, RectangleF rect,
+        StringAlignment align = StringAlignment.Near, StringAlignment valign = StringAlignment.Center)
+    {
+        using var brush = new SolidBrush(color);
+        using var sf = new StringFormat(StringFormat.GenericTypographic)
+        {
+            Alignment = align,
+            LineAlignment = valign,
+            Trimming = StringTrimming.None,
+            FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.LineLimit,
         };
         g.DrawString(text, font, brush, rect, sf);
     }
