@@ -423,34 +423,41 @@ sealed class FlyoutForm : Form
         var sparkH = Math.Min(Px(FlyoutLayout.SparkHeight), box.Bottom - y - axisH - captionH);
         if (sparkH >= 12 * s)
         {
-            DrawSparkline(g, new RectangleF(box.X, y, box.Width, sparkH), pal, s, current);
+            var plot = DrawSparkline(g, new RectangleF(box.X, y, box.Width, sparkH), pal, s, current);
             y += sparkH + 1 * s;
-            DrawString(g, SparklineCopy.AxisStart, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width / 2, axisH));
+            var axisStart = plot is { } drawn
+                ? SparklineGeometry.AxisStartLabel(drawn.T0, drawn.T1)
+                : SparklineCopy.AxisStart;
+            DrawString(g, axisStart, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width / 2, axisH));
             DrawString(g, SparklineCopy.AxisEnd, smallFont, pal.Secondary, new RectangleF(box.X + box.Width / 2, y, box.Width / 2, axisH), StringAlignment.Far);
             y += axisH;
         }
         DrawString(g, caption, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width, captionH));
     }
 
-    void DrawSparkline(Graphics g, RectangleF box, FlyoutPalette pal, float s, double? current)
+    SparkPlot? DrawSparkline(Graphics g, RectangleF box, FlyoutPalette pal, float s, double? current)
     {
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var plot = SparklineGeometry.Layout(_history, box.Width, box.Height, now, CycleStartTs());
         _sparkPlot = plot;
         _sparkPlotBox = box;
-        if (plot.Points.Length < 2) return;
+        if (plot.Points.Length < 2) return plot;
 
         var error = _usage is null && _error is { Length: > 0 };
         var unlimited = _usage?.IsUnlimited == true;
         var tone = ToneColor(current ?? plot.Points[^1].Remaining, error, unlimited);
         var points = plot.Points.Select(p => new PointF(box.X + p.X, box.Y + p.Y)).ToArray();
+        var ribbon = SparklineGeometry.RibbonOffset(box.Height);
+        PointF Below(PointF p) => new(p.X, Math.Min(box.Bottom, p.Y + ribbon));
         using (var fillPath = new GraphicsPath())
         {
-            fillPath.AddLine(points[0].X, box.Bottom, points[0].X, points[0].Y);
-            fillPath.AddLines(points);
-            fillPath.AddLine(points[^1].X, points[^1].Y, points[^1].X, box.Bottom);
+            var ribbonPts = new PointF[points.Length * 2];
+            for (var i = 0; i < points.Length; i++) ribbonPts[i] = points[i];
+            for (var i = 0; i < points.Length; i++)
+                ribbonPts[points.Length + i] = Below(points[points.Length - 1 - i]);
+            fillPath.AddLines(ribbonPts);
             fillPath.CloseFigure();
-            using var brush = new LinearGradientBrush(box, Color.FromArgb(80, tone), Color.FromArgb(8, tone), LinearGradientMode.Vertical);
+            using var brush = new LinearGradientBrush(box, Color.FromArgb(70, tone), Color.FromArgb(10, tone), LinearGradientMode.Vertical);
             g.FillPath(brush, fillPath);
         }
         using (var pen = new Pen(tone, Math.Max(1.5f, 1.5f * s)) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
@@ -482,6 +489,7 @@ sealed class FlyoutForm : Form
             new RectangleF(box.X, box.Y, box.Width * 0.45f, 12 * s));
         DrawString(g, SparklineGeometry.FormatPercent(plot.Points[^1].Remaining), markFont, pal.Secondary,
             new RectangleF(box.X + box.Width * 0.45f, box.Bottom - 12 * s, box.Width * 0.55f, 12 * s), StringAlignment.Far, StringAlignment.Far);
+        return plot;
     }
 
     bool UpdateSparkHover(Point pt)

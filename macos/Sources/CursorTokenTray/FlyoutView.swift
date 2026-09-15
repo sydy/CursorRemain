@@ -252,7 +252,7 @@ struct FlyoutView: View {
             .frame(height: points.count >= 2 ? FlyoutLayout.sparkTitleHeight + FlyoutLayout.sparkHeight : FlyoutLayout.sparkTitleHeight)
             if points.count >= 2 {
                 HStack {
-                    Text(SparklineCopy.axisStart)
+                    Text(axisStartLabel)
                     Spacer(minLength: 0)
                     Text(SparklineCopy.axisEnd)
                 }
@@ -271,6 +271,18 @@ struct FlyoutView: View {
     var cycleStartTs: Double? {
         guard let iso = store.usage?.billingCycleStart, let ms = UsageParser.isoToMs(iso) else { return nil }
         return Double(ms) / 1000
+    }
+
+    var axisStartLabel: String {
+        let now = Date().timeIntervalSince1970
+        let plot = SparklineGeometry.layout(
+            store.historyPoints,
+            width: 1,
+            height: 1,
+            nowTs: now,
+            cycleStartTs: cycleStartTs
+        )
+        return SparklineGeometry.axisStartLabel(t0: plot.t0, t1: plot.t1)
     }
 }
 
@@ -367,12 +379,14 @@ struct Sparkline: View {
                 cycleStartTs: cycleStartTs
             )
             let pts = plot.points.map { CGPoint(x: $0.x, y: $0.y) }
+            let ribbon = SparklineGeometry.ribbonOffset(geo.size.height)
+            let belowPts = pts.map { CGPoint(x: $0.x, y: min(geo.size.height, $0.y + ribbon)) }
             ZStack {
                 Path { p in
-                    guard let first = pts.first, let last = pts.last else { return }
-                    p.move(to: CGPoint(x: first.x, y: geo.size.height))
-                    for pt in pts { p.addLine(to: pt) }
-                    p.addLine(to: CGPoint(x: last.x, y: geo.size.height))
+                    guard let first = pts.first else { return }
+                    p.move(to: first)
+                    for pt in pts.dropFirst() { p.addLine(to: pt) }
+                    for pt in belowPts.reversed() { p.addLine(to: pt) }
                     p.closeSubpath()
                 }
                 .fill(

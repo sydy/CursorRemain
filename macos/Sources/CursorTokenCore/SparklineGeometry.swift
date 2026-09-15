@@ -65,17 +65,23 @@ public enum SparklineGeometry {
         cycleStartTs: Double? = nil,
         windowDays: Int = SparklineCopy.windowDays
     ) -> SparkPlot {
-        let t1 = nowTs
-        let t0 = nowTs - Double(max(1, windowDays)) * 86_400
+        let windowStart = nowTs - Double(max(1, windowDays)) * 86_400
+        var minTs = points.first?.ts ?? windowStart
+        var maxTs = points.first?.ts ?? nowTs
+        for p in points {
+            minTs = min(minTs, p.ts)
+            maxTs = max(maxTs, p.ts)
+        }
+
+        // Fit the axis to the sample span so a day of history is not
+        // crushed into the right edge of an empty 7-day window.
+        let t0 = max(windowStart, minTs)
+        let t1 = max(nowTs, maxTs)
         var span = t1 - t0
         if span <= 0 { span = 1 }
 
         var mapped: [SparkMappedPoint] = []
-        var minTs = Double.greatestFiniteMagnitude
-        var maxTs = -Double.greatestFiniteMagnitude
         for (i, p) in points.enumerated() {
-            minTs = min(minTs, p.ts)
-            maxTs = max(maxTs, p.ts)
             var xFrac = (p.ts - t0) / span
             if xFrac.isNaN || xFrac.isInfinite { xFrac = 0 }
             mapped.append(SparkMappedPoint(
@@ -100,6 +106,20 @@ public enum SparklineGeometry {
             t0: t0,
             t1: t1
         )
+    }
+
+    public static func ribbonOffset(_ height: Double) -> Double {
+        max(8, height * 0.22)
+    }
+
+    public static func formatAxisDay(_ unixSeconds: Double) -> String {
+        let dt = Date(timeIntervalSince1970: unixSeconds)
+        let cal = Calendar.current
+        return "\(cal.component(.month, from: dt))月\(cal.component(.day, from: dt))日"
+    }
+
+    public static func axisStartLabel(t0: Double, t1: Double) -> String {
+        t1 - t0 >= 6 * 86_400 ? SparklineCopy.axisStart : formatAxisDay(t0)
     }
 
     public static func findReset(

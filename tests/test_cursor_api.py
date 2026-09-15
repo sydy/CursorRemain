@@ -448,6 +448,10 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("_dailyAvg = dailyAvg", win_flyout)
         self.assertIn("SparklineCopy.Title", win_flyout)
         self.assertIn("SparklineCopy.title", mac_flyout)
+        self.assertIn("AxisStartLabel", win_flyout)
+        self.assertIn("axisStartLabel", mac_flyout)
+        self.assertIn("RibbonOffset", win_flyout)
+        self.assertIn("ribbonOffset", mac_flyout)
         self.assertNotIn("_body.Text", win_flyout)
         win_spark = (root / "windows" / "CursorTokenCore" / "UiLayout.cs").read_text(encoding="utf-8")
         mac_spark = (root / "macos" / "Sources" / "CursorTokenCore" / "SparklineGeometry.swift").read_text(encoding="utf-8")
@@ -458,6 +462,7 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("7天前", src)
             self.assertIn("现在", src)
             self.assertIn("日均约", src)
+            self.assertIn("crushed into the right edge", src)
         inner = 500 - 16 * 2
         right = inner - 176 - 16
         need = 5 * 56 + 4 * 6

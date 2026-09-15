@@ -1339,7 +1339,7 @@ final class SparklineGeometryTests: XCTestCase {
         let fromCycle = SparklineGeometry.layout(dropThenReset, width: 140, height: 40, nowTs: now, cycleStartTs: cycleStart)
         XCTAssertEqual(fromCycle.reset?.index, -1)
         XCTAssertEqual(fromCycle.reset?.ts ?? 0, cycleStart, accuracy: 0.001)
-        XCTAssertEqual(fromCycle.reset?.x ?? 0, 100, accuracy: 0.5)
+        XCTAssertEqual(fromCycle.reset?.x ?? 0, 84, accuracy: 0.5)
 
         let flat = SparklineGeometry.layout(
             [HistoryPoint(ts: now - 86_400, remaining: 81), HistoryPoint(ts: now, remaining: 80)],
@@ -1348,6 +1348,32 @@ final class SparklineGeometryTests: XCTestCase {
             nowTs: now
         )
         XCTAssertNil(flat.reset)
+        XCTAssertEqual(flat.points[0].x, 0, accuracy: 0.001)
+        XCTAssertEqual(flat.points[1].x, 100, accuracy: 0.001)
+
+        let shortSpan = SparklineGeometry.layout(
+            [
+                HistoryPoint(ts: now - 1.15 * 86_400, remaining: 85.3),
+                HistoryPoint(ts: now, remaining: 80.1),
+            ],
+            width: 200,
+            height: 40,
+            nowTs: now,
+            cycleStartTs: now - 7 * 86_400
+        )
+        XCTAssertNil(shortSpan.reset)
+        XCTAssertEqual(shortSpan.points[0].x, 0, accuracy: 0.001)
+        XCTAssertEqual(shortSpan.points[1].x, 200, accuracy: 0.001)
+        XCTAssertEqual(
+            SparklineGeometry.axisStartLabel(t0: shortSpan.t0, t1: shortSpan.t1),
+            SparklineGeometry.formatAxisDay(now - 1.15 * 86_400)
+        )
+        XCTAssertNotEqual(
+            SparklineGeometry.axisStartLabel(t0: shortSpan.t0, t1: shortSpan.t1),
+            SparklineCopy.axisStart
+        )
+        XCTAssertEqual(SparklineGeometry.axisStartLabel(t0: now - 7 * 86_400, t1: now), SparklineCopy.axisStart)
+        XCTAssertLessThan(SparklineGeometry.ribbonOffset(40), 40)
     }
 
     func testCaptionAndHoverCopy() {

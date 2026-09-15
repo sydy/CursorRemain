@@ -1079,12 +1079,25 @@ public class FixtureTests
         Assert.NotNull(fromCycle.Reset);
         Assert.Equal(-1, fromCycle.Reset.Value.Index);
         Assert.Equal(cycleStart, fromCycle.Reset.Value.Ts, 3);
-        Assert.Equal(100, fromCycle.Reset.Value.X, 1);
+        Assert.Equal(84, fromCycle.Reset.Value.X, 1);
 
         var flat = SparklineGeometry.Layout(
             new List<HistoryPoint> { new(now - 86400, 81, null, null), new(now, 80, null, null) },
             100, 40, now);
         Assert.Null(flat.Reset);
+        Assert.Equal(0, flat.Points[0].X, 3);
+        Assert.Equal(100, flat.Points[1].X, 3);
+
+        var shortSpan = SparklineGeometry.Layout(
+            new List<HistoryPoint> { new(now - 1.15 * 86400, 85.3, null, null), new(now, 80.1, null, null) },
+            200, 40, now, now - 7 * 86400);
+        Assert.Null(shortSpan.Reset);
+        Assert.Equal(0, shortSpan.Points[0].X, 3);
+        Assert.Equal(200, shortSpan.Points[1].X, 3);
+        Assert.Equal(SparklineGeometry.FormatAxisDay(now - 1.15 * 86400), SparklineGeometry.AxisStartLabel(shortSpan.T0, shortSpan.T1));
+        Assert.NotEqual(SparklineCopy.AxisStart, SparklineGeometry.AxisStartLabel(shortSpan.T0, shortSpan.T1));
+        Assert.Equal(SparklineCopy.AxisStart, SparklineGeometry.AxisStartLabel(now - 7 * 86400, now));
+        Assert.True(SparklineGeometry.RibbonOffset(40) < 40);
     }
 
     [Fact]
