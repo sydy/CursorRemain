@@ -940,7 +940,7 @@ public class FixtureTests
     public void FlyoutLayoutMatchesMacosMetrics()
     {
         Assert.Equal(500, FlyoutLayout.Width);
-        Assert.Equal(376, FlyoutLayout.Height);
+        Assert.Equal(320, FlyoutLayout.Height);
         Assert.Equal(16, FlyoutLayout.CornerRadius);
         Assert.Equal(16, FlyoutLayout.Padding);
         Assert.Equal(16, FlyoutLayout.ColumnGap);
@@ -951,10 +951,7 @@ public class FixtureTests
         Assert.Equal(10, FlyoutLayout.CardPadding);
         Assert.Equal(8, FlyoutLayout.CardGap);
         Assert.Equal(5, FlyoutLayout.BarHeight);
-        Assert.Equal(48, FlyoutLayout.SparkHeight);
-        Assert.Equal(14, FlyoutLayout.SparkTitleHeight);
-        Assert.Equal(12, FlyoutLayout.SparkAxisHeight);
-        Assert.Equal(14, FlyoutLayout.SparkCaptionHeight);
+        Assert.Equal(32, FlyoutLayout.TrendLineHeight);
         Assert.Equal(24, FlyoutLayout.ToolButtonHeight);
         Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
@@ -1119,6 +1116,25 @@ public class FixtureTests
         Assert.Equal($"{stamp} · 剩余 83.4%", SparklineGeometry.FormatHover(ts, 83.4));
         Assert.Equal($"{stamp} · 剩余 83.4%（−1.2%）", SparklineGeometry.FormatHover(ts, 83.4, 84.6));
         Assert.Equal($"{stamp} · 剩余 95.0%（+70.0%）", SparklineGeometry.FormatHover(ts, 95, 25));
+
+        var now = 1_800_000_000.0;
+        Assert.Equal(SparklineCopy.EmptyHint, SparklineGeometry.TrendSummary([], null, 80, now));
+        Assert.Equal("近 1 日", SparklineGeometry.WindowLabel(1.15 * 86400));
+        Assert.Equal("近 2 日", SparklineGeometry.WindowLabel(1.6 * 86400));
+        Assert.Equal("近 7 日", SparklineGeometry.WindowLabel(7 * 86400));
+        var shortHist = new List<HistoryPoint>
+        {
+            new(now - 1.15 * 86400, 85.3, null, null),
+            new(now, 80.1, null, null),
+        };
+        Assert.Equal("近 1 日  85.3% → 79.9% · 日均约 −4.6%", SparklineGeometry.TrendSummary(shortHist, 4.6, 79.9, now));
+        var weekHist = new List<HistoryPoint>
+        {
+            new(now - 7 * 86400, 85, null, null),
+            new(now, 80.7, null, null),
+        };
+        Assert.Equal("近 7 日  85% → 80.7% · 日均约 −1.5%", SparklineGeometry.TrendSummary(weekHist, 1.5, 80.7, now));
+        Assert.Equal("近 7 日  85% → 84.9% · 剩余几乎没变", SparklineGeometry.TrendSummary(weekHist, 0.02, 84.9, now));
     }
 
     [Fact]

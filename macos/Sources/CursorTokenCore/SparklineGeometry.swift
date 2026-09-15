@@ -178,6 +178,37 @@ public enum SparklineGeometry {
         return SparklineCopy.flat
     }
 
+    public static func windowLabel(spanSeconds: Double) -> String {
+        let days = spanSeconds / 86_400
+        if days >= 6 { return "近 7 日" }
+        if days >= 1.5 { return "近 \(max(2, Int(days.rounded()))) 日" }
+        return "近 1 日"
+    }
+
+    public static func trendSummary(
+        points: [HistoryPoint],
+        dailyAvg: Double?,
+        current: Double?,
+        nowTs: Double
+    ) -> String {
+        guard points.count >= 2 else { return SparklineCopy.emptyHint }
+        var first = points[0]
+        var lastPt = points[points.count - 1]
+        for p in points {
+            if p.ts < first.ts { first = p }
+            if p.ts > lastPt.ts { lastPt = p }
+        }
+        let last = current ?? lastPt.remaining
+        let t1 = max(nowTs, lastPt.ts)
+        let window = windowLabel(spanSeconds: t1 - first.ts)
+        let range = "\(formatPercent(first.remaining)) → \(formatPercent(last))"
+        if let burn = dailyAvg, burn >= SparklineCopy.flatBurnEpsilon {
+            let rate = String(format: "%@%.1f%%", SparklineCopy.minus, burn)
+            return "\(window)  \(range) · 日均约 \(rate)"
+        }
+        return "\(window)  \(range) · 剩余几乎没变"
+    }
+
     public static func formatPercent(_ remaining: Double) -> String {
         let v = min(100, max(0, remaining))
         let rounded = (v * 10).rounded() / 10
