@@ -1289,3 +1289,95 @@ final class CursorAuthTests: XCTestCase {
         return ""
     }
 }
+
+final class SparklineGeometryTests: XCTestCase {
+    func testFixedPercentScale() {
+        let range = SparklineGeometry.range([50, 50, 50])
+        XCTAssertEqual(range.min, 0)
+        XCTAssertEqual(range.max, 100)
+        let pts = SparklineGeometry.points([10, 90], width: 100, height: 40)
+        XCTAssertEqual(pts.count, 2)
+        XCTAssertEqual(pts[0].x, 0, accuracy: 0.001)
+        XCTAssertEqual(pts[1].x, 100, accuracy: 0.001)
+        XCTAssertEqual(pts[0].y, 36, accuracy: 0.001)
+        XCTAssertEqual(pts[1].y, 4, accuracy: 0.001)
+        XCTAssertGreaterThan(pts[0].y, pts[1].y)
+    }
+
+    func testTimeProportionalLayout() {
+        let now = 1_800_000_000.0
+        let points = [
+            HistoryPoint(ts: now - 7 * 86_400, remaining: 80),
+            HistoryPoint(ts: now - 3.5 * 86_400, remaining: 60),
+            HistoryPoint(ts: now, remaining: 40),
+        ]
+        let plot = SparklineGeometry.layout(points, width: 200, height: 40, nowTs: now)
+        XCTAssertEqual(plot.points.count, 3)
+        XCTAssertEqual(plot.points[0].x, 0, accuracy: 0.001)
+        XCTAssertEqual(plot.points[1].x, 100, accuracy: 0.001)
+        XCTAssertEqual(plot.points[2].x, 200, accuracy: 0.001)
+        XCTAssertEqual(plot.points[0].y, SparklineGeometry.yAt(80, height: 40), accuracy: 0.001)
+        XCTAssertEqual(plot.points[2].y, SparklineGeometry.yAt(40, height: 40), accuracy: 0.001)
+        XCTAssertGreaterThan(plot.points[2].y, plot.points[0].y)
+        XCTAssertNil(plot.reset)
+        XCTAssertEqual(SparklineGeometry.hitIndex(plot.points, x: 100), 1)
+    }
+
+    func testResetFromJumpAndCycleStart() {
+        let now = 1_800_000_000.0
+        let dropThenReset = [
+            HistoryPoint(ts: now - 5 * 86_400, remaining: 22),
+            HistoryPoint(ts: now - 3 * 86_400, remaining: 8),
+            HistoryPoint(ts: now - 2 * 86_400, remaining: 95),
+            HistoryPoint(ts: now, remaining: 88),
+        ]
+        let jumped = SparklineGeometry.layout(dropThenReset, width: 140, height: 40, nowTs: now)
+        XCTAssertEqual(jumped.reset?.index, 2)
+        XCTAssertEqual(jumped.reset?.remaining ?? 0, 95, accuracy: 0.001)
+
+        let cycleStart = now - 2 * 86_400
+        let fromCycle = SparklineGeometry.layout(dropThenReset, width: 140, height: 40, nowTs: now, cycleStartTs: cycleStart)
+        XCTAssertEqual(fromCycle.reset?.index, -1)
+        XCTAssertEqual(fromCycle.reset?.ts ?? 0, cycleStart, accuracy: 0.001)
+        XCTAssertEqual(fromCycle.reset?.x ?? 0, 100, accuracy: 0.5)
+
+        let flat = SparklineGeometry.layout(
+            [HistoryPoint(ts: now - 86_400, remaining: 81), HistoryPoint(ts: now, remaining: 80)],
+            width: 100,
+            height: 40,
+            nowTs: now
+        )
+        XCTAssertNil(flat.reset)
+    }
+
+    func testCaptionAndHoverCopy() {
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 0, dailyAvg: nil, current: nil), SparklineCopy.emptyHint)
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 1, dailyAvg: nil, current: 80), SparklineCopy.emptyHint)
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 3, dailyAvg: 0, current: 80), SparklineCopy.flat)
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 3, dailyAvg: 0.04, current: 80), SparklineCopy.flat)
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 2, dailyAvg: nil, current: 80), "当前 80%")
+        XCTAssertEqual(SparklineGeometry.caption(pointCount: 4, dailyAvg: 1.5, current: 80.7), "日均约 −1.5% · 当前 80.7%")
+        XCTAssertEqual(SparklineGeometry.formatPercent(85), "85%")
+        XCTAssertEqual(SparklineGeometry.formatPercent(80.74), "80.7%")
+
+        let ts = Date(timeIntervalSince1970: DateComponents(
+            calendar: Calendar(identifier: .gregorian),
+            timeZone: TimeZone(secondsFromGMT: 0),
+            year: 2026, month: 9, day: 12, hour: 14, minute: 20
+        ).date!.timeIntervalSince1970)
+        let unix = ts.timeIntervalSince1970
+        let stamp = SparklineGeometry.formatLocalStamp(unix)
+        let cal = Calendar.current
+        let expected = String(
+            format: "%d月%d日 %02d:%02d",
+            cal.component(.month, from: ts),
+            cal.component(.day, from: ts),
+            cal.component(.hour, from: ts),
+            cal.component(.minute, from: ts)
+        )
+        XCTAssertEqual(stamp, expected)
+        XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 83.4), "\(stamp) · 剩余 83.4%")
+        XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 83.4, previous: 84.6), "\(stamp) · 剩余 83.4%（−1.2%）")
+        XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 95, previous: 25), "\(stamp) · 剩余 95.0%（+70.0%）")
+    }
+}

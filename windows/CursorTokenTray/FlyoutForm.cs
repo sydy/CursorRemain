@@ -16,9 +16,12 @@ sealed class FlyoutForm : Form
     string? _error;
     string? _updated;
     string? _accountLabel;
-    List<double> _history = [];
+    List<HistoryPoint> _history = [];
     double? _dailyAvg;
     string? _hover;
+    int? _sparkHover;
+    RectangleF _sparkPlotBox;
+    SparkPlot? _sparkPlot;
     bool _holdOpen;
 
     protected override bool ShowWithoutActivation => true;
@@ -76,14 +79,16 @@ sealed class FlyoutForm : Form
         {
             var id = HitAt(e.Location);
             Cursor = id is null ? Cursors.Default : Cursors.Hand;
-            if (id == _hover) return;
+            var sparkChanged = UpdateSparkHover(e.Location);
+            if (id == _hover && !sparkChanged) return;
             _hover = id;
             Invalidate();
         };
         MouseLeave += (_, _) =>
         {
-            if (_hover is null) return;
+            if (_hover is null && _sparkHover is null) return;
             _hover = null;
+            _sparkHover = null;
             Cursor = Cursors.Default;
             Invalidate();
         };
@@ -115,13 +120,14 @@ sealed class FlyoutForm : Form
         }
     }
 
-    public void Render(UsageSnapshot? usage, string? error, string? updated, AppConfig cfg, List<double>? history = null, double? dailyAvg = null)
+    public void Render(UsageSnapshot? usage, string? error, string? updated, AppConfig cfg, List<HistoryPoint>? history = null, double? dailyAvg = null)
     {
         _usage = usage;
         _error = error;
         _updated = updated;
         _accountLabel = cfg.ActiveAccount?.DisplayLabel;
         if (history is not null) _history = history;
+        _dailyAvg = dailyAvg;
         ApplyPalette();
         Invalidate();
     }
@@ -347,22 +353,7 @@ sealed class FlyoutForm : Form
             y += 20 * s;
         }
 
-        var sparkTop = y + 4 * s;
-        var sparkBudget = box.Bottom - sparkTop;
-        if (_history.Count >= 2 && sparkBudget > 12 * s)
-        {
-            var sparkH = Math.Min(Px(FlyoutLayout.SparkHeight), sparkBudget - 16 * s);
-            if (sparkH >= 12 * s)
-            {
-                DrawSparkline(g, new RectangleF(box.X, sparkTop, box.Width, sparkH), pal, s);
-                sparkTop += sparkH + 4 * s;
-            }
-            if (_dailyAvg is { } burn)
-            {
-                var trend = burn <= 0 ? "近 7 日无明显消耗" : $"近 7 日日均消耗 {burn:0.0}%";
-                DrawString(g, trend, smallFont, pal.Secondary, new RectangleF(box.X, sparkTop, box.Width, 14 * s));
-            }
-        }
+        DrawSparkSection(g, new RectangleF(box.X, y + 4 * s, box.Width, Math.Max(0, box.Bottom - (y + 4 * s))), pal, s, smallFont);
     }
 
     float DrawCard(Graphics g, float x, float y, float width, FlyoutPalette pal, float innerHeight, Action<RectangleF> content)
@@ -407,22 +398,121 @@ sealed class FlyoutForm : Form
         g.FillPath(brush, fill);
     }
 
-    void DrawSparkline(Graphics g, RectangleF box, FlyoutPalette pal, float s)
+    void DrawSparkSection(Graphics g, RectangleF box, FlyoutPalette pal, float s, Font smallFont)
     {
-        var pts = SparklineGeometry.Points(_history, box.Width, box.Height);
-        if (pts.Length < 2) return;
-        var points = pts.Select(p => new PointF(box.X + p.X, box.Y + p.Y)).ToArray();
+        _sparkPlot = null;
+        _sparkPlotBox = RectangleF.Empty;
+        if (box.Height < 12 * s) return;
+        var current = CurrentRemaining();
+        var caption = SparklineGeometry.Caption(_history.Count, _dailyAvg, current);
+        var titleH = Math.Min(Px(FlyoutLayout.SparkTitleHeight), 16 * s);
+        var axisH = Math.Min(Px(FlyoutLayout.SparkAxisHeight), 14 * s);
+        var captionH = Math.Min(Px(FlyoutLayout.SparkCaptionHeight), 16 * s);
+        var hoverText = SparkHoverText();
+        DrawString(g, hoverText ?? SparklineCopy.Title, smallFont, pal.Secondary, new RectangleF(box.X, box.Y, box.Width, titleH));
+
+        var y = box.Y + titleH;
+        if (_history.Count < 2)
+        {
+            _sparkPlot = null;
+            _sparkPlotBox = RectangleF.Empty;
+            DrawString(g, caption, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width, Math.Min(captionH + 4 * s, box.Bottom - y)));
+            return;
+        }
+
+        var sparkH = Math.Min(Px(FlyoutLayout.SparkHeight), box.Bottom - y - axisH - captionH);
+        if (sparkH >= 12 * s)
+        {
+            DrawSparkline(g, new RectangleF(box.X, y, box.Width, sparkH), pal, s, current);
+            y += sparkH + 1 * s;
+            DrawString(g, SparklineCopy.AxisStart, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width / 2, axisH));
+            DrawString(g, SparklineCopy.AxisEnd, smallFont, pal.Secondary, new RectangleF(box.X + box.Width / 2, y, box.Width / 2, axisH), StringAlignment.Far);
+            y += axisH;
+        }
+        DrawString(g, caption, smallFont, pal.Secondary, new RectangleF(box.X, y, box.Width, captionH));
+    }
+
+    void DrawSparkline(Graphics g, RectangleF box, FlyoutPalette pal, float s, double? current)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var plot = SparklineGeometry.Layout(_history, box.Width, box.Height, now, CycleStartTs());
+        _sparkPlot = plot;
+        _sparkPlotBox = box;
+        if (plot.Points.Length < 2) return;
+
+        var error = _usage is null && _error is { Length: > 0 };
+        var unlimited = _usage?.IsUnlimited == true;
+        var tone = ToneColor(current ?? plot.Points[^1].Remaining, error, unlimited);
+        var points = plot.Points.Select(p => new PointF(box.X + p.X, box.Y + p.Y)).ToArray();
         using (var fillPath = new GraphicsPath())
         {
             fillPath.AddLine(points[0].X, box.Bottom, points[0].X, points[0].Y);
             fillPath.AddLines(points);
             fillPath.AddLine(points[^1].X, points[^1].Y, points[^1].X, box.Bottom);
             fillPath.CloseFigure();
-            using var brush = new LinearGradientBrush(box, Color.FromArgb(80, pal.Accent), Color.FromArgb(8, pal.Accent), LinearGradientMode.Vertical);
+            using var brush = new LinearGradientBrush(box, Color.FromArgb(80, tone), Color.FromArgb(8, tone), LinearGradientMode.Vertical);
             g.FillPath(brush, fillPath);
         }
-        using var pen = new Pen(pal.Accent, Math.Max(1.5f, 1.5f * s)) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawLines(pen, points);
+        using (var pen = new Pen(tone, Math.Max(1.5f, 1.5f * s)) { LineJoin = LineJoin.Round, StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawLines(pen, points);
+
+        if (plot.Reset is { } reset)
+        {
+            var rx = box.X + reset.X;
+            using var dash = new Pen(Color.FromArgb(140, pal.Secondary), Math.Max(1f, s)) { DashStyle = DashStyle.Dash };
+            g.DrawLine(dash, rx, box.Y, rx, box.Bottom);
+            using var resetFont = UiFont(6.75f);
+            var label = SparklineCopy.Reset;
+            var labelSize = g.MeasureString(label, resetFont);
+            var labelRect = new RectangleF(Math.Min(rx + 2 * s, box.Right - labelSize.Width), box.Y, labelSize.Width, 12 * s);
+            DrawString(g, label, resetFont, pal.Secondary, labelRect);
+        }
+
+        if (_sparkHover is { } hi && hi >= 0 && hi < points.Length)
+        {
+            var hp = points[hi];
+            using var hair = new Pen(Color.FromArgb(160, pal.Secondary), 1f);
+            g.DrawLine(hair, hp.X, box.Y, hp.X, box.Bottom);
+            using var dot = new SolidBrush(tone);
+            g.FillEllipse(dot, hp.X - 2.5f * s, hp.Y - 2.5f * s, 5 * s, 5 * s);
+        }
+
+        using var markFont = UiFont(6.75f);
+        DrawString(g, SparklineGeometry.FormatPercent(plot.Points[0].Remaining), markFont, pal.Secondary,
+            new RectangleF(box.X, box.Y, box.Width * 0.45f, 12 * s));
+        DrawString(g, SparklineGeometry.FormatPercent(plot.Points[^1].Remaining), markFont, pal.Secondary,
+            new RectangleF(box.X + box.Width * 0.45f, box.Bottom - 12 * s, box.Width * 0.55f, 12 * s), StringAlignment.Far, StringAlignment.Far);
+    }
+
+    bool UpdateSparkHover(Point pt)
+    {
+        int? next = null;
+        if (_sparkPlot is { Points.Length: > 0 } plot && _sparkPlotBox.Contains(pt))
+            next = SparklineGeometry.HitIndex(plot.Points, pt.X - _sparkPlotBox.X);
+        if (next == _sparkHover) return false;
+        _sparkHover = next;
+        return true;
+    }
+
+    string? SparkHoverText()
+    {
+        if (_sparkHover is not { } i || _sparkPlot is not { } plot || i < 0 || i >= plot.Points.Length)
+            return null;
+        var p = plot.Points[i];
+        double? prev = i > 0 ? plot.Points[i - 1].Remaining : null;
+        return SparklineGeometry.FormatHover(p.Ts, p.Remaining, prev);
+    }
+
+    double? CycleStartTs()
+    {
+        var ms = UsageParser.IsoToMs(_usage?.BillingCycleStart);
+        return ms is { } v ? v / 1000.0 : null;
+    }
+
+    double? CurrentRemaining()
+    {
+        if (_usage is { RemainingPercent: var pct }) return pct;
+        return _history.Count > 0 ? _history[^1].Remaining : null;
     }
 
     void DrawButtons(Graphics g, RectangleF box, FlyoutPalette pal, float s)

@@ -395,7 +395,7 @@ sealed class TrayContext : ApplicationContext
         if (_flyout is { Visible: true, IsDisposed: false })
         {
             var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id);
-            _flyout.Render(_usage, _error, _updated, _config, hist.Select(p => p.Remaining).ToList(), UsageHistory.DailyAvgBurn(hist));
+            _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
         }
     }
 
@@ -426,7 +426,7 @@ sealed class TrayContext : ApplicationContext
                     OpenReport,
                     OpenCompare);
                 var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id);
-                _flyout.Render(_usage, _error, _updated, _config, hist.Select(p => p.Remaining).ToList(), UsageHistory.DailyAvgBurn(hist));
+                _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
                 _flyout.PopupNear(anchor ?? Cursor.Position);
             }
             catch (Exception ex) { CrashLog.Write(ex); }

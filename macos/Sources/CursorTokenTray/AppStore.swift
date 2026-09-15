@@ -17,7 +17,7 @@ final class AppStore: ObservableObject {
     @Published var updateStatus = ""
     @Published var updateBusy = false
     @Published var focusToken = false
-    @Published var historyRemaining: [Double] = []
+    @Published var historyPoints: [HistoryPoint] = []
     @Published var dailyAvgBurn: Double?
 
     let client = CursorClient()
@@ -132,7 +132,7 @@ final class AppStore: ObservableObject {
     func reloadHistory() {
         let aid = config.activeAccount?.id
         let points = UsageHistory.loadRecent(days: 7, accountId: aid, directory: settingsDirectory)
-        historyRemaining = points.map(\.remaining)
+        historyPoints = points
         dailyAvgBurn = UsageHistory.dailyAvgBurn(points: points)
     }
 
@@ -294,7 +294,7 @@ final class AppStore: ObservableObject {
             usage = nil
             errorMessage = "未配置 Token，请打开设置粘贴"
             updatedAt = nil
-            historyRemaining = []
+            historyPoints = []
             dailyAvgBurn = nil
             return
         }
