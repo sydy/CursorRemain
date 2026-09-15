@@ -231,6 +231,78 @@ public static class FlyoutLayout
     public const int SparkHeight = 36;
     public const int ToolButtonHeight = 24;
     public const int ToolButtonGap = 6;
+    public const int ToolButtonPadX = 8;
+    public const int ToolButtonPadY = 5;
+    public const int ToolButtonIcon = 14;
+    public const int ToolButtonIconGap = 4;
+
+    public readonly record struct ToolButtonFrame(float X, float Y, float Width, float Height);
+
+    /// <summary>
+    /// Preferred capsule size. <paramref name="textWidth"/> is the already-measured
+    /// label width (GDI typographic / no extra padding), so the button grows with the text.
+    /// </summary>
+    public static (float Width, float Height) ToolButtonSize(
+        float textWidth, float textHeight, bool hasIcon, float scale)
+    {
+        var s = Math.Max(0f, scale);
+        var padX = ToolButtonPadX * s;
+        var padY = ToolButtonPadY * s;
+        var icon = hasIcon ? ToolButtonIcon * s : 0f;
+        var iconGap = hasIcon ? ToolButtonIconGap * s : 0f;
+        var textW = Math.Max(0f, textWidth);
+        var textH = Math.Max(0f, textHeight);
+        var w = padX + icon + iconGap + textW + padX;
+        var h = Math.Max(ToolButtonHeight * s, Math.Max(icon, textH) + padY * 2);
+        return (w, h);
+    }
+
+    /// <summary>
+    /// Pack toolbar buttons left-to-right. Each chip keeps at least its content width
+    /// and leftover space is shared so the row fills the bar. If the preferred sizes
+    /// overflow, widths shrink together instead of clipping a single glyph to “…”.
+    /// </summary>
+    public static (float Width, float Height, ToolButtonFrame[] Frames) ArrangeToolButtons(
+        IReadOnlyList<(float Width, float Height)> sizes,
+        float containerWidth,
+        float gap)
+    {
+        var n = sizes.Count;
+        var frames = new ToolButtonFrame[n];
+        if (n == 0) return (0, 0, frames);
+
+        var minW = new float[n];
+        var height = 0f;
+        var minSum = 0f;
+        for (var i = 0; i < n; i++)
+        {
+            minW[i] = Math.Max(0f, sizes[i].Width);
+            height = Math.Max(height, Math.Max(0f, sizes[i].Height));
+            minSum += minW[i];
+        }
+
+        var gaps = Math.Max(0f, gap) * Math.Max(0, n - 1);
+        var inner = Math.Max(0f, containerWidth - gaps);
+        var widths = new float[n];
+        if (minSum > inner && minSum > 0)
+        {
+            var shrink = inner / minSum;
+            for (var i = 0; i < n; i++) widths[i] = minW[i] * shrink;
+        }
+        else
+        {
+            var extra = n > 0 ? (inner - minSum) / n : 0f;
+            for (var i = 0; i < n; i++) widths[i] = minW[i] + extra;
+        }
+
+        var x = 0f;
+        for (var i = 0; i < n; i++)
+        {
+            frames[i] = new ToolButtonFrame(x, 0, widths[i], height);
+            x += widths[i] + (i < n - 1 ? Math.Max(0f, gap) : 0f);
+        }
+        return (x, height, frames);
+    }
 }
 
 public static class RemainingTone
