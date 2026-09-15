@@ -331,8 +331,8 @@ sealed class FlyoutForm : Form
                 parts.Add(StatusText.CycleEndLabel(usage) + " " + StatusText.FormatResetDate(end, usage.BillingCycleEndOverridden));
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var trend = SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now);
-            var rows = (parts.Count > 0 ? 1 : 0) + 1 + 1;
-            var infoH = rows * 16 * s + Math.Max(0, rows - 1) * 2 * s;
+            var infoRows = (parts.Count > 0 ? 1 : 0) + 2;
+            var infoH = infoRows * 16 * s + Math.Max(0, infoRows - 1) * 2 * s;
             y = DrawCard(g, box.X, y, box.Width, pal, infoH, inner =>
             {
                 if (parts.Count > 0)
