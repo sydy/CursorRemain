@@ -366,19 +366,26 @@ public static class SparklineGeometry
         double? cycleStartTs = null,
         int windowDays = SparklineCopy.WindowDays)
     {
-        var t1 = nowTs;
-        var t0 = nowTs - Math.Max(1, windowDays) * 86400.0;
+        var windowStart = nowTs - Math.Max(1, windowDays) * 86400.0;
+        var minTs = points.Count == 0 ? windowStart : points[0].Ts;
+        var maxTs = points.Count == 0 ? nowTs : points[0].Ts;
+        for (var i = 1; i < points.Count; i++)
+        {
+            if (points[i].Ts < minTs) minTs = points[i].Ts;
+            if (points[i].Ts > maxTs) maxTs = points[i].Ts;
+        }
+
+        // Fit the axis to the sample span so a day of history is not
+        // crushed into the right edge of an empty 7-day window.
+        var t0 = Math.Max(windowStart, minTs);
+        var t1 = Math.Max(nowTs, maxTs);
         var span = t1 - t0;
         if (span <= 0) span = 1;
 
         var mapped = new SparkMappedPoint[points.Count];
-        var minTs = double.MaxValue;
-        var maxTs = double.MinValue;
         for (var i = 0; i < points.Count; i++)
         {
             var p = points[i];
-            if (p.Ts < minTs) minTs = p.Ts;
-            if (p.Ts > maxTs) maxTs = p.Ts;
             var xFrac = (p.Ts - t0) / span;
             if (double.IsNaN(xFrac) || double.IsInfinity(xFrac)) xFrac = 0;
             mapped[i] = new SparkMappedPoint(
@@ -401,6 +408,17 @@ public static class SparklineGeometry
 
         return new SparkPlot(mapped, FindReset(mapped, width, height, t0, t1, cycleStartTs), t0, t1);
     }
+
+    public static float RibbonOffset(float height) => Math.Max(8f, height * 0.22f);
+
+    public static string FormatAxisDay(double unixSeconds)
+    {
+        var dt = DateTimeOffset.FromUnixTimeMilliseconds((long)Math.Round(unixSeconds * 1000.0)).ToLocalTime();
+        return $"{dt.Month}月{dt.Day}日";
+    }
+
+    public static string AxisStartLabel(double t0, double t1) =>
+        t1 - t0 >= 6 * 86400.0 ? SparklineCopy.AxisStart : FormatAxisDay(t0);
 
     public static SparkMappedPoint? FindReset(
         IReadOnlyList<SparkMappedPoint> points,
