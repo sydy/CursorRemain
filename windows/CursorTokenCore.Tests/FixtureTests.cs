@@ -940,7 +940,7 @@ public class FixtureTests
     public void FlyoutLayoutMatchesMacosMetrics()
     {
         Assert.Equal(500, FlyoutLayout.Width);
-        Assert.Equal(320, FlyoutLayout.Height);
+        Assert.Equal(280, FlyoutLayout.Height);
         Assert.Equal(16, FlyoutLayout.CornerRadius);
         Assert.Equal(16, FlyoutLayout.Padding);
         Assert.Equal(16, FlyoutLayout.ColumnGap);
@@ -951,7 +951,7 @@ public class FixtureTests
         Assert.Equal(10, FlyoutLayout.CardPadding);
         Assert.Equal(8, FlyoutLayout.CardGap);
         Assert.Equal(5, FlyoutLayout.BarHeight);
-        Assert.Equal(32, FlyoutLayout.TrendLineHeight);
+        Assert.Equal(SparklineCopy.EmptyHint, "刷新几次后显示近日消耗");
         Assert.Equal(24, FlyoutLayout.ToolButtonHeight);
         Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
@@ -1127,14 +1127,17 @@ public class FixtureTests
             new(now - 1.15 * 86400, 85.3, null, null),
             new(now, 80.1, null, null),
         };
-        Assert.Equal("近 1 日  85.3% → 79.9% · 日均约 −4.6%", SparklineGeometry.TrendSummary(shortHist, 4.6, 79.9, now));
+        Assert.Equal("近 1 日用掉 5.4%", SparklineGeometry.TrendSummary(shortHist, 4.6, 79.9, now));
         var weekHist = new List<HistoryPoint>
         {
             new(now - 7 * 86400, 85, null, null),
             new(now, 80.7, null, null),
         };
-        Assert.Equal("近 7 日  85% → 80.7% · 日均约 −1.5%", SparklineGeometry.TrendSummary(weekHist, 1.5, 80.7, now));
-        Assert.Equal("近 7 日  85% → 84.9% · 剩余几乎没变", SparklineGeometry.TrendSummary(weekHist, 0.02, 84.9, now));
+        Assert.Equal("近 7 日用掉 4.3%", SparklineGeometry.TrendSummary(weekHist, 1.5, 80.7, now));
+        Assert.Equal("近 7 日几乎没消耗", SparklineGeometry.TrendSummary(weekHist, 0.02, 84.98, now));
+        Assert.Equal("近 1 日剩余回升了 10%", SparklineGeometry.TrendSummary(
+            new List<HistoryPoint> { new(now - 86400, 70, null, null), new(now, 80, null, null) },
+            null, 80, now));
     }
 
     [Fact]

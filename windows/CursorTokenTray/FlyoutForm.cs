@@ -287,7 +287,6 @@ sealed class FlyoutForm : Form
         var error = _usage is null && _error is { Length: > 0 };
         using var capFont = UiFont(8.25f);
         using var valueFont = UiFont(8.25f, FontStyle.Bold);
-        using var smallFont = UiFont(7.5f);
         var barH = Px(FlyoutLayout.BarHeight);
 
         if (_usage is { } usage && !error)
@@ -327,17 +326,22 @@ sealed class FlyoutForm : Form
             }
             var parts = new List<string>();
             if (usage.TotalTokens is > 0)
-                parts.Add("Token  " + UsageParser.FormatTokenCount(usage.TotalTokens));
+                parts.Add("Token " + UsageParser.FormatTokenCount(usage.TotalTokens));
             if (usage.BillingCycleEnd is { } end)
-                parts.Add(StatusText.CycleEndLabel(usage) + "  " + StatusText.FormatResetDate(end, usage.BillingCycleEndOverridden));
-            var infoH = 14 * s + (parts.Count > 0 ? 18 * s : 0);
+                parts.Add(StatusText.CycleEndLabel(usage) + " " + StatusText.FormatResetDate(end, usage.BillingCycleEndOverridden));
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var trend = SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now);
+            var infoRows = (parts.Count > 0 ? 1 : 0) + 2;
+            var infoH = infoRows * 16 * s + Math.Max(0, infoRows - 1) * 2 * s;
             y = DrawCard(g, box.X, y, box.Width, pal, infoH, inner =>
             {
                 if (parts.Count > 0)
                 {
-                    DrawString(g, string.Join("    ", parts), capFont, pal.Secondary, new RectangleF(inner.X, inner.Y, inner.Width, 16 * s));
+                    DrawString(g, string.Join(" · ", parts), capFont, pal.Secondary, new RectangleF(inner.X, inner.Y, inner.Width, 16 * s));
                     inner.Y += 18 * s;
                 }
+                DrawString(g, trend, capFont, pal.Secondary, new RectangleF(inner.X, inner.Y, inner.Width, 16 * s));
+                inner.Y += 18 * s;
                 var est = StatusText.FormatEstimateCaption(usage);
                 DrawString(g, est, capFont, EstimateColor(est, pal), new RectangleF(inner.X, inner.Y, inner.Width, 16 * s));
             });
@@ -347,8 +351,6 @@ sealed class FlyoutForm : Form
             DrawString(g, "更新  " + _updated, capFont, pal.Secondary, new RectangleF(box.X, y, box.Width, 16 * s));
             y += 20 * s;
         }
-
-        DrawTrendLine(g, new RectangleF(box.X, y + 4 * s, box.Width, Math.Max(0, box.Bottom - (y + 4 * s))), pal, smallFont);
     }
 
     float DrawCard(Graphics g, float x, float y, float width, FlyoutPalette pal, float innerHeight, Action<RectangleF> content)
@@ -391,15 +393,6 @@ sealed class FlyoutForm : Form
         using var fill = RoundRect(new RectangleF(box.X, box.Y, Math.Max(w, box.Height), box.Height), r);
         using var brush = new SolidBrush(color);
         g.FillPath(brush, fill);
-    }
-
-    void DrawTrendLine(Graphics g, RectangleF box, FlyoutPalette pal, Font smallFont)
-    {
-        if (box.Height < 10) return;
-        var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var text = SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now);
-        var height = Math.Min(Px(FlyoutLayout.TrendLineHeight), box.Height);
-        DrawString(g, text, smallFont, pal.Secondary, new RectangleF(box.X, box.Y, box.Width, height));
     }
 
     double? CurrentRemaining()
@@ -513,7 +506,7 @@ sealed class FlyoutForm : Form
 
     static Color EstimateColor(string text, FlyoutPalette pal)
     {
-        if (text.Contains("可撑过")) return Color.FromArgb(48, 209, 88);
+        if (text.Contains("撑到") || text.Contains("可撑过")) return Color.FromArgb(48, 209, 88);
         if (text.Contains("耗尽") || text.Contains("紧张")) return Color.FromArgb(231, 76, 60);
         return pal.Secondary;
     }

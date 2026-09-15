@@ -217,7 +217,7 @@ public static class UsageChartLayout
 public static class FlyoutLayout
 {
     public const int Width = 500;
-    public const int Height = 320;
+    public const int Height = 280;
     public const int CornerRadius = 16;
     public const int Padding = 16;
     public const int ColumnGap = 16;
@@ -228,7 +228,6 @@ public static class FlyoutLayout
     public const int CardPadding = 10;
     public const int CardGap = 8;
     public const int BarHeight = 5;
-    public const int TrendLineHeight = 32;
     public const int ToolButtonHeight = 24;
     public const int ToolButtonGap = 6;
     public const int ToolButtonPadX = 8;
@@ -321,8 +320,8 @@ public static class RemainingTone
 public static class SparklineCopy
 {
     public const string Title = "近 7 日剩余额度";
-    public const string EmptyHint = "刷新几次后将显示近 7 日剩余趋势";
-    public const string Flat = "近 7 日剩余几乎没变";
+    public const string EmptyHint = "刷新几次后显示近日消耗";
+    public const string Flat = "几乎没消耗";
     public const string AxisStart = "7天前";
     public const string AxisEnd = "现在";
     public const string Reset = "重置";
@@ -504,13 +503,12 @@ public static class SparklineGeometry
         var last = current ?? lastPt.Remaining;
         var t1 = Math.Max(nowTs, lastPt.Ts);
         var window = WindowLabel(t1 - first.Ts);
-        var range = $"{FormatPercent(first.Remaining)} → {FormatPercent(last)}";
-        if (dailyAvg is { } burn && burn >= SparklineCopy.FlatBurnEpsilon)
-        {
-            var rate = $"{SparklineCopy.Minus}{burn.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%";
-            return $"{window}  {range} · 日均约 {rate}";
-        }
-        return $"{window}  {range} · 剩余几乎没变";
+        var used = first.Remaining - last;
+        if (used >= SparklineCopy.FlatBurnEpsilon)
+            return $"{window}用掉 {FormatPercent(used)}";
+        if (used <= -SparklineCopy.FlatBurnEpsilon)
+            return $"{window}剩余回升了 {FormatPercent(-used)}";
+        return $"{window}{SparklineCopy.Flat}";
     }
 
     public static string FormatPercent(double remaining)

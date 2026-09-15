@@ -88,7 +88,7 @@ public enum StatusText {
 
     public static func formatEstimateCaption(_ usage: UsageSnapshot) -> String {
         let text = formatEstimatedDays(usage)
-        if text.contains("可撑过本周期") { return "预计可撑过本周期" }
+        if text.contains("可撑过本周期") { return "预计能撑到重置" }
         if text.contains("提前耗尽") { return "预计可能提前耗尽" }
         if text == "已耗尽" { return "额度已耗尽" }
         return text

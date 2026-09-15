@@ -1417,7 +1417,7 @@ final class SparklineGeometryTests: XCTestCase {
         ]
         XCTAssertEqual(
             SparklineGeometry.trendSummary(points: shortHist, dailyAvg: 4.6, current: 79.9, nowTs: now),
-            "近 1 日  85.3% → 79.9% · 日均约 −4.6%"
+            "近 1 日用掉 5.4%"
         )
         let weekHist = [
             HistoryPoint(ts: now - 7 * 86_400, remaining: 85),
@@ -1425,11 +1425,20 @@ final class SparklineGeometryTests: XCTestCase {
         ]
         XCTAssertEqual(
             SparklineGeometry.trendSummary(points: weekHist, dailyAvg: 1.5, current: 80.7, nowTs: now),
-            "近 7 日  85% → 80.7% · 日均约 −1.5%"
+            "近 7 日用掉 4.3%"
         )
         XCTAssertEqual(
-            SparklineGeometry.trendSummary(points: weekHist, dailyAvg: 0.02, current: 84.9, nowTs: now),
-            "近 7 日  85% → 84.9% · 剩余几乎没变"
+            SparklineGeometry.trendSummary(points: weekHist, dailyAvg: 0.02, current: 84.98, nowTs: now),
+            "近 7 日几乎没消耗"
+        )
+        XCTAssertEqual(
+            SparklineGeometry.trendSummary(
+                points: [HistoryPoint(ts: now - 86_400, remaining: 70), HistoryPoint(ts: now, remaining: 80)],
+                dailyAvg: nil,
+                current: 80,
+                nowTs: now
+            ),
+            "近 1 日剩余回升了 10%"
         )
     }
 }

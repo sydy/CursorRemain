@@ -104,7 +104,7 @@ def format_plan_caption(membership: str | None, account_label: str | None = None
 def format_estimate_caption(usage: UsageSnapshot) -> str:
     text = format_estimated_days(usage)
     if "可撑过本周期" in text:
-        return "预计可撑过本周期"
+        return "预计能撑到重置"
     if "提前耗尽" in text:
         return "预计可能提前耗尽"
     if text == "已耗尽":
