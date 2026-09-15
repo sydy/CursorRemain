@@ -1405,5 +1405,31 @@ final class SparklineGeometryTests: XCTestCase {
         XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 83.4), "\(stamp) · 剩余 83.4%")
         XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 83.4, previous: 84.6), "\(stamp) · 剩余 83.4%（−1.2%）")
         XCTAssertEqual(SparklineGeometry.formatHover(ts: unix, remaining: 95, previous: 25), "\(stamp) · 剩余 95.0%（+70.0%）")
+
+        let now = 1_800_000_000.0
+        XCTAssertEqual(SparklineGeometry.trendSummary(points: [], dailyAvg: nil, current: 80, nowTs: now), SparklineCopy.emptyHint)
+        XCTAssertEqual(SparklineGeometry.windowLabel(spanSeconds: 1.15 * 86_400), "近 1 日")
+        XCTAssertEqual(SparklineGeometry.windowLabel(spanSeconds: 1.6 * 86_400), "近 2 日")
+        XCTAssertEqual(SparklineGeometry.windowLabel(spanSeconds: 7 * 86_400), "近 7 日")
+        let shortHist = [
+            HistoryPoint(ts: now - 1.15 * 86_400, remaining: 85.3),
+            HistoryPoint(ts: now, remaining: 80.1),
+        ]
+        XCTAssertEqual(
+            SparklineGeometry.trendSummary(points: shortHist, dailyAvg: 4.6, current: 79.9, nowTs: now),
+            "近 1 日  85.3% → 79.9% · 日均约 −4.6%"
+        )
+        let weekHist = [
+            HistoryPoint(ts: now - 7 * 86_400, remaining: 85),
+            HistoryPoint(ts: now, remaining: 80.7),
+        ]
+        XCTAssertEqual(
+            SparklineGeometry.trendSummary(points: weekHist, dailyAvg: 1.5, current: 80.7, nowTs: now),
+            "近 7 日  85% → 80.7% · 日均约 −1.5%"
+        )
+        XCTAssertEqual(
+            SparklineGeometry.trendSummary(points: weekHist, dailyAvg: 0.02, current: 84.9, nowTs: now),
+            "近 7 日  85% → 84.9% · 剩余几乎没变"
+        )
     }
 }

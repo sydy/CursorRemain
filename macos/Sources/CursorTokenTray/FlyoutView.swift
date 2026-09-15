@@ -5,7 +5,7 @@ import SwiftUI
 
 enum FlyoutLayout {
     static let width: CGFloat = 500
-    static let height: CGFloat = 376
+    static let height: CGFloat = 320
     static let size = CGSize(width: width, height: height)
     static let cornerRadius: CGFloat = 16
     static let padding: CGFloat = 16
@@ -17,10 +17,7 @@ enum FlyoutLayout {
     static let cardPadding: CGFloat = 10
     static let cardGap: CGFloat = 8
     static let barHeight: CGFloat = 5
-    static let sparkHeight: CGFloat = 48
-    static let sparkTitleHeight: CGFloat = 14
-    static let sparkAxisHeight: CGFloat = 12
-    static let sparkCaptionHeight: CGFloat = 14
+    static let trendLineHeight: CGFloat = 32
     static let toolButtonHeight: CGFloat = 24
     static let toolButtonGap: CGFloat = 6
 }
@@ -142,7 +139,7 @@ struct FlyoutView: View {
             } else if let updated = store.updatedAt {
                 Text("更新  \(updated)").font(.caption).foregroundStyle(.secondary)
             }
-            sparkline
+            trendLine
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -238,51 +235,21 @@ struct FlyoutView: View {
         .help(title)
     }
 
-    var sparkline: some View {
+    var trendLine: some View {
         let points = store.historyPoints
         let current = remaining ?? points.last?.remaining
-        let caption = SparklineGeometry.caption(pointCount: points.count, dailyAvg: store.dailyAvgBurn, current: current)
-        return VStack(alignment: .leading, spacing: 2) {
-            Sparkline(
-                points: points,
-                color: gaugeColor,
-                nowTs: Date().timeIntervalSince1970,
-                cycleStartTs: cycleStartTs
-            )
-            .frame(height: points.count >= 2 ? FlyoutLayout.sparkTitleHeight + FlyoutLayout.sparkHeight : FlyoutLayout.sparkTitleHeight)
-            if points.count >= 2 {
-                HStack {
-                    Text(axisStartLabel)
-                    Spacer(minLength: 0)
-                    Text(SparklineCopy.axisEnd)
-                }
-                .font(.system(size: 9))
-                .foregroundStyle(.secondary)
-                .frame(height: FlyoutLayout.sparkAxisHeight)
-            }
-            Text(caption)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .frame(minHeight: FlyoutLayout.sparkCaptionHeight, alignment: .topLeading)
-        }
-        .padding(.top, 2)
-    }
-
-    var cycleStartTs: Double? {
-        guard let iso = store.usage?.billingCycleStart, let ms = UsageParser.isoToMs(iso) else { return nil }
-        return Double(ms) / 1000
-    }
-
-    var axisStartLabel: String {
-        let now = Date().timeIntervalSince1970
-        let plot = SparklineGeometry.layout(
-            store.historyPoints,
-            width: 1,
-            height: 1,
-            nowTs: now,
-            cycleStartTs: cycleStartTs
+        let text = SparklineGeometry.trendSummary(
+            points: points,
+            dailyAvg: store.dailyAvgBurn,
+            current: current,
+            nowTs: Date().timeIntervalSince1970
         )
-        return SparklineGeometry.axisStartLabel(t0: plot.t0, t1: plot.t1)
+        return Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, minHeight: FlyoutLayout.trendLineHeight, alignment: .topLeading)
+            .padding(.top, 2)
     }
 }
 
@@ -339,113 +306,6 @@ struct RemainingGauge<Pill: View>: View {
             }
         }
         .frame(width: FlyoutLayout.ringSize, height: FlyoutLayout.ringSize)
-    }
-}
-
-struct Sparkline: View {
-    var points: [HistoryPoint]
-    var color: Color
-    var nowTs: Double
-    var cycleStartTs: Double?
-    @State private var hoverIndex: Int?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(hoverText ?? SparklineCopy.title)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(height: FlyoutLayout.sparkTitleHeight, alignment: .leading)
-            if points.count >= 2 {
-                plot
-                    .frame(height: FlyoutLayout.sparkHeight)
-            }
-        }
-    }
-
-    var hoverText: String? {
-        guard let hoverIndex, hoverIndex >= 0, hoverIndex < points.count else { return nil }
-        let prev = hoverIndex > 0 ? points[hoverIndex - 1].remaining : nil
-        return SparklineGeometry.formatHover(ts: points[hoverIndex].ts, remaining: points[hoverIndex].remaining, previous: prev)
-    }
-
-    var plot: some View {
-        GeometryReader { geo in
-            let plot = SparklineGeometry.layout(
-                points,
-                width: geo.size.width,
-                height: geo.size.height,
-                nowTs: nowTs,
-                cycleStartTs: cycleStartTs
-            )
-            let pts = plot.points.map { CGPoint(x: $0.x, y: $0.y) }
-            let ribbon = SparklineGeometry.ribbonOffset(geo.size.height)
-            let belowPts = pts.map { CGPoint(x: $0.x, y: min(geo.size.height, $0.y + ribbon)) }
-            ZStack {
-                Path { p in
-                    guard let first = pts.first else { return }
-                    p.move(to: first)
-                    for pt in pts.dropFirst() { p.addLine(to: pt) }
-                    for pt in belowPts.reversed() { p.addLine(to: pt) }
-                    p.closeSubpath()
-                }
-                .fill(
-                    LinearGradient(
-                        colors: [color.opacity(0.32), color.opacity(0.02)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                Path { p in
-                    for (i, pt) in pts.enumerated() {
-                        if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-                    }
-                }
-                .stroke(color, style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
-                if let reset = plot.reset {
-                    Path { p in
-                        p.move(to: CGPoint(x: reset.x, y: 0))
-                        p.addLine(to: CGPoint(x: reset.x, y: geo.size.height))
-                    }
-                    .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-                    Text(SparklineCopy.reset)
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
-                        .position(x: min(reset.x + 14, geo.size.width - 12), y: 8)
-                }
-                if let hoverIndex, hoverIndex >= 0, hoverIndex < pts.count {
-                    let hp = pts[hoverIndex]
-                    Path { p in
-                        p.move(to: CGPoint(x: hp.x, y: 0))
-                        p.addLine(to: CGPoint(x: hp.x, y: geo.size.height))
-                    }
-                    .stroke(Color.secondary.opacity(0.55), lineWidth: 1)
-                    Circle()
-                        .fill(color)
-                        .frame(width: 5, height: 5)
-                        .position(hp)
-                }
-                if let first = plot.points.first, let last = plot.points.last {
-                    Text(SparklineGeometry.formatPercent(first.remaining))
-                        .font(.system(size: 9).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    Text(SparklineGeometry.formatPercent(last.remaining))
-                        .font(.system(size: 9).monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                }
-            }
-            .contentShape(Rectangle())
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let loc):
-                    hoverIndex = SparklineGeometry.hitIndex(plot.points, x: loc.x)
-                case .ended:
-                    hoverIndex = nil
-                }
-            }
-        }
     }
 }
 

@@ -410,22 +410,22 @@ class SourceGuardTests(unittest.TestCase):
         mac_flyout = (root / "macos" / "Sources" / "CursorTokenTray" / "FlyoutView.swift").read_text(encoding="utf-8")
         for snippet in (
             "static let width: CGFloat = 500",
-            "static let height: CGFloat = 376",
+            "static let height: CGFloat = 320",
             "static let cornerRadius: CGFloat = 16",
             "static let leftWidth: CGFloat = 176",
             "static let ringSize: CGFloat = 148",
-            "static let sparkHeight: CGFloat = 48",
+            "static let trendLineHeight: CGFloat = 32",
             "static let toolButtonHeight: CGFloat = 24",
             "static let toolButtonGap: CGFloat = 6",
         ):
             self.assertIn(snippet, mac_flyout)
         for snippet in (
             "public const int Width = 500",
-            "public const int Height = 376",
+            "public const int Height = 320",
             "public const int CornerRadius = 16",
             "public const int LeftWidth = 176",
             "public const int RingSize = 148",
-            "public const int SparkHeight = 48",
+            "public const int TrendLineHeight = 32",
             "public const int ToolButtonHeight = 24",
             "public const int ToolButtonGap = 6",
         ):
@@ -446,23 +446,20 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("Grok Bot", win_flyout)
         self.assertIn("Grok Bot", mac_flyout)
         self.assertIn("_dailyAvg = dailyAvg", win_flyout)
-        self.assertIn("SparklineCopy.Title", win_flyout)
-        self.assertIn("SparklineCopy.title", mac_flyout)
-        self.assertIn("AxisStartLabel", win_flyout)
-        self.assertIn("axisStartLabel", mac_flyout)
-        self.assertIn("RibbonOffset", win_flyout)
-        self.assertIn("ribbonOffset", mac_flyout)
+        self.assertIn("TrendSummary", win_flyout)
+        self.assertIn("trendSummary", mac_flyout)
+        self.assertIn("DrawTrendLine", win_flyout)
+        self.assertIn("var trendLine: some View", mac_flyout)
+        self.assertNotIn("DrawSparkline", win_flyout)
+        self.assertNotIn("struct Sparkline", mac_flyout)
         self.assertNotIn("_body.Text", win_flyout)
         win_spark = (root / "windows" / "CursorTokenCore" / "UiLayout.cs").read_text(encoding="utf-8")
         mac_spark = (root / "macos" / "Sources" / "CursorTokenCore" / "SparklineGeometry.swift").read_text(encoding="utf-8")
         for src in (win_spark, mac_spark):
-            self.assertIn("近 7 日剩余额度", src)
             self.assertIn("刷新几次后将显示近 7 日剩余趋势", src)
-            self.assertIn("近 7 日剩余几乎没变", src)
-            self.assertIn("7天前", src)
-            self.assertIn("现在", src)
             self.assertIn("日均约", src)
-            self.assertIn("crushed into the right edge", src)
+            self.assertIn("剩余几乎没变", src)
+            self.assertIn("近 1 日", src)
         inner = 500 - 16 * 2
         right = inner - 176 - 16
         need = 5 * 56 + 4 * 6

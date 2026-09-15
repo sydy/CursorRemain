@@ -217,7 +217,7 @@ public static class UsageChartLayout
 public static class FlyoutLayout
 {
     public const int Width = 500;
-    public const int Height = 376;
+    public const int Height = 320;
     public const int CornerRadius = 16;
     public const int Padding = 16;
     public const int ColumnGap = 16;
@@ -228,10 +228,7 @@ public static class FlyoutLayout
     public const int CardPadding = 10;
     public const int CardGap = 8;
     public const int BarHeight = 5;
-    public const int SparkHeight = 48;
-    public const int SparkTitleHeight = 14;
-    public const int SparkAxisHeight = 12;
-    public const int SparkCaptionHeight = 14;
+    public const int TrendLineHeight = 32;
     public const int ToolButtonHeight = 24;
     public const int ToolButtonGap = 6;
     public const int ToolButtonPadX = 8;
@@ -480,6 +477,40 @@ public static class SparklineGeometry
         if (dailyAvg is null && current is { } only)
             return $"当前 {FormatPercent(only)}";
         return SparklineCopy.Flat;
+    }
+
+    public static string WindowLabel(double spanSeconds)
+    {
+        var days = spanSeconds / 86400.0;
+        if (days >= 6) return "近 7 日";
+        if (days >= 1.5) return $"近 {Math.Max(2, (int)Math.Round(days))} 日";
+        return "近 1 日";
+    }
+
+    public static string TrendSummary(
+        IReadOnlyList<HistoryPoint> points,
+        double? dailyAvg,
+        double? current,
+        double nowTs)
+    {
+        if (points.Count < 2) return SparklineCopy.EmptyHint;
+        var first = points[0];
+        var lastPt = points[^1];
+        for (var i = 0; i < points.Count; i++)
+        {
+            if (points[i].Ts < first.Ts) first = points[i];
+            if (points[i].Ts > lastPt.Ts) lastPt = points[i];
+        }
+        var last = current ?? lastPt.Remaining;
+        var t1 = Math.Max(nowTs, lastPt.Ts);
+        var window = WindowLabel(t1 - first.Ts);
+        var range = $"{FormatPercent(first.Remaining)} → {FormatPercent(last)}";
+        if (dailyAvg is { } burn && burn >= SparklineCopy.FlatBurnEpsilon)
+        {
+            var rate = $"{SparklineCopy.Minus}{burn.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture)}%";
+            return $"{window}  {range} · 日均约 {rate}";
+        }
+        return $"{window}  {range} · 剩余几乎没变";
     }
 
     public static string FormatPercent(double remaining)
