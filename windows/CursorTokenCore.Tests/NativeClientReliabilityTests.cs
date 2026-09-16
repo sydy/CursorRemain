@@ -21,7 +21,8 @@ public class NativeClientReliabilityTests
         Directory.CreateDirectory(dir);
         try
         {
-            UsageHistory.Append(12.5, auto: 1, api: 2, ts: 1_700_000_000, accountId: "user_01A", directory: dir);
+            var ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            UsageHistory.Append(12.5, auto: 1, api: 2, ts: ts, accountId: "user_01A", directory: dir);
             Assert.False(File.Exists(AppPaths.ConfigPath(dir)));
             var points = UsageHistory.LoadRecent(7, "user_01A", dir);
             Assert.Single(points);

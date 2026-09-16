@@ -543,7 +543,7 @@ public enum ConfigStore {
             remember(dir, loadUnlocked(from: dir))
         }, onLockUnavailable: {
             AppLog.log("config.lock 无法获取，返回上次已加载配置")
-            cached(dir) ?? loadErrorConfig()
+            return cached(dir) ?? loadErrorConfig()
         })
     }
 
@@ -575,7 +575,7 @@ public enum ConfigStore {
             return remember(dir, cfg)
         }, onLockUnavailable: {
             AppLog.log("config.lock 无法获取，跳过写入并返回上次已加载配置")
-            cached(dir) ?? loadErrorConfig()
+            return cached(dir) ?? loadErrorConfig()
         })
     }
 
