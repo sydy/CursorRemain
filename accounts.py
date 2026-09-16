@@ -255,13 +255,19 @@ def list_accounts(cfg: dict[str, Any]) -> list[dict[str, Any]]:
         acc = sanitize_account(raw)
         if acc is None:
             continue
+        levels = raw.get("alert_notified_levels")
+        if isinstance(levels, list) and all(
+            _is_int_like(x) and 1 <= int(float(x)) <= 100 for x in levels
+        ):
+            # 已合法的阈值保持原顺序，避免读时消毒改写调用方刚写入的列表
+            acc["alert_notified_levels"] = [int(float(x)) for x in levels]
         for key in list(raw):
             if key not in acc:
                 raw.pop(key, None)
         raw.update(acc)
         kept.append(raw)
-    rows[:] = kept
-    return rows
+    cfg["accounts"] = kept
+    return kept
 
 
 def active_account(cfg: dict[str, Any]) -> dict[str, Any] | None:
