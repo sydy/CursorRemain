@@ -31,6 +31,23 @@ SUPPORTED_FORMATS = {"cursortokentray.accounts.v1", "cursortokentray.sync.v2"}
 app = FastAPI(title="CursorTokenTray Sync", version="1.0.0", docs_url=None, redoc_url=None)
 
 
+@app.middleware("http")
+async def limit_sync_body(request: Request, call_next):
+    if request.method == "PUT" and request.url.path.rstrip("/") == "/v1/sync":
+        limit = settings.MAX_SYNC_BODY_BYTES
+        header = request.headers.get("content-length")
+        if header:
+            try:
+                if int(header) > limit:
+                    return JSONResponse(status_code=413, content={"detail": "同步数据过大"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "同步数据损坏"})
+        body = await request.body()
+        if len(body) > limit:
+            return JSONResponse(status_code=413, content={"detail": "同步数据过大"})
+    return await call_next(request)
+
+
 class AuthBody(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
@@ -163,13 +180,18 @@ def validate_envelope(envelope: dict) -> dict:
         iterations = int(envelope.get("iterations") or 0)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="同步文件损坏") from exc
-    if iterations < 1000:
+    if iterations < settings.MIN_KDF_ITERATIONS:
         raise HTTPException(status_code=400, detail="KDF 迭代次数过低")
+    if iterations > settings.MAX_KDF_ITERATIONS:
+        raise HTTPException(status_code=400, detail="KDF 迭代次数过高")
+    ciphertext = str(envelope["ciphertext"])
+    if len(ciphertext) > settings.MAX_CIPHERTEXT_CHARS:
+        raise HTTPException(status_code=413, detail="密文过长")
     return {
         "format": fmt,
         "kdf": "pbkdf2-sha256",
         "iterations": iterations,
         "salt": str(envelope["salt"]),
         "nonce": str(envelope["nonce"]),
-        "ciphertext": str(envelope["ciphertext"]),
+        "ciphertext": ciphertext,
     }

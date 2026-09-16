@@ -2,12 +2,14 @@ services:
   api:
     build: .
     restart: unless-stopped
+    # 只绑本机，避免公网直暴露 8000 时被客户端伪造 X-Forwarded-For。
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       DATABASE_PATH: /data/sync.db
-      TRUST_PROXY: "1"
+      # 默认不信任客户端 X-Forwarded-For。仅当前面有会改写该头的反代时设 TRUST_PROXY=1。
+      TRUST_PROXY: ${TRUST_PROXY:-0}
     volumes:
       - sync-data:/data
 
