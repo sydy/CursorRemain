@@ -19,7 +19,8 @@ final class NativeClientReliabilityTests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ctt-hist-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        UsageHistory.append(remaining: 12.5, auto: 1, api: 2, ts: 1_700_000_000, accountId: "user_01A", directory: dir)
+        let ts = Date().timeIntervalSince1970
+        UsageHistory.append(remaining: 12.5, auto: 1, api: 2, ts: ts, accountId: "user_01A", directory: dir)
         XCTAssertFalse(FileManager.default.fileExists(atPath: AppPaths.configPath(in: dir).path))
         let points = UsageHistory.loadRecent(days: 7, accountId: "user_01A", directory: dir)
         XCTAssertEqual(points.count, 1)
