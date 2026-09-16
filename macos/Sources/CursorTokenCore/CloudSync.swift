@@ -57,18 +57,27 @@ public enum CloudSync {
         local.deviceId = cfg.syncDeviceId
         do {
             let got = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
-            let revision = intValue(got["revision"]) ?? 0
+            var revision = intValue(got["revision"]) ?? 0
             let remote = try parseRemote(got, passphrase: passphrase)
             let merged = AccountSync.mergeSnapshots(local, remote)
-            let changed = AccountSync.applySnapshotToConfig(&cfg, merged)
+            var changed = AccountSync.applySnapshotToConfig(&cfg, merged)
             if write && AccountSync.snapshotIdentity(merged) != AccountSync.snapshotIdentity(remote) {
-                var toWrite = merged
-                toWrite.updatedAt = stamp
-                toWrite.deviceId = cfg.syncDeviceId
-                let envelope = try AccountSync.encryptEnvelope(toWrite, passphrase: passphrase)
-                let put = try authed(&cfg, method: "PUT", path: "/v1/sync", body: ["revision": revision, "envelope": envelope])
-                cfg.cloudRevision = intValue(put["revision"]) ?? (revision + 1)
-                status.pushed = true
+                let put = try putMerged(
+                    &cfg,
+                    merged: merged,
+                    remote: remote,
+                    revision: revision,
+                    stamp: stamp,
+                    passphrase: passphrase
+                )
+                changed = put.changed || changed
+                revision = put.revision
+                if put.pushed {
+                    cfg.cloudRevision = put.revision
+                    status.pushed = true
+                } else {
+                    cfg.cloudRevision = revision
+                }
             } else {
                 cfg.cloudRevision = revision
             }
@@ -88,9 +97,46 @@ public enum CloudSync {
             return status
         } catch {
             let message = (error as? CursorAPIError)?.message ?? error.localizedDescription
+            AppLog.log("云同步失败: \(message.isEmpty ? "同步失败" : message)")
             cfg.syncLastError = message.isEmpty ? "同步失败" : message
             status.message = cfg.syncLastError
             return status
+        }
+    }
+
+    static func putMerged(
+        _ cfg: inout AppConfig,
+        merged: SyncSnapshot,
+        remote: SyncSnapshot,
+        revision: Int,
+        stamp: String,
+        passphrase: String
+    ) throws -> (pushed: Bool, changed: Bool, revision: Int) {
+        var merged = merged
+        var remote = remote
+        var revision = revision
+        merged.updatedAt = stamp
+        merged.deviceId = cfg.syncDeviceId
+        let envelope = try AccountSync.encryptEnvelope(merged, passphrase: passphrase)
+        do {
+            let put = try authed(&cfg, method: "PUT", path: "/v1/sync", body: ["revision": revision, "envelope": envelope])
+            return (true, false, intValue(put["revision"]) ?? (revision + 1))
+        } catch let err as CursorAPIError where err.statusCode == 409 {
+            let got = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
+            revision = intValue(got["revision"]) ?? 0
+            remote = try parseRemote(got, passphrase: passphrase)
+            var local = AccountSync.snapshotFromConfig(cfg)
+            local.deviceId = cfg.syncDeviceId
+            merged = AccountSync.mergeSnapshots(local, remote)
+            let changed = AccountSync.applySnapshotToConfig(&cfg, merged)
+            if AccountSync.snapshotIdentity(merged) == AccountSync.snapshotIdentity(remote) {
+                return (false, changed, revision)
+            }
+            merged.updatedAt = stamp
+            merged.deviceId = cfg.syncDeviceId
+            let retryEnvelope = try AccountSync.encryptEnvelope(merged, passphrase: passphrase)
+            let put = try authed(&cfg, method: "PUT", path: "/v1/sync", body: ["revision": revision, "envelope": retryEnvelope])
+            return (true, changed, intValue(put["revision"]) ?? (revision + 1))
         }
     }
 
@@ -127,12 +173,18 @@ public enum CloudSync {
             }
             return !cfg.cloudAccessToken.isEmpty
         } catch {
+            AppLog.log("刷新同步登录失败: \(error.localizedDescription)")
             clearSession(&cfg)
             return false
         }
     }
 
+    static var testSend: ((String, String, String?, [String: Any]?) throws -> [String: Any])?
+
     static func send(method: String, path: String, access: String?, body: [String: Any]?) throws -> [String: Any] {
+        if let testSend {
+            return try testSend(method, path, access, body)
+        }
         guard let url = URL(string: CloudSyncApi.baseUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + path) else {
             throw CursorAPIError("无法连接同步服务器")
         }

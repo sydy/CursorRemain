@@ -27,6 +27,7 @@ final class AppStore: ObservableObject {
     private var updateTask: Task<Void, Never>?
     private var waitTask: Task<Void, Never>?
     private var refreshNow = false
+    private var refreshGeneration = 0
     private var reconcileRunning = false
     private var reconcileAgain = false
 
@@ -64,6 +65,7 @@ final class AppStore: ObservableObject {
     }
 
     func requestRefresh() {
+        refreshGeneration += 1
         refreshNow = true
         waitTask?.cancel()
     }
@@ -235,8 +237,11 @@ final class AppStore: ObservableObject {
                 let waiter = Task {
                     do {
                         try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
-                    } catch {}
-                }
+                    } catch {
+                        if !Task.isCancelled {
+                            AppLog.log("刷新等待被打断: \(error.localizedDescription)")
+                        }
+                    }
                 self.waitTask = waiter
                 await waiter.value
                 self.waitTask = nil
@@ -280,7 +285,9 @@ final class AppStore: ObservableObject {
                 merged.syncLegacyFields()
             }
             config = merged
-            _ = ConfigStore.save(merged, to: settingsDirectory)
+            if !ConfigStore.save(merged, to: settingsDirectory) {
+                AppLog.log("云同步结果写入配置失败")
+            }
         } else {
             config.syncLastError = status.message
         }
@@ -289,6 +296,8 @@ final class AppStore: ObservableObject {
     }
 
     func refreshAll() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
         let targets = config.accounts.map { RefreshTarget(id: $0.id, token: $0.token, decryptFailed: $0.tokenDecryptFailed) }
         if targets.isEmpty {
             usage = nil
@@ -312,7 +321,7 @@ final class AppStore: ObservableObject {
             }
             for await o in group {
                 outcomes.append(o)
-                applyActiveOutcome(o)
+                applyActiveOutcome(o, generation: generation)
             }
         }
         for o in outcomes {
@@ -366,7 +375,7 @@ final class AppStore: ObservableObject {
         }
         config = cfg
         if let active = outcomes.first(where: { $0.id == cfg.activeAccountId }) {
-            applyActiveOutcome(active)
+            applyActiveOutcome(active, generation: generation)
         } else if cfg.accounts.isEmpty {
             usage = nil
             errorMessage = "未配置 Token，请打开设置粘贴"
@@ -379,8 +388,13 @@ final class AppStore: ObservableObject {
         enqueueReconcile(refresh: false)
     }
 
-    private func applyActiveOutcome(_ o: Outcome) {
-        guard o.id == config.activeAccountId else { return }
+    private func applyActiveOutcome(_ o: Outcome, generation: Int) {
+        guard RefreshGeneration.shouldApply(
+            outcomeId: o.id,
+            activeId: config.activeAccountId,
+            outcomeGeneration: generation,
+            currentGeneration: refreshGeneration
+        ) else { return }
         if let snap = o.snap {
             usage = snap
             errorMessage = nil

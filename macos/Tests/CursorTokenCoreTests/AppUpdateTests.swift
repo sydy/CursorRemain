@@ -88,6 +88,21 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertTrue(AppUpdate.shouldAutoCheck(lastCheckAt: AppUpdate.nowIso(now.addingTimeInterval(-3600)), now: now, manual: true))
     }
 
+    func testRememberedInstallAfterHelperKeepsOldShaOnFailure() {
+        XCTAssertNil(AppUpdate.rememberedInstallAfterHelper(
+            sha: "518192b000000000000000000000000000000000",
+            assetId: 99,
+            helperStarted: false
+        ))
+        let remembered = AppUpdate.rememberedInstallAfterHelper(
+            sha: "518192B000000000000000000000000000000000",
+            assetId: 99,
+            helperStarted: true
+        )
+        XCTAssertEqual(remembered?.sha, "518192b000000000000000000000000000000000")
+        XCTAssertEqual(remembered?.assetId, 99)
+    }
+
     func testConfigRoundtripsAutoUpdateFields() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ctt-update-cfg-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

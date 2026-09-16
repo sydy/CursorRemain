@@ -112,6 +112,16 @@ public class AppUpdateTests
     }
 
     [Fact]
+    public void RememberedInstallAfterHelperKeepsOldShaOnFailure()
+    {
+        Assert.Null(AppUpdate.RememberedInstallAfterHelper("518192b000000000000000000000000000000000", 99, false));
+        var remembered = AppUpdate.RememberedInstallAfterHelper("518192B000000000000000000000000000000000", 99, true);
+        Assert.NotNull(remembered);
+        Assert.Equal("518192b000000000000000000000000000000000", remembered.Value.Sha);
+        Assert.Equal(99, remembered.Value.AssetId);
+    }
+
+    [Fact]
     public void ShouldAutoCheckRespectsInterval()
     {
         var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);

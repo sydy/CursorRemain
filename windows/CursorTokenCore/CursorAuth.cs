@@ -264,15 +264,18 @@ public static class CursorAuth
         {
             foreach (var proc in System.Diagnostics.Process.GetProcesses())
             {
-                try
+                using (proc)
                 {
-                    if (!IsCursorProcess(proc, install)) continue;
-                    if (!proc.HasExited) return true;
+                    try
+                    {
+                        if (!IsCursorProcess(proc, install)) continue;
+                        if (!proc.HasExited) return true;
+                    }
+                    catch { }
                 }
-                catch { }
             }
         }
-        catch { }
+        catch (Exception ex) { CrashLog.Write(ex); }
         return false;
     }
 
@@ -283,17 +286,20 @@ public static class CursorAuth
         {
             foreach (var proc in System.Diagnostics.Process.GetProcesses())
             {
-                try
+                using (proc)
                 {
-                    if (!IsCursorProcess(proc, install)) continue;
-                    if (proc.HasExited) continue;
-                    any = true;
-                    try { proc.CloseMainWindow(); } catch { }
+                    try
+                    {
+                        if (!IsCursorProcess(proc, install)) continue;
+                        if (proc.HasExited) continue;
+                        any = true;
+                        try { proc.CloseMainWindow(); } catch { }
+                    }
+                    catch { }
                 }
-                catch { }
             }
         }
-        catch { }
+        catch (Exception ex) { CrashLog.Write(ex); }
         return any;
     }
 

@@ -533,17 +533,32 @@ public struct AppConfig: Equatable, Sendable {
 }
 
 public enum ConfigStore {
+    private static var lastGood: [String: AppConfig] = [:]
+    private static let cacheGate = NSLock()
+
     public static func load(from directory: URL? = nil) -> AppConfig {
         let dir = directory ?? AppPaths.configDirectory()
         AppPaths.ensureDirectory(dir)
-        return withLock(dir) { loadUnlocked(from: dir) }
+        return withLock(dir, body: {
+            remember(dir, loadUnlocked(from: dir))
+        }, onLockUnavailable: {
+            AppLog.log("config.lock 无法获取，返回上次已加载配置")
+            cached(dir) ?? loadErrorConfig()
+        })
     }
 
     @discardableResult
     public static func save(_ cfg: AppConfig, to directory: URL? = nil) -> Bool {
         let dir = directory ?? AppPaths.configDirectory()
         AppPaths.ensureDirectory(dir)
-        return withLock(dir) { saveUnlocked(cfg, to: dir) }
+        return withLock(dir, body: {
+            let ok = saveUnlocked(cfg, to: dir)
+            if ok { _ = remember(dir, cfg) }
+            return ok
+        }, onLockUnavailable: {
+            AppLog.log("config.lock 无法获取，跳过保存")
+            return false
+        })
     }
 
     /// Reload from disk, apply `mutate`, and save under the same lock so a
@@ -552,13 +567,16 @@ public enum ConfigStore {
     public static func update(from directory: URL? = nil, mutate: (inout AppConfig) -> Void) -> AppConfig {
         let dir = directory ?? AppPaths.configDirectory()
         AppPaths.ensureDirectory(dir)
-        return withLock(dir) {
+        return withLock(dir, body: {
             var cfg = loadUnlocked(from: dir)
             if cfg.loadError && cfg.accounts.isEmpty { return cfg }
             mutate(&cfg)
             saveUnlocked(cfg, to: dir)
-            return cfg
-        }
+            return remember(dir, cfg)
+        }, onLockUnavailable: {
+            AppLog.log("config.lock 无法获取，跳过写入并返回上次已加载配置")
+            cached(dir) ?? loadErrorConfig()
+        })
     }
 
     static func loadUnlocked(from dir: URL) -> AppConfig {
@@ -597,6 +615,11 @@ public enum ConfigStore {
 
     @discardableResult
     static func withLock<T>(_ directory: URL, _ body: () -> T) -> T {
+        withLock(directory, body: body, onLockUnavailable: nil)
+    }
+
+    @discardableResult
+    static func withLock<T>(_ directory: URL, body: () -> T, onLockUnavailable: (() -> T)?) -> T {
         AppPaths.ensureDirectory(directory)
         #if canImport(Darwin)
         let lockURL = directory.appendingPathComponent("config.lock")
@@ -609,8 +632,30 @@ public enum ConfigStore {
             }
             return body()
         }
+        if let onLockUnavailable {
+            return onLockUnavailable()
+        }
         #endif
         return body()
+    }
+
+    static func remember(_ dir: URL, _ cfg: AppConfig) -> AppConfig {
+        cacheGate.lock()
+        lastGood[dir.path] = cfg
+        cacheGate.unlock()
+        return cfg
+    }
+
+    static func cached(_ dir: URL) -> AppConfig? {
+        cacheGate.lock()
+        defer { cacheGate.unlock() }
+        return lastGood[dir.path]
+    }
+
+    static func loadErrorConfig() -> AppConfig {
+        var cfg = AppConfig.default
+        cfg.loadError = true
+        return cfg
     }
 
     static func atomicWrite(_ data: Data, to path: URL) {

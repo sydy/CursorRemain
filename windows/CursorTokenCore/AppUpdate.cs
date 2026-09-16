@@ -310,6 +310,15 @@ public static class AppUpdate
         return new UpdateDecision { UpToDate = true, Message = "已是最新版本", Release = release, Asset = asset };
     }
 
+    public readonly record struct RememberedInstall(string Sha, long AssetId);
+
+    /// <summary>
+    /// Persist the installed SHA only after the replace helper actually started.
+    /// A failed launch must keep the previous SHA so the same release can be retried.
+    /// </summary>
+    public static RememberedInstall? RememberedInstallAfterHelper(string sha, long assetId, bool helperStarted) =>
+        helperStarted ? new RememberedInstall(NormalizeSha(sha), assetId) : null;
+
     static UpdateDecision Available(AppRelease release, AppReleaseAsset asset) =>
         new()
         {

@@ -324,6 +324,21 @@ public enum AppUpdate {
         return UpdateDecision(upToDate: true, message: "已是最新版本", release: release, asset: asset)
     }
 
+    public struct RememberedInstall: Equatable, Sendable {
+        public var sha: String
+        public var assetId: Int64
+        public init(sha: String, assetId: Int64) {
+            self.sha = sha
+            self.assetId = assetId
+        }
+    }
+
+    /// Persist the installed SHA only after the replace helper actually started.
+    /// A failed launch must keep the previous SHA so the same release can be retried.
+    public static func rememberedInstallAfterHelper(sha: String, assetId: Int64, helperStarted: Bool) -> RememberedInstall? {
+        helperStarted ? RememberedInstall(sha: normalizeSha(sha), assetId: assetId) : nil
+    }
+
     public static func shortSha(_ sha: String?) -> String {
         var value = normalizeSha(sha)
         if value.isEmpty { return latestTag }
