@@ -242,6 +242,7 @@ final class AppStore: ObservableObject {
                             AppLog.log("刷新等待被打断: \(error.localizedDescription)")
                         }
                     }
+                }
                 self.waitTask = waiter
                 await waiter.value
                 self.waitTask = nil
