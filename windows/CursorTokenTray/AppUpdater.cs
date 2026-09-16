@@ -63,9 +63,14 @@ static class AppUpdater
                 return "已取消更新";
 
             var applied = await DownloadAndStage(decision.Asset, ct);
-            RememberInstalled(cfg, release.CommitSha, decision.Asset.Id);
             if (!LaunchHelper(applied))
-                return "已下载更新，但无法启动安装脚本";
+            {
+                var fail = "已下载更新，但无法启动安装脚本";
+                RememberCheck(cfg, fail);
+                return fail;
+            }
+            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, decision.Asset.Id, true) is { } remembered)
+                RememberInstalled(cfg, remembered.Sha, remembered.AssetId);
             restart?.Invoke();
             return decision.Message + "，即将重启";
         }
@@ -90,7 +95,8 @@ static class AppUpdater
     public static void OpenDownloadPage(string? url = null)
     {
         var target = string.IsNullOrWhiteSpace(url) ? AppUpdate.LatestReleasePageUrl : url;
-        try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); } catch { }
+        try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
+        catch (Exception ex) { CrashLog.Write(ex); }
     }
 
     static async Task<AppRelease> FetchLatest(CancellationToken ct)
@@ -128,7 +134,7 @@ static class AppUpdater
                                 };
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { CrashLog.Write(ex); }
                 }
                 if (release.Assets.Count == 0)
                     release = new AppRelease
@@ -268,7 +274,7 @@ static class AppUpdater
                 cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
             });
         }
-        catch { }
+        catch (Exception ex) { CrashLog.Write(ex); }
     }
 
     static void RememberInstalled(AppConfig cfg, string sha, long assetId)
@@ -287,6 +293,6 @@ static class AppUpdater
                 cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
             });
         }
-        catch { }
+        catch (Exception ex) { CrashLog.Write(ex); }
     }
 }

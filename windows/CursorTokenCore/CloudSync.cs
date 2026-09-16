@@ -13,6 +13,16 @@ public static class CloudSyncApi
 public static class CloudSync
 {
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    static readonly AsyncLocal<HttpClient?> TestHttpLocal = new();
+
+    /// <summary>Test-only HTTP client, scoped to the current async context so parallel tests do not collide.</summary>
+    internal static HttpClient? TestHttp
+    {
+        get => TestHttpLocal.Value;
+        set => TestHttpLocal.Value = value;
+    }
+
+    static HttpClient Client => TestHttp ?? Http;
     static readonly JsonSerializerOptions JsonOpt = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -63,7 +73,7 @@ public static class CloudSync
         if (!string.IsNullOrWhiteSpace(refresh))
         {
             try { await SendAsync("POST", "/v1/auth/logout", null, new { refresh_token = refresh }, ct); }
-            catch { }
+            catch (Exception ex) { CrashLog.Write(ex); }
         }
         ClearSession(cfg);
     }
@@ -92,15 +102,15 @@ public static class CloudSync
             var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
             if (write && AccountSync.SnapshotIdentity(merged) != AccountSync.SnapshotIdentity(remote))
             {
-                merged.UpdatedAt = stamp;
-                merged.DeviceId = cfg.SyncDeviceId;
-                var envelope = AccountSync.EncryptEnvelope(merged, passphrase);
-                using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/sync", new { revision, envelope }, ct);
-                if (put.RootElement.TryGetProperty("revision", out var next) && next.TryGetInt32(out var nextRev))
-                    cfg.CloudRevision = nextRev;
-                else
-                    cfg.CloudRevision = revision + 1;
-                status.Pushed = true;
+                var put = await PutMergedAsync(cfg, merged, remote, revision, stamp, passphrase, ct);
+                changed = put.Changed || changed;
+                revision = put.Revision;
+                if (put.Pushed)
+                {
+                    cfg.CloudRevision = put.Revision;
+                    status.Pushed = true;
+                }
+                else cfg.CloudRevision = revision;
             }
             else cfg.CloudRevision = revision;
             cfg.SyncLastAt = stamp;
@@ -122,12 +132,54 @@ public static class CloudSync
         }
         catch (Exception ex)
         {
+            CrashLog.Write(ex);
             var message = string.IsNullOrWhiteSpace(ex.Message) ? "同步失败" : ex.Message;
             cfg.SyncLastError = message;
             status.Message = message;
             return status;
         }
     }
+
+    readonly record struct PutResult(bool Pushed, bool Changed, int Revision);
+
+    static async Task<PutResult> PutMergedAsync(
+        AppConfig cfg,
+        SyncSnapshot merged,
+        SyncSnapshot remote,
+        int revision,
+        string stamp,
+        string passphrase,
+        CancellationToken ct)
+    {
+        merged.UpdatedAt = stamp;
+        merged.DeviceId = cfg.SyncDeviceId;
+        var envelope = AccountSync.EncryptEnvelope(merged, passphrase);
+        try
+        {
+            using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/sync", new { revision, envelope }, ct);
+            return new PutResult(true, false, ReadRevision(put, revision + 1));
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 409)
+        {
+            using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
+            revision = ReadRevision(got, 0);
+            remote = ParseRemote(got.RootElement, passphrase);
+            var local = AccountSync.SnapshotFromConfig(cfg);
+            local.DeviceId = cfg.SyncDeviceId;
+            merged = AccountSync.MergeSnapshots(local, remote);
+            var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
+            if (AccountSync.SnapshotIdentity(merged) == AccountSync.SnapshotIdentity(remote))
+                return new PutResult(false, changed, revision);
+            merged.UpdatedAt = stamp;
+            merged.DeviceId = cfg.SyncDeviceId;
+            envelope = AccountSync.EncryptEnvelope(merged, passphrase);
+            using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/sync", new { revision, envelope }, ct);
+            return new PutResult(true, changed, ReadRevision(put, revision + 1));
+        }
+    }
+
+    static int ReadRevision(JsonDocument doc, int fallback) =>
+        doc.RootElement.TryGetProperty("revision", out var rev) && rev.TryGetInt32(out var n) ? n : fallback;
 
     static SyncSnapshot ParseRemote(JsonElement root, string passphrase)
     {
@@ -172,8 +224,9 @@ public static class CloudSync
                 cfg.CloudRefreshToken = r.GetString() ?? cfg.CloudRefreshToken ?? "";
             return cfg.CloudAccessToken.Length > 0;
         }
-        catch
+        catch (Exception ex)
         {
+            CrashLog.Write(ex);
             ClearSession(cfg);
             return false;
         }
@@ -190,7 +243,7 @@ public static class CloudSync
         HttpResponseMessage res;
         try
         {
-            res = await Http.SendAsync(req, ct);
+            res = await Client.SendAsync(req, ct);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {

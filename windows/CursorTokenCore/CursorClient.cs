@@ -38,8 +38,10 @@ public sealed class CursorClient
             }
         }
         if (snap is null) throw last ?? new CursorApiException("接口返回格式异常");
-        try { await AttachAggregated(snap, token, timeout, ct); } catch { }
-        try { await AttachGrokBot(snap, token, timeout, ct); } catch { }
+        try { await AttachAggregated(snap, token, timeout, ct); }
+        catch (Exception ex) { CrashLog.Write(ex); }
+        try { await AttachGrokBot(snap, token, timeout, ct); }
+        catch (Exception ex) { CrashLog.Write(ex); }
         return snap;
     }
 

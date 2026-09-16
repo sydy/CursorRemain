@@ -48,9 +48,17 @@ enum AppUpdater {
                 return "已取消更新"
             }
             let staged = try await downloadAndStage(asset)
-            rememberInstalled(store: store, sha: release.commitSha, assetId: asset.id)
             if !launchHelper(newApp: staged) {
-                return "已下载更新，但无法启动安装脚本"
+                let fail = "已下载更新，但无法启动安装脚本"
+                rememberCheck(store: store, error: fail)
+                return fail
+            }
+            if let remembered = AppUpdate.rememberedInstallAfterHelper(
+                sha: release.commitSha,
+                assetId: asset.id,
+                helperStarted: true
+            ) {
+                rememberInstalled(store: store, sha: remembered.sha, assetId: remembered.assetId)
             }
             NSApp.terminate(nil)
             return decision.message + "，即将重启"
@@ -182,6 +190,7 @@ enum AppUpdater {
             try proc.run()
             return true
         } catch {
+            AppLog.log("无法启动更新脚本: \(error.localizedDescription)")
             return false
         }
     }

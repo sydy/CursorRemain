@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -368,20 +369,42 @@ public sealed class ConfigLockException : IOException
 
 public static class ConfigStore
 {
-    const int LockWaitMs = 8000;
+    const int DefaultLockWaitMs = 8000;
+    static readonly ConcurrentDictionary<string, string> LastGoodJson = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Test hook so lock-timeout tests do not wait the full production interval.</summary>
+    internal static int LockWaitMilliseconds { get; set; } = DefaultLockWaitMs;
 
     public static AppConfig Load(string? directory = null)
     {
         var dir = AppPaths.ConfigDirectory(directory);
         Directory.CreateDirectory(dir);
-        return WithLock(dir, () => LoadUnlocked(dir), write: false);
+        try
+        {
+            return WithLock(dir, () =>
+            {
+                var cfg = LoadUnlocked(dir);
+                Remember(dir, cfg);
+                return cfg;
+            }, write: false);
+        }
+        catch (ConfigLockException)
+        {
+            if (TryLastGood(dir, out var cached)) return cached;
+            throw;
+        }
     }
 
     public static void Save(AppConfig cfg, string? directory = null)
     {
         var dir = AppPaths.ConfigDirectory(directory);
         Directory.CreateDirectory(dir);
-        WithLock(dir, () => { SaveUnlocked(cfg, dir); return 0; }, write: true);
+        WithLock(dir, () =>
+        {
+            SaveUnlocked(cfg, dir);
+            Remember(dir, cfg);
+            return 0;
+        }, write: true);
     }
 
     /// <summary>
@@ -398,6 +421,7 @@ public static class ConfigStore
             if (cfg.LoadError && cfg.Accounts.Count == 0) return cfg;
             mutate(cfg);
             SaveUnlocked(cfg, dir);
+            Remember(dir, cfg);
             return cfg;
         }, write: true);
     }
@@ -436,7 +460,7 @@ public static class ConfigStore
     {
         Directory.CreateDirectory(dir);
         var lockPath = Path.Combine(dir, "config.lock");
-        var until = DateTime.UtcNow.AddMilliseconds(LockWaitMs);
+        var until = DateTime.UtcNow.AddMilliseconds(LockWaitMilliseconds);
         while (true)
         {
             try
@@ -450,9 +474,32 @@ public static class ConfigStore
             }
             catch (IOException)
             {
-                if (write) throw new ConfigLockException();
-                return body();
+                throw new ConfigLockException();
             }
+        }
+    }
+
+    static string DirKey(string dir) => Path.GetFullPath(dir);
+
+    static void Remember(string dir, AppConfig cfg)
+    {
+        try { LastGoodJson[DirKey(dir)] = JsonSerializer.Serialize(ToDict(cfg)); }
+        catch { }
+    }
+
+    static bool TryLastGood(string dir, out AppConfig cfg)
+    {
+        cfg = null!;
+        if (!LastGoodJson.TryGetValue(DirKey(dir), out var json)) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            cfg = Normalize(doc.RootElement);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

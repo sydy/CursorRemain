@@ -160,7 +160,7 @@ public sealed class AccountCompareReport
 
 public sealed record UsageEventsSyncResult(List<UsageEvent> Events, int Fetched, int TotalAvailable, bool Truncated);
 
-public static class UsageEvents
+public static partial class UsageEvents
 {
     public const string KindIncluded = "included";
     public const string KindFree = "free";
@@ -495,51 +495,6 @@ public static class UsageEvents
         };
     }
 
-    public static string AccountCompareToCsv(AccountCompareReport report)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("账号,渠道,套餐,窗口,窗口天数,日均持有,窗口实付,请求,Token,¥/百万Token,¥/次,First-party次数,First-party Token,First-party实付,First-party ¥/百万,First-party ¥/次,API次数,API Token,API实付,API ¥/百万,API ¥/次,Grok Bot次数,Grok Bot Token,Grok Bot实付,Grok Bot ¥/百万,Grok Bot ¥/次");
-        foreach (var row in report.Rows)
-            sb.AppendLine(CompareCsvCells(row.Label, row.ChannelLabel, row.MembershipType, row.WindowLabel, row.WindowDays, row.DailyHoldingCny, row.TotalCny, row.EventCount, row.TotalTokens, row.CnyPerMillion, row.CnyPerRequest, row.FirstParty, row.Api, row.GrokBot));
-        foreach (var group in report.Groups)
-            sb.AppendLine(CompareCsvCells(group.ChannelLabel + "合计", group.ChannelLabel, "", "", 0, group.DailyHoldingCny, group.TotalCny, group.EventCount, group.TotalTokens, group.CnyPerMillion, group.CnyPerRequest, group.FirstParty, group.Api, group.GrokBot));
-        return sb.ToString();
-    }
-
-    static string CompareCsvCells(
-        string name, string channel, string membership, string window, double days,
-        double dailyHolding, double totalCny, int eventCount, long totalTokens,
-        double? perMillion, double? perRequest,
-        AccountCompareCategory firstParty, AccountCompareCategory api, AccountCompareCategory grokBot)
-    {
-        static string[] CatCells(AccountCompareCategory cat) =>
-        [
-            cat.Count.ToString(CultureInfo.InvariantCulture),
-            cat.Tokens.ToString(CultureInfo.InvariantCulture),
-            cat.Cny.ToString("0.0000", CultureInfo.InvariantCulture),
-            cat.CnyPerMillion is { } m ? m.ToString("0.0000", CultureInfo.InvariantCulture) : "",
-            cat.CnyPerRequest is { } r ? r.ToString("0.0000", CultureInfo.InvariantCulture) : "",
-        ];
-        var cols = new List<string>
-        {
-            EscapeCsv(name),
-            EscapeCsv(channel),
-            EscapeCsv(membership),
-            EscapeCsv(window),
-            days > 0 ? days.ToString("0.00", CultureInfo.InvariantCulture) : "",
-            dailyHolding.ToString("0.0000", CultureInfo.InvariantCulture),
-            totalCny.ToString("0.0000", CultureInfo.InvariantCulture),
-            eventCount.ToString(CultureInfo.InvariantCulture),
-            totalTokens.ToString(CultureInfo.InvariantCulture),
-            perMillion is { } pm ? pm.ToString("0.0000", CultureInfo.InvariantCulture) : "",
-            perRequest is { } pr ? pr.ToString("0.0000", CultureInfo.InvariantCulture) : "",
-        };
-        cols.AddRange(CatCells(firstParty));
-        cols.AddRange(CatCells(api));
-        cols.AddRange(CatCells(grokBot));
-        return string.Join(",", cols);
-    }
-
     public static string FormatCny(double? yuan)
     {
         if (yuan is null) return "—";
@@ -640,139 +595,6 @@ public static class UsageEvents
         return dt.ToString("yyyy-MM-dd HH:00", CultureInfo.InvariantCulture);
     }
 
-    public static string ChartModelLabel(string? name)
-    {
-        var text = (name ?? "").Trim();
-        return text.StartsWith("cursor-", StringComparison.Ordinal) ? text[7..] : text;
-    }
-
-    public static UsageChartSeries BuildChart(
-        IEnumerable<UsageEvent> events,
-        bool hourly,
-        IEnumerable<string>? hiddenModels = null,
-        int hourlyWindowHours = HourlyChartWindowHours)
-    {
-        var selected = events as IList<UsageEvent> ?? events.ToList();
-        var models = ChartModels(selected);
-        var hidden = hiddenModels is null ? new HashSet<string>(StringComparer.Ordinal) : new HashSet<string>(hiddenModels, StringComparer.Ordinal);
-        var visible = models.Where(n => !hidden.Contains(n)).ToList();
-        var visibleSet = visible.ToHashSet(StringComparer.Ordinal);
-        if (selected.Count == 0)
-            return new UsageChartSeries { Hourly = hourly, Caption = ChartCaption(hourly, Array.Empty<string>()), Models = models, Buckets = [] };
-
-        List<string> keys;
-        Func<long, string> keyOf;
-        if (hourly)
-        {
-            var lastMs = FloorHourMs(selected.Max(ev => ev.TimestampMs));
-            var firstMs = FloorHourMs(selected.Min(ev => ev.TimestampMs));
-            var window = Math.Max(1, hourlyWindowHours);
-            var span = (lastMs - firstMs) / MsHour + 1;
-            if (span > window) firstMs = lastMs - (window - 1) * MsHour;
-            var count = (int)((lastMs - firstMs) / MsHour + 1);
-            keys = Enumerable.Range(0, count).Select(i => EventHour(firstMs + i * MsHour)).ToList();
-            keyOf = EventHour;
-        }
-        else
-        {
-            var lastMs = FloorDayMs(selected.Max(ev => ev.TimestampMs));
-            var firstMs = FloorDayMs(selected.Min(ev => ev.TimestampMs));
-            keys = [];
-            for (var day = ToDisplay(firstMs).Date; day <= ToDisplay(lastMs).Date; day = day.AddDays(1))
-                keys.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            keyOf = EventDate;
-        }
-
-        var cells = new Dictionary<(string key, string model), (long tokens, double cents, int count)>();
-        foreach (var ev in selected)
-        {
-            var key = keyOf(ev.TimestampMs);
-            if (string.CompareOrdinal(key, keys[0]) < 0 || string.CompareOrdinal(key, keys[^1]) > 0) continue;
-            var name = string.IsNullOrEmpty(ev.Model) ? "—" : ev.Model;
-            if (!visibleSet.Contains(name)) continue;
-            cells.TryGetValue((key, name), out var cell);
-            cells[(key, name)] = (cell.tokens + ev.Tokens, cell.cents + CostCents(ev), cell.count + 1);
-        }
-
-        var multiDay = hourly && keys[0][..10] != keys[^1][..10];
-        var buckets = new List<ChartBucket>(keys.Count);
-        foreach (var key in keys)
-        {
-            var slices = new List<ChartSlice>();
-            long tokens = 0;
-            var cents = 0.0;
-            var count = 0;
-            foreach (var name in visible)
-            {
-                if (!cells.TryGetValue((key, name), out var cell)) continue;
-                if (cell.tokens <= 0 && cell.cents <= 0 && cell.count <= 0) continue;
-                slices.Add(new ChartSlice(name, cell.tokens, cell.cents, cell.count));
-                tokens += cell.tokens;
-                cents += cell.cents;
-                count += cell.count;
-            }
-            buckets.Add(new ChartBucket(key, BucketLabel(key, hourly, multiDay), tokens, cents, count, slices));
-        }
-        return new UsageChartSeries
-        {
-            Hourly = hourly,
-            Caption = ChartCaption(hourly, keys),
-            Models = models,
-            Buckets = buckets,
-        };
-    }
-
-    static DateTimeOffset ToDisplay(long timestampMs)
-    {
-        var utc = DateTimeOffset.FromUnixTimeMilliseconds(Math.Max(0, timestampMs));
-        return TimeZoneInfo.ConvertTime(utc, DisplayTimeZone);
-    }
-
-    static long FloorHourMs(long timestampMs) => Math.Max(0, timestampMs) / MsHour * MsHour;
-    static long FloorDayMs(long timestampMs)
-    {
-        var local = ToDisplay(timestampMs);
-        var midnight = new DateTimeOffset(local.Year, local.Month, local.Day, 0, 0, 0, local.Offset);
-        return Math.Max(0, midnight.ToUnixTimeMilliseconds());
-    }
-
-    public static List<string> ChartModels(IEnumerable<UsageEvent> events)
-    {
-        var totals = new Dictionary<string, (long tokens, double cents, int count)>(StringComparer.Ordinal);
-        foreach (var ev in events)
-        {
-            var name = string.IsNullOrEmpty(ev.Model) ? "—" : ev.Model;
-            totals.TryGetValue(name, out var row);
-            totals[name] = (row.tokens + ev.Tokens, row.cents + CostCents(ev), row.count + 1);
-        }
-        return totals
-            .OrderByDescending(kv => kv.Value.tokens)
-            .ThenByDescending(kv => kv.Value.cents)
-            .ThenByDescending(kv => kv.Value.count)
-            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
-            .Select(kv => kv.Key)
-            .ToList();
-    }
-
-    static string BucketLabel(string key, bool hourly, bool multiDay)
-    {
-        if (!hourly) return key.Length >= 10 ? key[5..] : key;
-        var hour = key.Length >= 13 ? key[11..13] : key;
-        return multiDay ? $"{key[5..10]} {hour}" : hour;
-    }
-
-    static string ChartCaption(bool hourly, IReadOnlyList<string> keys)
-    {
-        var kind = hourly ? "按小时 Token" : "按日 Token";
-        if (keys.Count == 0) return $"{kind}（{TzLabel}）";
-        var first = keys[0];
-        var last = keys[^1];
-        if (first == last) return $"{kind}（{TzLabel} · {first}）";
-        if (hourly && first[..10] == last[..10])
-            return $"{kind}（{TzLabel} · {first[..10]} {first[11..]}–{last[11..]}）";
-        return $"{kind}（{TzLabel} · {first} 至 {last}）";
-    }
-
     public static (List<UsageEvent> events, int totalCount) ParsePage(JsonBag payload)
     {
         var rows = payload["usageEventsDisplay"].Array;
@@ -849,133 +671,6 @@ public static class UsageEvents
             .Trim();
         return double.TryParse(cleaned, NumberStyles.Float, CultureInfo.InvariantCulture, out var dollars)
             ? dollars * 100.0 : null;
-    }
-
-    public static UsageReport BuildReport(IEnumerable<UsageEvent> events, UsageReportFilter? filter = null, CnySpendSettings? spend = null)
-    {
-        filter ??= new UsageReportFilter();
-        var kind = (filter.Kind ?? "").Trim().ToLowerInvariant();
-        var category = (filter.Category ?? "").Trim().ToLowerInvariant();
-        var model = (filter.Model ?? "").Trim();
-        var owning = (filter.OwningUser ?? "").Trim();
-        var startMs = ReportDateStartMs(filter.StartDate);
-        var endMs = ReportDateEndMs(filter.EndDate);
-        var source = events as IList<UsageEvent> ?? events.ToList();
-        var (cnyById, planCny, onDemandCny, monthly, rate, actual, usesActual) = CnyById(source, spend);
-        var selected = new List<UsageEvent>();
-        for (var i = 0; i < source.Count; i++)
-        {
-            var ev = source[i];
-            if (kind.Length > 0 && ev.Kind != kind) continue;
-            if (category.Length > 0 && ClassifyCategory(ev.Model) != category) continue;
-            if (model.Length > 0 && ev.Model != model) continue;
-            if (filter.Headless is { } h && ev.IsHeadless != h) continue;
-            if (owning.Length > 0 && ev.OwningUser != owning) continue;
-            if (startMs is { } s && ev.TimestampMs < s) continue;
-            if (endMs is { } e && ev.TimestampMs >= e) continue;
-            var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
-            ev.AllocatedCny = cnyById.TryGetValue(key, out var cny) ? cny : 0;
-            selected.Add(ev);
-        }
-        selected = selected.OrderByDescending(ev => ev.TimestampMs).ToList();
-
-        var dailyMap = new Dictionary<string, (long tokens, double cents, int count, double cny)>(StringComparer.Ordinal);
-        var modelMap = new Dictionary<string, (long tokens, double cents, int count, int headless, double cny)>(StringComparer.Ordinal);
-        var included = 0; var free = 0; var onDemand = 0; var other = 0; var headless = 0;
-        var firstParty = 0; var api = 0; var grokBot = 0;
-        long totalTokens = 0;
-        double totalCents = 0;
-        double totalCny = 0;
-        var hasCost = false;
-        foreach (var ev in selected)
-        {
-            var cents = CostCents(ev);
-            totalTokens += ev.Tokens;
-            totalCents += cents;
-            totalCny += ev.AllocatedCny;
-            if (cents > 0) hasCost = true;
-            if (ev.Kind == KindIncluded) included++;
-            else if (ev.Kind == KindFree) free++;
-            else if (ev.Kind == KindOnDemand) onDemand++;
-            else other++;
-            switch (ClassifyCategory(ev.Model))
-            {
-                case CategoryGrokBot: grokBot++; break;
-                case CategoryFirstParty: firstParty++; break;
-                default: api++; break;
-            }
-            if (ev.IsHeadless) headless++;
-            var day = EventDate(ev.TimestampMs);
-            dailyMap.TryGetValue(day, out var d);
-            dailyMap[day] = (d.tokens + ev.Tokens, d.cents + cents, d.count + 1, d.cny + ev.AllocatedCny);
-            var name = string.IsNullOrEmpty(ev.Model) ? "—" : ev.Model;
-            modelMap.TryGetValue(name, out var m);
-            modelMap[name] = (m.tokens + ev.Tokens, m.cents + cents, m.count + 1, m.headless + (ev.IsHeadless ? 1 : 0), m.cny + ev.AllocatedCny);
-        }
-        return new UsageReport
-        {
-            EventCount = selected.Count,
-            TotalTokens = totalTokens,
-            TotalCents = totalCents,
-            HasCost = hasCost,
-            IncludedCount = included,
-            FreeCount = free,
-            OnDemandCount = onDemand,
-            OtherCount = other,
-            HeadlessCount = headless,
-            FirstPartyCount = firstParty,
-            ApiCount = api,
-            GrokBotCount = grokBot,
-            ActualCny = actual,
-            UsesActualCny = usesActual,
-            Daily = dailyMap.OrderBy(kv => kv.Key).Select(kv => new DailyUsageRow(kv.Key, kv.Value.tokens, kv.Value.cents, kv.Value.count, kv.Value.cny)).ToList(),
-            Models = modelMap.Select(kv => new ModelUsageRow(kv.Key, kv.Value.tokens, kv.Value.cents, kv.Value.count, kv.Value.headless, kv.Value.cny))
-                .OrderByDescending(m => m.Tokens).ThenByDescending(m => m.Cents).ThenByDescending(m => m.Count).ToList(),
-            Events = selected,
-            TotalCny = totalCny,
-            PlanCny = planCny,
-            OnDemandCny = onDemandCny,
-            UsdCnyRate = rate,
-            MonthlyPlanUsd = monthly,
-        };
-    }
-
-    public static string ToCsv(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null)
-    {
-        var rows = events as IList<UsageEvent> ?? events.ToList();
-        Dictionary<string, double> cnyById = [];
-        if (spend is not null)
-        {
-            var baseEvents = allocationBase as IList<UsageEvent> ?? allocationBase?.ToList() ?? rows;
-            cnyById = CnyById(baseEvents, spend).byId;
-        }
-        var sb = new StringBuilder();
-        sb.Append('\uFEFF');
-        sb.AppendLine(CsvHeader);
-        for (var i = 0; i < rows.Count; i++)
-        {
-            var ev = rows[i];
-            string cnyText;
-            if (spend is not null)
-            {
-                var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
-                cnyText = FormatEventCny(ev, cnyById.GetValueOrDefault(key));
-            }
-            else if (ev.AllocatedCny > 0)
-                cnyText = FormatEventCny(ev);
-            else
-                cnyText = "—";
-            sb.Append(EscapeCsv(FormatTime(ev.TimestampMs))).Append(',');
-            sb.Append(EscapeCsv(ev.UserEmail)).Append(',');
-            sb.Append(EscapeCsv(KindLabel(ev.Kind))).Append(',');
-            sb.Append(EscapeCsv(ev.Model)).Append(',');
-            sb.Append(EscapeCsv(ev.Tokens.ToString(CultureInfo.InvariantCulture))).Append(',');
-            sb.Append(EscapeCsv(FormatCost(ev))).Append(',');
-            sb.Append(EscapeCsv(cnyText)).Append(',');
-            sb.Append(EscapeCsv(ev.IsHeadless ? "是" : "否"));
-            sb.AppendLine();
-        }
-        return sb.ToString();
     }
 
     public static UsageEvent? FromDict(JsonBag raw)
@@ -1129,11 +824,5 @@ public static class UsageEvents
     {
         var name = raw.Trim();
         return name is "" ? "" : name is "default" ? "auto" : name;
-    }
-
-    static string EscapeCsv(string value)
-    {
-        if (value.IndexOfAny([',', '"', '\n', '\r']) < 0) return value;
-        return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }
