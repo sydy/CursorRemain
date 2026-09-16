@@ -244,10 +244,24 @@ def format_account_caption(account: dict[str, Any] | None, *, is_active: bool = 
 
 
 def list_accounts(cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    rows = cfg.get("accounts") or []
+    rows = cfg.get("accounts")
     if not isinstance(rows, list):
-        return []
-    return [a for a in rows if isinstance(a, dict) and a.get("id") and a.get("token")]
+        cfg["accounts"] = []
+        return cfg["accounts"]
+    kept: list[dict[str, Any]] = []
+    for raw in rows:
+        if not isinstance(raw, dict):
+            continue
+        acc = sanitize_account(raw)
+        if acc is None:
+            continue
+        for key in list(raw):
+            if key not in acc:
+                raw.pop(key, None)
+        raw.update(acc)
+        kept.append(raw)
+    rows[:] = kept
+    return rows
 
 
 def active_account(cfg: dict[str, Any]) -> dict[str, Any] | None:
@@ -645,11 +659,9 @@ def _clamp_int(value: Any, lo: int, hi: int) -> int:
 
 
 def _is_int_like(value: Any) -> bool:
-    try:
-        int(float(value))
-        return True
-    except (TypeError, ValueError):
-        return False
+    from value_util import is_int_like
+
+    return is_int_like(value)
 
 
 def clone_accounts(cfg: dict[str, Any]) -> dict[str, Any]:

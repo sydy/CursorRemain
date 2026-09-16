@@ -42,6 +42,41 @@ class AccountIdTests(unittest.TestCase):
 
 
 class AccountStateTests(unittest.TestCase):
+    def test_list_accounts_sanitizes_dirty_fields(self) -> None:
+        from accounts import list_accounts
+
+        token = _token_for("user_01DIRTY")
+        raw = {
+            "id": "user_01DIRTY",
+            "token": token,
+            "account_kind": "TEMP",
+            "temp_valid_days": 9999,
+            "temp_valid_hours": 50,
+            "last_remaining": "not-a-number",
+            "alert_notified_levels": ["nope", 20, 150],
+            "actualCny": 12.5,
+            "channel": "自费",
+            "junk": "drop-me",
+        }
+        cfg = {"accounts": [raw], "active_account_id": "user_01DIRTY", "session_token": token}
+        accounts = list_accounts(cfg)
+        self.assertEqual(len(accounts), 1)
+        acc = accounts[0]
+        self.assertIs(acc, raw)
+        self.assertIs(acc, cfg["accounts"][0])
+        self.assertEqual(acc["account_kind"], "temporary")
+        self.assertEqual(acc["temp_valid_days"], 999)
+        self.assertEqual(acc["temp_valid_hours"], 23)
+        self.assertIsNone(acc["last_remaining"])
+        self.assertEqual(acc["alert_notified_levels"], [20])
+        self.assertEqual(acc["actual_cny"], 12.5)
+        self.assertEqual(acc["channel"], "self_pay")
+        self.assertNotIn("junk", acc)
+        self.assertNotIn("actualCny", acc)
+        again = list_accounts(cfg)
+        self.assertEqual(again[0]["account_kind"], "temporary")
+        self.assertEqual(again[0]["alert_notified_levels"], [20])
+
     def test_legacy_session_token_migrates_to_accounts(self) -> None:
         from accounts import active_account, display_label, list_accounts, normalize_account_state
 

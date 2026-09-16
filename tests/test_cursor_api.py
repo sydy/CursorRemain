@@ -256,6 +256,35 @@ class ParseUsageSummaryTests(unittest.TestCase):
         self.assertEqual(capped.auto_percent_used, 100.0)
 
 
+class FetchUsageSummaryTests(unittest.TestCase):
+    def test_detail_failures_are_logged_without_breaking_plan(self) -> None:
+        from unittest.mock import patch
+
+        from cursor_api import CursorApiError, fetch_usage_summary
+
+        logs: list[str] = []
+
+        def logger(msg: str, *args: object, **_kwargs: object) -> None:
+            logs.append(msg % args if args else msg)
+
+        def fake_request(method, endpoint, token, body=None, timeout=30.0):
+            if endpoint in ("/api/usage-summary", "/api/dashboard/usage-summary"):
+                return PERSONAL_ULTRA
+            raise CursorApiError("明细挂了", status_code=500)
+
+        with patch("cursor_api._request_json", side_effect=fake_request):
+            snap = fetch_usage_summary("user_01LOG%3A%3Afake.jwt.sig", logger=logger)
+        self.assertEqual(snap.used_percent, 98.5)
+        self.assertEqual(snap.remaining_percent, 1.5)
+        self.assertEqual(snap.model_usages, ())
+        self.assertIsNone(snap.grok_bot_percent_used)
+        self.assertEqual(len(logs), 2)
+        self.assertIn("attach_aggregated_tokens failed", logs[0])
+        self.assertIn("明细挂了", logs[0])
+        self.assertIn("attach_grok_bot_usage failed", logs[1])
+        self.assertIn("明细挂了", logs[1])
+
+
 class FormatHelpersTests(unittest.TestCase):
     def test_membership_and_money(self) -> None:
         self.assertEqual(format_membership_type("enterprise"), "Enterprise")

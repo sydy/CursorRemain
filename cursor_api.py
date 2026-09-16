@@ -9,18 +9,18 @@ import re
 import ssl
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from value_util import parse_iso as _parse_iso
 
 CURSOR_BASE = "https://cursor.com"
 USAGE_ENDPOINTS = ("/api/usage-summary", "/api/dashboard/usage-summary")
 AGGREGATED_USAGE_ENDPOINT = "/api/dashboard/get-aggregated-usage-events"
-FILTERED_USAGE_ENDPOINT = "/api/dashboard/get-filtered-usage-events"
 SAND_USAGE_ENDPOINT = "/api/dashboard/get-sand-usage-status"
 SAND_USAGE_TIMEOUT = 8.0
 USAGE_URL = "https://cursor.com/dashboard/usage"
-SPENDING_URL = "https://cursor.com/dashboard/spending"
 BILLING_URL = "https://cursor.com/dashboard/billing"
 
 # 企业 / 团队套餐：Dashboard 只有 Usage 页，额度按金额（美分）计费
@@ -363,7 +363,28 @@ def _safe_account_id(value: str) -> str:
     return (cleaned or "account")[:80]
 
 
-def fetch_usage_summary(session_token: str, timeout: float = 30.0) -> UsageSnapshot:
+Logger = Callable[..., None]
+
+_USAGE_DETAIL_ERRORS = (
+    CursorApiError,
+    OSError,
+    TimeoutError,
+    ValueError,
+    TypeError,
+    KeyError,
+    json.JSONDecodeError,
+)
+
+
+def _noop_logger(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+def fetch_usage_summary(
+    session_token: str,
+    timeout: float = 30.0,
+    logger: Logger | None = None,
+) -> UsageSnapshot:
     token = normalize_workos_token(session_token)
     if not token:
         raise CursorApiError("未配置 Session Token", status_code=401)
@@ -383,16 +404,17 @@ def fetch_usage_summary(session_token: str, timeout: float = 30.0) -> UsageSnaps
         assert last_error is not None
         raise last_error
 
+    log = logger or _noop_logger
     try:
         attach_aggregated_tokens(snapshot, token, timeout=timeout)
-    except Exception:
+    except _USAGE_DETAIL_ERRORS as exc:
         # 明细失败不影响套餐剩余；飞出层仍显示百分比
-        pass
+        log("attach_aggregated_tokens failed: %s", exc)
     try:
         attach_grok_bot_usage(snapshot, token, timeout=min(timeout, SAND_USAGE_TIMEOUT))
-    except Exception:
+    except _USAGE_DETAIL_ERRORS as exc:
         # Grok Bot 周额度是独立接口，失败不影响 Cursor 月度剩余
-        pass
+        log("attach_grok_bot_usage failed: %s", exc)
     return snapshot
 
 
@@ -996,19 +1018,6 @@ def _iso_or_none(value: Any) -> str | None:
     if not value:
         return None
     return str(value)
-
-
-def _parse_iso(iso_value: Any) -> datetime | None:
-    if not iso_value:
-        return None
-    try:
-        text = str(iso_value).replace("Z", "+00:00")
-        dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except ValueError:
-        return None
 
 
 def days_until(iso_value: Any, now: datetime | None = None) -> int | None:

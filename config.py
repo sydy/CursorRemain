@@ -213,8 +213,6 @@ def _parse_thresholds(value: Any) -> list[int]:
 
 
 def _is_int_like(value: Any) -> bool:
-    try:
-        int(float(value))
-        return True
-    except (TypeError, ValueError):
-        return False
+    from value_util import is_int_like
+
+    return is_int_like(value)
