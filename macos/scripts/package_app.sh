@@ -34,8 +34,10 @@ elif [[ -f "$REPO/assets/app_icon.png" ]] && command -v sips >/dev/null; then
   /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$DIST/Contents/Info.plist" 2>/dev/null || true
 fi
 chmod +x "$DIST/Contents/MacOS/CursorTokenTray"
-# Ad-hoc sign so the bundle is a valid Mach-O app. Downloads still get
-# Gatekeeper quarantine; 首次打开.command strips that attribute.
+# Ad-hoc sign so the bundle is a valid Mach-O app. Each build gets a new
+# CDHash, so keychain items must not use the default app-bound ACL
+# (see TokenProtector). Downloads still get Gatekeeper quarantine;
+# 首次打开.command strips that attribute.
 if command -v codesign >/dev/null; then
   codesign --force --deep --sign - "$DIST"
 fi

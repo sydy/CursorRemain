@@ -37,7 +37,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 
 仓库里的 Python 只保留解析对照（`cursor_api` / `usage_report` 等与 `fixtures/`），桌面壳已移除。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
 
-配置里的 Session Token 在磁盘上加密保存：Windows 用当前用户 DPAPI，macOS 用钥匙串里的 AES-GCM 包装密钥。旧版明文 `config.json` 会在下次保存时自动升级；若回退到更早的原生版本，需要重新导入 Token。
+配置里的 Session Token 在磁盘上加密保存：Windows 用当前用户 DPAPI，macOS 用钥匙串里的 AES-GCM 包装密钥。钥匙串条目不绑定某一次 ad-hoc 构建，自动更新后不应再反复要登录密码；若仍弹出，选一次「始终允许」即可完成迁移。旧版明文 `config.json` 会在下次保存时自动升级；若回退到更早的原生版本，需要重新导入 Token。
 
 ## 开发运行
 
