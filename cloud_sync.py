@@ -24,6 +24,14 @@ API_BASE = "https://sync.harker.cn"
 TIMEOUT = 60
 
 Requester = Callable[[str, str, dict[str, str] | None, dict[str, Any] | None], tuple[int, Any]]
+Logger = Callable[..., None]
+
+
+def _noop_logger(*_args: Any, **_kwargs: Any) -> None:
+    return None
+
+
+_RECONCILE_ERRORS = (ValueError, TypeError, KeyError, json.JSONDecodeError, OSError, UnicodeError)
 
 
 class CloudSyncError(Exception):
@@ -173,6 +181,7 @@ def reconcile(
     write: bool = True,
     requester: Requester | None = None,
     base: str = API_BASE,
+    logger: Logger | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     status = {
         "ok": False,
@@ -251,9 +260,11 @@ def reconcile(
             message = str(exc) or "同步失败"
         cfg["sync_last_error"] = message
         status["message"] = message
+        (logger or _noop_logger)("cloud sync failed: %s", message)
         return cfg, status
-    except Exception as exc:
+    except _RECONCILE_ERRORS as exc:
         message = str(exc) or "同步失败"
         cfg["sync_last_error"] = message
         status["message"] = message
+        (logger or _noop_logger)("cloud sync failed: %s", message)
         return cfg, status

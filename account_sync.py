@@ -14,7 +14,6 @@ import json
 import os
 import secrets
 import uuid
-from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -24,10 +23,10 @@ from accounts import (
     clamp_temp_valid_hours,
     empty_account,
     list_accounts,
-    sanitize_account,
     sanitize_account_kind,
     sync_legacy_fields,
 )
+from value_util import now_iso, parse_iso
 
 SYNC_FORMAT = "cursortokentray.accounts.v1"
 SYNC_FORMAT_V2 = "cursortokentray.sync.v2"
@@ -55,33 +54,11 @@ SYNC_CONFIG_KEYS = (
 )
 
 
-def now_iso(now: datetime | None = None) -> str:
-    stamp = now or datetime.now(timezone.utc)
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
-    return stamp.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-
-
 def format_local(value: Any, fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     stamp = parse_iso(value)
     if stamp is None:
         return str(value or "").strip()
     return stamp.astimezone().strftime(fmt)
-
-
-def parse_iso(value: Any) -> datetime | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        stamp = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
-    return stamp.astimezone(timezone.utc)
 
 
 def compare_iso(left: Any, right: Any) -> int:

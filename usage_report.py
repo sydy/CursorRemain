@@ -22,7 +22,6 @@ from cursor_api import (
     is_grok_bot_model,
 )
 
-FILTERED_USAGE_ENDPOINT = "/api/dashboard/get-filtered-usage-events"
 USAGE_EVENTS_PAGE_SIZE = 100
 USAGE_EVENTS_MAX_PAGES = 50
 

@@ -78,6 +78,137 @@ class CloudSyncTests(unittest.TestCase):
         self.assertEqual(b["refresh_interval_minutes"], 12)
         self.assertEqual(b["tray_display_mode"], "dot")
 
+    def test_reconcile_retries_on_409(self) -> None:
+        from urllib.parse import urlparse
+
+        from account_sync import encrypt_envelope, snapshot_from_config
+        from accounts import upsert_account
+        from cloud_sync import reconcile
+
+        local = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+            "sync_enabled": True,
+            "sync_secret": "password1",
+            "cloud_access_token": "access",
+            "cloud_refresh_token": "refresh",
+            "sync_device_id": "dev-local",
+        }
+        upsert_account(local, "user_01L%3A%3Ajwt.part.sig", label="本机", activate=True)
+
+        remote_cfg = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+        }
+        upsert_account(remote_cfg, "user_01R%3A%3Ajwt.part.sig", label="云端", activate=True)
+        envelope = encrypt_envelope(snapshot_from_config(remote_cfg), "password1")
+        calls: list[tuple[str, str]] = []
+        responses = [
+            (200, {"revision": 1, "envelope": envelope}),
+            (409, {"detail": "revision conflict"}),
+            (200, {"revision": 2, "envelope": envelope}),
+            (200, {"revision": 3}),
+        ]
+
+        def requester(method, url, headers, body):
+            calls.append((method, urlparse(url).path))
+            return responses.pop(0)
+
+        _, status = reconcile(local, requester=requester)
+        self.assertTrue(status["ok"], status["message"])
+        self.assertTrue(status["pushed"])
+        self.assertEqual([c[0] for c in calls], ["GET", "PUT", "GET", "PUT"])
+        self.assertEqual([c[1] for c in calls], ["/v1/sync"] * 4)
+        ids = {a["id"] for a in local["accounts"]}
+        self.assertEqual(ids, {"user_01L", "user_01R"})
+        self.assertEqual(local["cloud_revision"], 3)
+
+    def test_reconcile_401_refresh_failure(self) -> None:
+        from urllib.parse import urlparse
+
+        from cloud_sync import reconcile
+
+        cfg = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+            "sync_enabled": True,
+            "sync_secret": "password1",
+            "cloud_access_token": "stale-access",
+            "cloud_refresh_token": "stale-refresh",
+            "cloud_email": "a@harker.cn",
+            "sync_device_id": "dev-1",
+        }
+        logs: list[str] = []
+        calls: list[tuple[str, str]] = []
+
+        def logger(msg: str, *args: object, **_kwargs: object) -> None:
+            logs.append(msg % args if args else msg)
+
+        def requester(method, url, headers, body):
+            calls.append((method, urlparse(url).path))
+            if urlparse(url).path == "/v1/auth/refresh":
+                return 401, {"detail": "refresh failed"}
+            return 401, {"detail": "unauthorized"}
+
+        _, status = reconcile(cfg, requester=requester, logger=logger)
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["message"], "登录已过期，请重新登录")
+        self.assertEqual(cfg["sync_last_error"], "登录已过期，请重新登录")
+        self.assertFalse(cfg["sync_enabled"])
+        self.assertEqual(cfg["cloud_access_token"], "")
+        self.assertEqual(cfg["cloud_refresh_token"], "")
+        self.assertEqual(cfg["sync_secret"], "")
+        self.assertEqual([c[1] for c in calls], ["/v1/sync", "/v1/auth/refresh"])
+        self.assertTrue(logs)
+        self.assertIn("登录已过期", logs[0])
+
+    def test_reconcile_wrong_passphrase(self) -> None:
+        from account_sync import encrypt_envelope, snapshot_from_config
+        from accounts import upsert_account
+        from cloud_sync import reconcile
+
+        remote_cfg = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+        }
+        upsert_account(remote_cfg, "user_01R%3A%3Ajwt.part.sig", label="云端", activate=True)
+        envelope = encrypt_envelope(snapshot_from_config(remote_cfg), "other-pass")
+        cfg = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+            "sync_enabled": True,
+            "sync_secret": "password1",
+            "cloud_access_token": "access",
+            "cloud_refresh_token": "refresh",
+            "sync_device_id": "dev-1",
+        }
+        logs: list[str] = []
+
+        def logger(msg: str, *args: object, **_kwargs: object) -> None:
+            logs.append(msg % args if args else msg)
+
+        def requester(method, url, headers, body):
+            return 200, {"revision": 1, "envelope": envelope}
+
+        _, status = reconcile(cfg, requester=requester, logger=logger)
+        self.assertFalse(status["ok"])
+        self.assertIn("口令", status["message"])
+        self.assertEqual(cfg["sync_last_error"], status["message"])
+        self.assertTrue(cfg["sync_enabled"])
+        self.assertEqual(cfg["cloud_access_token"], "access")
+        self.assertTrue(logs)
+        self.assertIn("口令", logs[0])
+
 
 if __name__ == "__main__":
     unittest.main()
