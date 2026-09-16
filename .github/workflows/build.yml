@@ -36,6 +36,14 @@ jobs:
     - name: Run C# core tests
       run: dotnet test windows/CursorTokenCore.Tests/CursorTokenCore.Tests.csproj -c Release --verbosity normal
 
+  build-server-image:
+    name: Build server image
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - name: Docker build
+      run: docker build -t cursor-sync:${{ github.sha }} ./server
+
   test-macos:
     name: Test (Swift)
     runs-on: macos-latest
@@ -148,8 +156,7 @@ jobs:
   build-macos:
     name: Build macOS
     runs-on: macos-latest
-    needs: [build-windows]
-    if: ${{ !cancelled() }}
+    needs: [test, test-macos]
     permissions:
       contents: write
     steps:
