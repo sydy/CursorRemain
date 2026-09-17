@@ -15,8 +15,46 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  version:
+    name: Read version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      tag: ${{ steps.read.outputs.tag }}
+      build: ${{ steps.read.outputs.build }}
+    steps:
+    - uses: actions/checkout@v7
+    - id: read
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        version="$(tr -d '[:space:]' < VERSION)"
+        if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Invalid VERSION: ${version}" >&2
+          exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+        echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+        if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+          if [[ "${GITHUB_REF_NAME}" != "v${version}" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match VERSION v${version}" >&2
+            exit 1
+          fi
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "Official ${GITHUB_REF_NAME} already exists; skip tag rebuild"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+        fi
+        echo "build=true" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test (Python + .NET)
+    needs: [version]
+    if: needs.version.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -26,7 +64,7 @@ jobs:
     - name: Install test deps
       run: python -m pip install -r requirements.txt -r server/requirements.txt
     - name: Run Python fixture tests
-      run: python -m unittest tests.test_fixtures tests.test_cursor_api tests.test_accounts tests.test_account_sync tests.test_cloud_sync tests.test_windows_packaging -v
+      run: python -m unittest tests.test_fixtures tests.test_cursor_api tests.test_accounts tests.test_account_sync tests.test_cloud_sync tests.test_windows_packaging tests.test_version -v
     - name: Run sync server tests
       working-directory: server
       run: PYTHONPATH=. python -m unittest tests.test_api -v
@@ -38,6 +76,8 @@ jobs:
 
   build-server-image:
     name: Build server image
+    needs: [version]
+    if: needs.version.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -46,6 +86,8 @@ jobs:
 
   test-macos:
     name: Test (Swift)
+    needs: [version]
+    if: needs.version.outputs.build == 'true'
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v7
@@ -82,6 +124,8 @@ jobs:
 
   build-windows:
     name: Build Windows
+    needs: [version]
+    if: needs.version.outputs.build == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -90,24 +134,20 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Publish framework-dependent exe
+      - name: Publish self-contained exe
         shell: pwsh
         run: |
-          dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win-files
-          echo "---- largest published files ----"
-          Get-ChildItem dist-win-files -File | Sort-Object Length -Descending | Select-Object -First 15 | ForEach-Object { '{0,8:N2} MB  {1}' -f ($_.Length/1MB), $_.Name }
-          $runtime = Get-ChildItem dist-win-files -File | Where-Object { $_.Name -match '^(coreclr|hostfxr|hostpolicy|System\.Private\.CoreLib)\.' }
-          if ($runtime) {
-            throw ("self-contained runtime leaked into publish: " + ($runtime.Name -join ', '))
-          }
-          dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win
+          dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win
       - name: Report exe size
         shell: pwsh
         run: |
           Get-ChildItem dist-win | ForEach-Object { '{0} {1:N2} MB' -f $_.Name, ($_.Length / 1MB) }
           $exe = Get-Item dist-win\CursorRemain.exe
-          if ($exe.Length -gt 15MB) {
-            throw ("framework-dependent exe is unexpectedly large: {0:N2} MB" -f ($exe.Length/1MB))
+          if ($exe.Length -lt 20MB) {
+            throw ("self-contained exe is unexpectedly small: {0:N2} MB" -f ($exe.Length/1MB))
+          }
+          if ($exe.Length -gt 120MB) {
+            throw ("self-contained exe is unexpectedly large: {0:N2} MB" -f ($exe.Length/1MB))
           }
       - name: Zip onefile
         shell: pwsh
@@ -123,7 +163,7 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File ./windows/packaging/build_installer.ps1 -PublishDir dist-win -OutputDir . -SourceRevisionId $env:GITHUB_SHA
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./windows/packaging/build_installer.ps1 -PublishDir dist-win -OutputDir . -SourceRevisionId $env:GITHUB_SHA -AppVersion "${{ needs.version.outputs.version }}"
       - uses: actions/upload-artifact@v6
         if: github.event_name != 'pull_request'
         continue-on-error: true
@@ -151,17 +191,20 @@ jobs:
             CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           body: |
-            最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 提供安装版 `CursorRemain-windows-setup.exe` 与 zip 便携包（均为 .NET 8 框架依赖，需本机 Desktop Runtime），macOS 为 Swift `.app`。
-            程序已更名为 CursorRemain；旧版自动更新仍可下载 CursorTokenTray-*.zip。
-            从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorRemain.app`。
-            正式版请打 `v*` 标签。
+            滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
+            Windows 安装版与 zip 为自包含包，无需另装 .NET；macOS 为 Swift `.app`。
       - name: Refresh latest release notes and tag
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: bash .github/scripts/update-latest-release.sh
+      - name: Publish official v* release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: bash .github/scripts/publish-official-release.sh CursorRemain-windows.zip CursorRemain-windows-setup.exe CursorTokenTray-windows.zip
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
@@ -171,11 +214,13 @@ jobs:
             CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           generate_release_notes: true
+          make_latest: true
 
   build-macos:
     name: Build macOS
     runs-on: macos-latest
-    needs: [test, test-macos]
+    needs: [version, test, test-macos]
+    if: needs.version.outputs.build == 'true'
     permissions:
       contents: write
     steps:
@@ -216,17 +261,20 @@ jobs:
             CursorRemain-macos.zip
             CursorTokenTray-macos.zip
           body: |
-            最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 提供安装版 `CursorRemain-windows-setup.exe` 与 zip 便携包（均为 .NET 8 框架依赖，需本机 Desktop Runtime），macOS 为 Swift `.app`。
-            程序已更名为 CursorRemain；旧版自动更新仍可下载 CursorTokenTray-*.zip。
-            从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorRemain.app`。
-            正式版请打 `v*` 标签。
+            滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
+            Windows 安装版与 zip 为自包含包，无需另装 .NET；macOS 为 Swift `.app`。
       - name: Refresh latest release notes and tag
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: bash .github/scripts/update-latest-release.sh
+      - name: Publish official v* release
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: bash .github/scripts/publish-official-release.sh CursorRemain-macos.zip CursorTokenTray-macos.zip
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
@@ -235,3 +283,4 @@ jobs:
             CursorRemain-macos.zip
             CursorTokenTray-macos.zip
           generate_release_notes: true
+          make_latest: true

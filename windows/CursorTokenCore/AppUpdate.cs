@@ -18,6 +18,8 @@ public sealed class AppReleaseAsset
 public sealed class AppRelease
 {
     public string Tag { get; init; } = "";
+    public string Version { get; init; } = "";
+    public string Body { get; init; } = "";
     public string CommitSha { get; init; } = "";
     public string PageUrl { get; init; } = "";
     public string PublishedAt { get; init; } = "";
@@ -47,13 +49,28 @@ public static class AppUpdate
     public const string LegacyWindowsExeName = "CursorTokenTray.exe";
     public const string MacAppName = "CursorRemain.app";
     public const string LegacyMacAppName = "CursorTokenTray.app";
-    public const string ProductVersion = "2.0.0";
-    public const long MaxZipBytes = 80L * 1024 * 1024;
+    public const long MaxZipBytes = 140L * 1024 * 1024;
     public static readonly TimeSpan AutoCheckInterval = TimeSpan.FromHours(12);
     public static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(20);
 
+    public static string ProductVersion
+    {
+        get
+        {
+            var version = VersionFromInformational(
+                typeof(AppUpdate).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
+            return version.Length > 0 ? version : "0.0.0";
+        }
+    }
+
+    public static string OfficialLatestPageUrl =>
+        $"https://github.com/{RepoOwner}/{RepoName}/releases/latest";
+
     public static string LatestReleasePageUrl =>
         $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{LatestTag}";
+
+    public static string ApiOfficialLatestUrl =>
+        $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
 
     public static string ApiLatestReleaseUrl =>
         $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/tags/{LatestTag}";
@@ -63,8 +80,11 @@ public static class AppUpdate
 
     public static string UserAgent => $"CursorRemain/{ProductVersion} (+https://github.com/{RepoOwner}/{RepoName})";
 
-    public static string AssetDownloadUrl(string assetName) =>
-        $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{LatestTag}/{assetName}";
+    public static string AssetDownloadUrl(string assetName, string? tag = null)
+    {
+        var releaseTag = string.IsNullOrWhiteSpace(tag) ? LatestTag : tag.Trim();
+        return $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{releaseTag}/{assetName}";
+    }
 
     public static bool ShouldFallbackFromApi(int statusCode) =>
         statusCode is 401 or 403 or 404 or 429 or >= 500;
@@ -109,6 +129,92 @@ public static class AppUpdate
         var info = informational ?? "";
         var plus = info.LastIndexOf('+');
         return plus >= 0 ? NormalizeSha(info[(plus + 1)..]) : "";
+    }
+
+    public static string VersionFromInformational(string? informational)
+    {
+        var info = (informational ?? "").Trim();
+        if (info.Length == 0) return "";
+        var plus = info.IndexOf('+');
+        if (plus >= 0) info = info[..plus];
+        return NormalizeProductVersion(info);
+    }
+
+    public static string NormalizeProductVersion(string? raw)
+    {
+        var value = (raw ?? "").Trim();
+        if (value.StartsWith('v') || value.StartsWith('V')) value = value[1..];
+        var match = Regex.Match(value, @"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?");
+        return match.Success ? match.Value : "";
+    }
+
+    public static string ExtractProductVersion(string? text)
+    {
+        var raw = text ?? "";
+        var tagged = Regex.Match(raw, @"(?i)\bv?(\d+\.\d+\.\d+)\b");
+        if (tagged.Success) return tagged.Groups[1].Value;
+        return NormalizeProductVersion(raw);
+    }
+
+    public static string ProductVersionFromRelease(string? tag, string? body = null)
+    {
+        var fromTag = NormalizeProductVersion(tag);
+        if (fromTag.Length > 0) return fromTag;
+        var raw = body ?? "";
+        var labeled = Regex.Match(raw, @"(?i)(?:\*\*)?版本(?:\*\*)?\s*[:：]\s*`?v?(\d+\.\d+\.\d+)");
+        if (labeled.Success) return labeled.Groups[1].Value;
+        return ExtractProductVersion(raw);
+    }
+
+    public static int CompareProductVersions(string? left, string? right)
+    {
+        if (!TryParseProductVersion(left, out var a) || !TryParseProductVersion(right, out var b))
+            return 0;
+        var cmp = a[0].CompareTo(b[0]);
+        if (cmp != 0) return cmp;
+        cmp = a[1].CompareTo(b[1]);
+        if (cmp != 0) return cmp;
+        return a[2].CompareTo(b[2]);
+    }
+
+    public static bool TryParseProductVersion(string? raw, out int[] parts)
+    {
+        parts = [0, 0, 0];
+        var version = NormalizeProductVersion(raw);
+        if (version.Length == 0) return false;
+        var core = version.Split('-', 2)[0];
+        var bits = core.Split('.');
+        if (bits.Length != 3) return false;
+        for (var i = 0; i < 3; i++)
+        {
+            if (!int.TryParse(bits[i], NumberStyles.None, CultureInfo.InvariantCulture, out var n) || n < 0)
+                return false;
+            parts[i] = n;
+        }
+        return true;
+    }
+
+    public static string FormatReleaseLabel(string? version, string? sha)
+    {
+        var ver = NormalizeProductVersion(version);
+        var shortSha = ShortSha(sha);
+        if (ver.Length > 0 && shortSha.Length > 0 && shortSha != LatestTag)
+            return $"{ver} ({shortSha})";
+        if (ver.Length > 0) return ver;
+        return shortSha.Length > 0 ? shortSha : LatestTag;
+    }
+
+    public static AppRelease? ChooseRelease(AppRelease? official, AppRelease? rolling, string? currentVersion = null)
+    {
+        if (official is null) return rolling;
+        if (rolling is null) return official;
+        var current = NormalizeProductVersion(currentVersion ?? ProductVersion);
+        var officialVer = NormalizeProductVersion(official.Version);
+        if (officialVer.Length == 0)
+            officialVer = ProductVersionFromRelease(official.Tag, official.Body);
+        if (current.Length > 0 && officialVer.Length > 0 && CompareProductVersions(officialVer, current) > 0)
+            return official;
+        return rolling;
     }
 
     public static string CurrentCommitSha()
@@ -197,7 +303,12 @@ public static class AppUpdate
     {
         var tag = Str(raw, "tag_name");
         var page = Str(raw, "html_url");
-        if (page.Length == 0) page = LatestReleasePageUrl;
+        if (page.Length == 0)
+        {
+            page = tag.Length > 0 && tag != LatestTag
+                ? $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{tag}"
+                : LatestReleasePageUrl;
+        }
         var body = Str(raw, "body");
         var sha = ExtractSha(body);
         if (sha.Length == 0) sha = NormalizeSha(Str(raw, "target_commitish"));
@@ -235,6 +346,8 @@ public static class AppUpdate
         return new AppRelease
         {
             Tag = tag.Length == 0 ? LatestTag : tag,
+            Version = ProductVersionFromRelease(tag, body),
+            Body = body,
             CommitSha = sha,
             PageUrl = page,
             PublishedAt = Str(raw, "published_at"),
@@ -242,10 +355,10 @@ public static class AppUpdate
         };
     }
 
-    public static List<AppReleaseAsset> KnownAssets() =>
+    public static List<AppReleaseAsset> KnownAssets(string? tag = null) =>
     [
-        new() { Name = WindowsAssetName, Url = AssetDownloadUrl(WindowsAssetName) },
-        new() { Name = MacosAssetName, Url = AssetDownloadUrl(MacosAssetName) },
+        new() { Name = WindowsAssetName, Url = AssetDownloadUrl(WindowsAssetName, tag) },
+        new() { Name = MacosAssetName, Url = AssetDownloadUrl(MacosAssetName, tag) },
     ];
 
     public static AppRelease ParseReleasePage(string html)
@@ -258,9 +371,12 @@ public static class AppUpdate
         }
         if (sha.Length == 0)
             throw new InvalidOperationException("发布页里找不到提交哈希");
+        var version = ProductVersionFromRelease("", html);
         return new AppRelease
         {
             Tag = LatestTag,
+            Version = version,
+            Body = html ?? "",
             CommitSha = sha,
             PageUrl = LatestReleasePageUrl,
             Assets = KnownAssets(),
@@ -270,7 +386,7 @@ public static class AppUpdate
     public static string HttpStatusMessage(int statusCode) => statusCode switch
     {
         401 or 403 => "GitHub 接口拒绝访问（403）",
-        404 => "找不到 Latest 发布",
+        404 => "找不到正式版或 Latest 发布",
         429 => "GitHub 请求过于频繁，请稍后重试",
         _ => $"GitHub {statusCode}",
     };
@@ -326,7 +442,8 @@ public static class AppUpdate
         string assetName,
         string currentSha,
         string installedSha = "",
-        long installedAssetId = 0)
+        long installedAssetId = 0,
+        string? currentVersion = null)
     {
         var asset = FindPreferredAsset(release, assetName);
         if (asset is null)
@@ -335,6 +452,19 @@ public static class AppUpdate
             return new UpdateDecision { Message = "更新地址无效" };
         if (asset.Size > MaxZipBytes)
             return new UpdateDecision { Message = "安装包过大，已取消更新" };
+
+        var remoteVersion = NormalizeProductVersion(release.Version);
+        if (remoteVersion.Length == 0)
+            remoteVersion = ProductVersionFromRelease(release.Tag, release.Body);
+        var localVersion = NormalizeProductVersion(currentVersion ?? ProductVersion);
+        if (remoteVersion.Length > 0 && localVersion.Length > 0)
+        {
+            var cmp = CompareProductVersions(remoteVersion, localVersion);
+            if (cmp < 0)
+                return new UpdateDecision { UpToDate = true, Message = "已是最新版本", Release = release, Asset = asset };
+            if (cmp > 0)
+                return Available(release, asset);
+        }
 
         var localSha = NormalizeSha(currentSha);
         if (localSha.Length == 0) localSha = NormalizeSha(installedSha);
@@ -365,7 +495,7 @@ public static class AppUpdate
         new()
         {
             Available = true,
-            Message = $"发现新版本 {ShortSha(release.CommitSha)}",
+            Message = $"发现新版本 {FormatReleaseLabel(release.Version.Length > 0 ? release.Version : ProductVersionFromRelease(release.Tag, release.Body), release.CommitSha)}",
             Release = release,
             Asset = asset,
         };

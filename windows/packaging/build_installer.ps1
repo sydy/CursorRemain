@@ -4,7 +4,7 @@ param(
     [string]$PublishDir = "",
     [string]$OutputDir = "",
     [string]$SourceRevisionId = "",
-    [string]$AppVersion = "2.0.0"
+    [string]$AppVersion = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -19,6 +19,13 @@ $exe = Join-Path $PublishDir "CursorRemain.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "Missing $exe. Publish the app into $PublishDir first."
 }
+if (-not $AppVersion) {
+    $versionFile = Join-Path $RepoRoot "VERSION"
+    if (Test-Path -LiteralPath $versionFile) {
+        $AppVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+    }
+}
+if (-not $AppVersion) { $AppVersion = "0.0.0" }
 
 function Find-ISCC {
     foreach ($c in @(
@@ -94,10 +101,10 @@ if (-not (Test-Path -LiteralPath $out)) {
     throw "Installer was not created: $out"
 }
 $item = Get-Item -LiteralPath $out
-if ($item.Length -lt 100KB) {
-    throw "Installer is unexpectedly small: $($item.Length) bytes"
+if ($item.Length -lt 8MB) {
+    throw "Self-contained installer is unexpectedly small: $($item.Length) bytes"
 }
-if ($item.Length -gt 30MB) {
+if ($item.Length -gt 160MB) {
     throw ("Installer is unexpectedly large: {0:N2} MB" -f ($item.Length / 1MB))
 }
 "{0} {1:N2} MB" -f $item.Name, ($item.Length / 1MB)

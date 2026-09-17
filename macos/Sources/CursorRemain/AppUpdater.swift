@@ -33,7 +33,8 @@ enum AppUpdater {
                 assetName: AppUpdate.macosAssetName,
                 currentSha: AppUpdate.currentCommitSha,
                 installedSha: cfg.updateInstalledSha,
-                installedAssetId: cfg.updateInstalledAssetId
+                installedAssetId: cfg.updateInstalledAssetId,
+                currentVersion: AppUpdate.productVersion
             )
             rememberCheck(store: store, error: decision.upToDate ? "" : (decision.available ? "" : decision.message))
             if decision.upToDate { return decision.message }
@@ -75,34 +76,62 @@ enum AppUpdater {
     }
 
     static func openDownloadPage(_ raw: String? = nil) {
-        let url = URL(string: raw ?? "") ?? AppUpdate.latestReleasePageURL
+        let url = URL(string: raw ?? "") ?? AppUpdate.officialLatestPageURL
         NSWorkspace.shared.open(url)
     }
 
     private static func fetchLatest() async throws -> AppRelease {
+        var apiError: Error?
+        var official: AppRelease?
+        var rolling: AppRelease?
         do {
-            var release = try await getJSON(AppUpdate.apiLatestReleaseURL, parse: AppUpdate.parseRelease, timeout: 10)
+            official = try await fetchApiRelease(AppUpdate.apiOfficialLatestURL)
+        } catch {
+            if let status = (error as? CursorAPIError)?.statusCode, status != 404, !AppUpdate.shouldFallbackFromApi(status), status > 0 {
+                throw error
+            }
+            if let status = (error as? CursorAPIError)?.statusCode, status != 404 {
+                apiError = error
+            }
+        }
+        do {
+            var release = try await fetchApiRelease(AppUpdate.apiLatestReleaseURL)
             if release.commitSha.isEmpty {
                 if let sha = try? await getText(AppUpdate.apiLatestRefURL, accept: "application/vnd.github+json", timeout: 8) {
                     let parsed = AppUpdate.parseTagRefSha(sha)
                     if !parsed.isEmpty { release.commitSha = parsed }
                 }
             }
-            if release.assets.isEmpty {
-                release.assets = AppUpdate.knownAssets()
-            }
-            return release
+            rolling = release
         } catch {
-            if let status = (error as? CursorAPIError)?.statusCode, !AppUpdate.shouldFallbackFromApi(status), status > 0 {
-                throw error
-            }
-            do {
-                let html = try await getText(AppUpdate.latestReleasePageURL, accept: "text/html", timeout: 20)
-                return try AppUpdate.parseReleasePage(html)
-            } catch {
-                throw CursorAPIError("无法检查更新（\(shortError(error))）。也可打开下载页手动安装")
+            if apiError == nil, let status = (error as? CursorAPIError)?.statusCode, status != 404 {
+                apiError = error
+            } else if apiError == nil {
+                apiError = error
             }
         }
+        if let chosen = AppUpdate.chooseRelease(official: official, rolling: rolling, currentVersion: AppUpdate.productVersion) {
+            return chosen
+        }
+        do {
+            do {
+                let html = try await getText(AppUpdate.officialLatestPageURL, accept: "text/html", timeout: 20)
+                return try AppUpdate.parseReleasePage(html)
+            } catch {
+                let html = try await getText(AppUpdate.latestReleasePageURL, accept: "text/html", timeout: 20)
+                return try AppUpdate.parseReleasePage(html)
+            }
+        } catch {
+            throw CursorAPIError("无法检查更新（\(shortError(apiError ?? error))）。也可打开下载页手动安装")
+        }
+    }
+
+    private static func fetchApiRelease(_ url: URL) async throws -> AppRelease {
+        var release = try await getJSON(url, parse: AppUpdate.parseRelease, timeout: 10)
+        if release.assets.isEmpty {
+            release.assets = AppUpdate.knownAssets(release.tag)
+        }
+        return release
     }
 
     private static func downloadAndStage(_ asset: AppReleaseAsset) async throws -> URL {

@@ -187,7 +187,7 @@
         "tag_name": "latest",
         "html_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
         "published_at": "2026-09-14T03:20:00Z",
-        "body": "最新 `main` 构建。\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+        "body": "最新 `main` 构建。\n- **版本**: `2.1.0`\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
         "assets": [
           {
             "id": 101,
@@ -207,6 +207,7 @@
       },
       "expected": {
         "tag": "latest",
+        "version": "2.1.0",
         "sha": "518192b000000000000000000000000000000000",
         "page_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
         "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows.zip",
@@ -214,6 +215,43 @@
         "windows_asset_id": 101,
         "macos_asset_id": 102,
         "windows_updated_at": "2026-09-14T03:21:00Z"
+      }
+    },
+    {
+      "name": "official_v2_1_0",
+      "json": {
+        "tag_name": "v2.1.0",
+        "html_url": "https://github.com/sydy/CursorTokenTray/releases/tag/v2.1.0",
+        "target_commitish": "518192b000000000000000000000000000000000",
+        "published_at": "2026-09-17T10:00:00Z",
+        "body": "Cursor 余量 **2.1.0** 正式版。\n- **版本**: `2.1.0`\n- **提交**: `518192b000000000000000000000000000000000`",
+        "assets": [
+          {
+            "id": 201,
+            "name": "CursorRemain-windows.zip",
+            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-windows.zip",
+            "size": 62000000,
+            "updated_at": "2026-09-17T10:01:00Z"
+          },
+          {
+            "id": 202,
+            "name": "CursorRemain-macos.zip",
+            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-macos.zip",
+            "size": 5100000,
+            "updated_at": "2026-09-17T10:02:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "tag": "v2.1.0",
+        "version": "2.1.0",
+        "sha": "518192b000000000000000000000000000000000",
+        "page_url": "https://github.com/sydy/CursorTokenTray/releases/tag/v2.1.0",
+        "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-windows.zip",
+        "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-macos.zip",
+        "windows_asset_id": 201,
+        "macos_asset_id": 202,
+        "windows_updated_at": "2026-09-17T10:01:00Z"
       }
     }
   ],
@@ -294,6 +332,87 @@
       "clear_release_sha": true,
       "available": false,
       "up_to_date": true
+    },
+    {
+      "name": "newer_official_version_updates",
+      "tag": "v2.2.0",
+      "version": "2.2.0",
+      "current_version": "2.1.0",
+      "current_sha": "518192b000000000000000000000000000000000",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "windows",
+      "available": true,
+      "up_to_date": false
+    },
+    {
+      "name": "older_official_version_does_not_downgrade",
+      "tag": "v2.0.0",
+      "version": "2.0.0",
+      "current_version": "2.1.0",
+      "current_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "installed_sha": "",
+      "installed_asset_id": 0,
+      "asset": "windows",
+      "available": false,
+      "up_to_date": true
+    }
+  ],
+  "extract_version": [
+    {
+      "tag": "v2.1.0",
+      "body": "",
+      "version": "2.1.0"
+    },
+    {
+      "tag": "latest",
+      "body": "- **版本**: `2.1.0`",
+      "version": "2.1.0"
+    },
+    {
+      "tag": "latest",
+      "body": "no version here",
+      "version": ""
+    }
+  ],
+  "compare_versions": [
+    {"left": "2.1.0", "right": "2.0.0", "cmp": 1},
+    {"left": "2.1.0", "right": "2.1.0", "cmp": 0},
+    {"left": "2.1.0", "right": "2.2.0", "cmp": -1},
+    {"left": "v2.1.0", "right": "2.1.0", "cmp": 0}
+  ],
+  "choose_release": [
+    {
+      "name": "official_newer",
+      "official_tag": "v2.2.0",
+      "official_version": "2.2.0",
+      "rolling_tag": "latest",
+      "current_version": "2.1.0",
+      "choice": "official"
+    },
+    {
+      "name": "same_version_keeps_rolling_patches",
+      "official_tag": "v2.1.0",
+      "official_version": "2.1.0",
+      "rolling_tag": "latest",
+      "current_version": "2.1.0",
+      "choice": "rolling"
+    },
+    {
+      "name": "dev_ahead_uses_rolling",
+      "official_tag": "v2.1.0",
+      "official_version": "2.1.0",
+      "rolling_tag": "latest",
+      "current_version": "2.2.0",
+      "choice": "rolling"
+    },
+    {
+      "name": "no_official_uses_rolling",
+      "official_tag": "",
+      "official_version": "",
+      "rolling_tag": "latest",
+      "current_version": "2.1.0",
+      "choice": "rolling"
     }
   ]
 }

@@ -1,4 +1,4 @@
-"""Windows 发布必须是框架依赖，不能把 CLR/BCL 打进包。"""
+"""Windows 发布必须是自包含包，并带上 VERSION 里的正式版本号。"""
 
 from __future__ import annotations
 
@@ -9,36 +9,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class FrameworkDependentPublishTests(unittest.TestCase):
-    def test_csproj_is_framework_dependent(self) -> None:
+class SelfContainedPublishTests(unittest.TestCase):
+    def test_csproj_is_self_contained(self) -> None:
         csproj = (ROOT / "windows" / "CursorRemain" / "CursorRemain.csproj").read_text(
             encoding="utf-8"
         )
         self.assertIn("<PublishSingleFile>true</PublishSingleFile>", csproj)
-        self.assertIn("<SelfContained>false</SelfContained>", csproj)
-        self.assertNotIn("<SelfContained>true</SelfContained>", csproj)
-        self.assertIn("<EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>", csproj)
-        self.assertNotIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
+        self.assertIn("<SelfContained>true</SelfContained>", csproj)
+        self.assertNotIn("<SelfContained>false</SelfContained>", csproj)
+        self.assertIn("<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>", csproj)
+        self.assertNotIn("<EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>", csproj)
         self.assertIn("<InvariantGlobalization>true</InvariantGlobalization>", csproj)
-        self.assertIn("<RollForward>LatestMinor</RollForward>", csproj)
 
-    def test_ci_publish_is_framework_dependent(self) -> None:
+    def test_ci_publish_is_self_contained(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
-        self.assertIn("--self-contained false", workflow)
-        self.assertNotIn("--self-contained true", workflow)
-        self.assertIn("EnableCompressionInSingleFile=false", workflow)
-        self.assertNotIn("EnableCompressionInSingleFile=true", workflow)
-        self.assertIn("coreclr", workflow)
-        self.assertIn("15MB", workflow)
+        self.assertIn("--self-contained true", workflow)
+        self.assertNotIn("--self-contained false", workflow)
+        self.assertIn("EnableCompressionInSingleFile=true", workflow)
+        self.assertNotIn("EnableCompressionInSingleFile=false", workflow)
+        self.assertIn("20MB", workflow)
+        self.assertIn("120MB", workflow)
         self.assertIn("SourceRevisionId", workflow)
+        self.assertIn("self-contained exe is unexpectedly small", workflow)
+        bat = (ROOT / "build.bat").read_text(encoding="utf-8")
+        self.assertIn("--self-contained true", bat)
+        self.assertNotIn("--self-contained false", bat)
 
-    def test_runtime_readme_is_shipped(self) -> None:
+    def test_runtime_readme_does_not_require_dotnet(self) -> None:
         readme = ROOT / "windows" / "packaging" / "首次运行.txt"
         self.assertTrue(readme.is_file())
         text = readme.read_text(encoding="utf-8")
-        self.assertIn("Desktop Runtime", text)
-        self.assertIn("windowsdesktop-runtime-win-x64.exe", text)
-        self.assertIn("Microsoft.WindowsDesktop.App", text)
+        self.assertIn("无需另装", text)
+        self.assertNotIn("windowsdesktop-runtime-win-x64.exe", text)
+        self.assertNotIn("Microsoft.WindowsDesktop.App", text)
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         self.assertIn("首次运行.txt", workflow)
         self.assertIn("CursorRemain.exe", text)
@@ -48,17 +51,17 @@ class FrameworkDependentPublishTests(unittest.TestCase):
 
 
 class WindowsInstallerPackagingTests(unittest.TestCase):
-    def test_inno_script_is_per_user_framework_dependent(self) -> None:
+    def test_inno_script_is_per_user_self_contained(self) -> None:
         iss = (ROOT / "windows" / "packaging" / "setup.iss").read_text(encoding="utf-8")
         self.assertIn("OutputBaseFilename=CursorRemain-windows-setup", iss)
         self.assertIn("DefaultDirName={localappdata}\\Programs\\CursorRemain", iss)
         self.assertIn("PrivilegesRequired=lowest", iss)
         self.assertIn("CursorRemain.exe", iss)
-        self.assertIn("windowsdesktop-runtime-win-x64.exe", iss)
-        self.assertIn("Microsoft.WindowsDesktop.App", iss)
+        self.assertNotIn("windowsdesktop-runtime-win-x64.exe", iss)
+        self.assertNotIn("Microsoft.WindowsDesktop.App", iss)
+        self.assertIn("releases/latest", iss)
         self.assertIn("Local\\CursorTokenTray_SingleInstance_v2", iss)
         self.assertIn("ChineseSimplified.isl", iss)
-        self.assertNotIn("SelfContained=yes", iss)
         self.assertIn("CursorRemain", iss)
         self.assertIn("Software\\Microsoft\\Windows\\CurrentVersion\\Run", iss)
 
@@ -77,6 +80,10 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
         self.assertGreaterEqual(workflow.count("CursorRemain-windows-setup.exe"), 3)
         notes = (ROOT / ".github" / "scripts" / "update-latest-release.sh").read_text(encoding="utf-8")
         self.assertIn("CursorRemain-windows-setup.exe", notes)
+        official = (ROOT / ".github" / "scripts" / "publish-official-release.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Cursor 余量", official)
 
     def test_installer_ps1_is_ascii(self) -> None:
         raw = (ROOT / "windows" / "packaging" / "build_installer.ps1").read_bytes()

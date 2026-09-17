@@ -53,6 +53,8 @@ public class AppUpdateTests
             var parsed = AppUpdate.ParseRelease(row.GetProperty("json").GetRawText());
             var exp = row.GetProperty("expected");
             Assert.Equal(exp.GetProperty("tag").GetString(), parsed.Tag);
+            if (exp.TryGetProperty("version", out var versionEl))
+                Assert.Equal(versionEl.GetString(), parsed.Version);
             Assert.Equal(exp.GetProperty("sha").GetString(), parsed.CommitSha);
             Assert.Equal(exp.GetProperty("page_url").GetString(), parsed.PageUrl);
             Assert.Equal(exp.GetProperty("windows_url").GetString(), AppUpdate.FindAsset(parsed, AppUpdate.WindowsAssetName)?.Url);
@@ -87,15 +89,56 @@ public class AppUpdateTests
                     Assets = sample.Assets,
                 };
             }
+            if (row.TryGetProperty("tag", out var tagEl))
+            {
+                release = new AppRelease
+                {
+                    Tag = tagEl.GetString() ?? release.Tag,
+                    Version = row.TryGetProperty("version", out var verEl) ? verEl.GetString() ?? "" : release.Version,
+                    Body = release.Body,
+                    CommitSha = release.CommitSha,
+                    PageUrl = release.PageUrl,
+                    PublishedAt = release.PublishedAt,
+                    Assets = release.Assets,
+                };
+            }
             var asset = row.GetProperty("asset").GetString() == "macos" ? AppUpdate.MacosAssetName : AppUpdate.WindowsAssetName;
+            var currentVersion = row.TryGetProperty("current_version", out var curVer)
+                ? curVer.GetString()
+                : AppUpdate.ProductVersion;
             var decision = AppUpdate.Evaluate(
                 release,
                 asset,
                 row.GetProperty("current_sha").GetString() ?? "",
                 row.GetProperty("installed_sha").GetString() ?? "",
-                row.GetProperty("installed_asset_id").GetInt64());
+                row.GetProperty("installed_asset_id").GetInt64(),
+                currentVersion);
             Assert.Equal(row.GetProperty("available").GetBoolean(), decision.Available);
             Assert.Equal(row.GetProperty("up_to_date").GetBoolean(), decision.UpToDate);
+        }
+
+        foreach (var row in root.GetProperty("extract_version").EnumerateArray())
+            Assert.Equal(row.GetProperty("version").GetString(), AppUpdate.ProductVersionFromRelease(row.GetProperty("tag").GetString(), row.GetProperty("body").GetString()));
+
+        foreach (var row in root.GetProperty("compare_versions").EnumerateArray())
+            Assert.Equal(row.GetProperty("cmp").GetInt32(), AppUpdate.CompareProductVersions(row.GetProperty("left").GetString(), row.GetProperty("right").GetString()));
+
+        foreach (var row in root.GetProperty("choose_release").EnumerateArray())
+        {
+            AppRelease? official = null;
+            var officialTag = row.GetProperty("official_tag").GetString() ?? "";
+            if (officialTag.Length > 0)
+            {
+                official = new AppRelease
+                {
+                    Tag = officialTag,
+                    Version = row.GetProperty("official_version").GetString() ?? "",
+                    Assets = sample.Assets,
+                };
+            }
+            var rolling = new AppRelease { Tag = row.GetProperty("rolling_tag").GetString() ?? "latest", Assets = sample.Assets };
+            var chosen = AppUpdate.ChooseRelease(official, rolling, row.GetProperty("current_version").GetString());
+            Assert.Equal(row.GetProperty("choice").GetString(), chosen?.Tag == official?.Tag && official is not null ? "official" : "rolling");
         }
     }
 
@@ -127,13 +170,30 @@ public class AppUpdateTests
     [Fact]
     public void DisplayVersionAndInformationalSha()
     {
-        Assert.Equal("2.0.0", AppUpdate.DisplayVersion(""));
-        Assert.Equal("2.0.0 (518192b)", AppUpdate.DisplayVersion("518192b000000000000000000000000000000000"));
-        Assert.Equal("518192b", AppUpdate.ShaFromInformationalVersion("2.0.0+518192b"));
-        Assert.Equal("", AppUpdate.ShaFromInformationalVersion("2.0.0"));
+        var version = AppUpdate.ProductVersion;
+        Assert.False(string.IsNullOrWhiteSpace(version));
+        Assert.Equal(version, AppUpdate.DisplayVersion(""));
+        Assert.Equal($"{version} (518192b)", AppUpdate.DisplayVersion("518192b000000000000000000000000000000000"));
+        Assert.Equal("518192b", AppUpdate.ShaFromInformationalVersion(version + "+518192b"));
+        Assert.Equal("", AppUpdate.ShaFromInformationalVersion(version));
+        Assert.Equal(version, AppUpdate.NormalizeProductVersion("v" + version));
+        Assert.True(AppUpdate.CompareProductVersions(version, version) == 0);
         Assert.True(AppUpdate.ShouldFallbackFromApi(403));
         Assert.True(AppUpdate.ShouldFallbackFromApi(429));
         Assert.False(AppUpdate.ShouldFallbackFromApi(400));
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 12 && dir is not null; i++)
+        {
+            var candidate = Path.Combine(dir.FullName, "VERSION");
+            if (File.Exists(candidate))
+            {
+                Assert.Equal(File.ReadAllText(candidate).Trim(), version);
+                return;
+            }
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException("VERSION");
     }
 
     [Fact]

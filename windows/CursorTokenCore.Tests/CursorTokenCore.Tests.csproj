@@ -14,5 +14,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\fixtures\*.json" Link="fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\VERSION" Link="VERSION" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
