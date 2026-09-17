@@ -1,6 +1,6 @@
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 sealed partial class TrayContext
 {

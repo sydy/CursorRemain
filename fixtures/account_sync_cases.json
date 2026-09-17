@@ -1,16 +1,16 @@
 {
-  "filename": "CursorTokenTray.accounts.sync",
+  "filename": "CursorRemain.accounts.sync",
   "format": "cursortokentray.accounts.v1",
   "kdf": "pbkdf2-sha256",
   "iterations": 210000,
   "resolve_path": [
     {
       "input": "/tmp/cloud-sync",
-      "output_suffix": "CursorTokenTray.accounts.sync"
+      "output_suffix": "CursorRemain.accounts.sync"
     },
     {
       "input": "/tmp/cloud-sync/",
-      "output_suffix": "CursorTokenTray.accounts.sync"
+      "output_suffix": "CursorRemain.accounts.sync"
     },
     {
       "input": "/tmp/export/accounts.sync",

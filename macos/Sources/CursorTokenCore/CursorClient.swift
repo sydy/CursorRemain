@@ -136,7 +136,7 @@ public struct CursorClient: Sendable {
         request.setValue("WorkosCursorSessionToken=\(token)", forHTTPHeaderField: "Cookie")
         request.setValue("https://cursor.com", forHTTPHeaderField: "Origin")
         request.setValue("https://cursor.com/dashboard", forHTTPHeaderField: "Referer")
-        request.setValue("Mozilla/5.0 CursorTokenTray/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 CursorRemain/1.0", forHTTPHeaderField: "User-Agent")
         if let body {
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }

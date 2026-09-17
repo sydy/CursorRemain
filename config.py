@@ -12,12 +12,62 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
-def app_config_dir() -> Path:
+APP_DIR_NAME = "CursorRemain"
+LEGACY_APP_DIR_NAME = "CursorTokenTray"
+
+
+def _platform_config_dir(name: str) -> Path:
     if sys.platform == "win32":
-        return Path(os.environ.get("APPDATA", Path.home())) / "CursorTokenTray"
+        return Path(os.environ.get("APPDATA", Path.home())) / name
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "CursorTokenTray"
-    return Path.home() / ".config" / "CursorTokenTray"
+        return Path.home() / "Library" / "Application Support" / name
+    return Path.home() / ".config" / name
+
+
+def migrate_legacy_config_dir(source: Path, dest: Path) -> bool:
+    """Move or copy an old CursorTokenTray folder into CursorRemain."""
+    try:
+        source = source.resolve()
+        dest = dest.resolve()
+    except OSError:
+        return False
+    if source == dest:
+        return False
+    dest_config = dest / "config.json"
+    if dest_config.is_file():
+        return False
+    if not source.exists():
+        return False
+    try:
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                source.rename(dest)
+                return True
+            except OSError:
+                dest.mkdir(parents=True, exist_ok=True)
+                _copy_dir(source, dest)
+                return dest_config.is_file()
+        _copy_dir(source, dest)
+        return dest_config.is_file()
+    except OSError:
+        return False
+
+
+def _copy_dir(source: Path, dest: Path) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        target = dest / item.name
+        if item.is_dir():
+            _copy_dir(item, target)
+        elif not target.exists():
+            target.write_bytes(item.read_bytes())
+
+
+def app_config_dir() -> Path:
+    dest = _platform_config_dir(APP_DIR_NAME)
+    migrate_legacy_config_dir(_platform_config_dir(LEGACY_APP_DIR_NAME), dest)
+    return dest
 
 
 APP_NAME = "Cursor 余量"

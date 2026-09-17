@@ -36,10 +36,17 @@ public sealed class UpdateDecision
 public static class AppUpdate
 {
     public const string RepoOwner = "sydy";
+    // GitHub 仓库 slug 仍是 CursorTokenTray；改名需管理员在 GitHub 操作。发布包与 exe 已用 CursorRemain。
     public const string RepoName = "CursorTokenTray";
     public const string LatestTag = "latest";
-    public const string WindowsAssetName = "CursorTokenTray-windows.zip";
-    public const string MacosAssetName = "CursorTokenTray-macos.zip";
+    public const string WindowsAssetName = "CursorRemain-windows.zip";
+    public const string MacosAssetName = "CursorRemain-macos.zip";
+    public const string LegacyWindowsAssetName = "CursorTokenTray-windows.zip";
+    public const string LegacyMacosAssetName = "CursorTokenTray-macos.zip";
+    public const string WindowsExeName = "CursorRemain.exe";
+    public const string LegacyWindowsExeName = "CursorTokenTray.exe";
+    public const string MacAppName = "CursorRemain.app";
+    public const string LegacyMacAppName = "CursorTokenTray.app";
     public const string ProductVersion = "2.0.0";
     public const long MaxZipBytes = 80L * 1024 * 1024;
     public static readonly TimeSpan AutoCheckInterval = TimeSpan.FromHours(12);
@@ -54,7 +61,7 @@ public static class AppUpdate
     public static string ApiLatestRefUrl =>
         $"https://api.github.com/repos/{RepoOwner}/{RepoName}/git/refs/tags/{LatestTag}";
 
-    public static string UserAgent => $"CursorTokenTray/{ProductVersion} (+https://github.com/{RepoOwner}/{RepoName})";
+    public static string UserAgent => $"CursorRemain/{ProductVersion} (+https://github.com/{RepoOwner}/{RepoName})";
 
     public static string AssetDownloadUrl(string assetName) =>
         $"https://github.com/{RepoOwner}/{RepoName}/releases/download/{LatestTag}/{assetName}";
@@ -140,7 +147,7 @@ public static class AppUpdate
         var normalized = path.Replace('/', '\\');
         var slash = normalized.LastIndexOf('\\');
         var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
-        if (!name.Equals("CursorTokenTray.exe", StringComparison.OrdinalIgnoreCase)) return false;
+        if (!IsOurWindowsExe(name)) return false;
         var lower = normalized.ToLowerInvariant();
         if (lower.Contains("\\bin\\", StringComparison.Ordinal)) return false;
         if (lower.Contains("\\obj\\", StringComparison.Ordinal)) return false;
@@ -157,7 +164,7 @@ public static class AppUpdate
         if (lower.EndsWith(".app", StringComparison.Ordinal) || lower.Contains(".app/contents/", StringComparison.Ordinal))
         {
             var app = AppBundlePath(path);
-            return app.EndsWith("/CursorTokenTray.app", StringComparison.OrdinalIgnoreCase);
+            return IsOurMacApp(Path.GetFileName(app));
         }
         return false;
     }
@@ -279,6 +286,41 @@ public static class AppUpdate
     public static AppReleaseAsset? FindAsset(AppRelease release, string assetName) =>
         release.Assets.FirstOrDefault(a => a.Name.Equals(assetName, StringComparison.OrdinalIgnoreCase));
 
+    public static IReadOnlyList<string> AssetNameCandidates(string preferred)
+    {
+        if (preferred.Equals(WindowsAssetName, StringComparison.OrdinalIgnoreCase)
+            || preferred.Equals(LegacyWindowsAssetName, StringComparison.OrdinalIgnoreCase))
+            return [WindowsAssetName, LegacyWindowsAssetName];
+        if (preferred.Equals(MacosAssetName, StringComparison.OrdinalIgnoreCase)
+            || preferred.Equals(LegacyMacosAssetName, StringComparison.OrdinalIgnoreCase))
+            return [MacosAssetName, LegacyMacosAssetName];
+        return [preferred];
+    }
+
+    public static AppReleaseAsset? FindPreferredAsset(AppRelease release, string preferredName)
+    {
+        foreach (var name in AssetNameCandidates(preferredName))
+        {
+            var asset = FindAsset(release, name);
+            if (asset is not null) return asset;
+        }
+        return null;
+    }
+
+    public static bool IsOurWindowsExe(string? fileName)
+    {
+        var name = (fileName ?? "").Trim();
+        return name.Equals(WindowsExeName, StringComparison.OrdinalIgnoreCase)
+            || name.Equals(LegacyWindowsExeName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsOurMacApp(string? fileName)
+    {
+        var name = (fileName ?? "").Trim();
+        return name.Equals(MacAppName, StringComparison.OrdinalIgnoreCase)
+            || name.Equals(LegacyMacAppName, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static UpdateDecision Evaluate(
         AppRelease release,
         string assetName,
@@ -286,7 +328,7 @@ public static class AppUpdate
         string installedSha = "",
         long installedAssetId = 0)
     {
-        var asset = FindAsset(release, assetName);
+        var asset = FindPreferredAsset(release, assetName);
         if (asset is null)
             return new UpdateDecision { Message = "最新发布没有本平台安装包" };
         if (!IsAllowedDownloadUrl(asset.Url))
@@ -383,8 +425,11 @@ public static class AppUpdate
 
     public static string? FindExtractedWindowsExe(string destDir)
     {
-        foreach (var file in Directory.EnumerateFiles(destDir, "CursorTokenTray.exe", SearchOption.AllDirectories))
-            return file;
+        foreach (var wanted in new[] { WindowsExeName, LegacyWindowsExeName })
+        {
+            foreach (var file in Directory.EnumerateFiles(destDir, wanted, SearchOption.AllDirectories))
+                return file;
+        }
         return null;
     }
 
@@ -392,7 +437,7 @@ public static class AppUpdate
     {
         foreach (var dir in Directory.EnumerateDirectories(destDir, "*.app", SearchOption.AllDirectories))
         {
-            if (Path.GetFileName(dir).Equals("CursorTokenTray.app", StringComparison.OrdinalIgnoreCase))
+            if (IsOurMacApp(Path.GetFileName(dir)))
                 return dir;
         }
         return null;

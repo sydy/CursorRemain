@@ -110,7 +110,7 @@ enum AppUpdater {
             throw CursorAPIError("更新地址无效")
         }
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CursorTokenTray-update-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CursorRemain-update-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         let zip = root.appendingPathComponent(AppUpdate.macosAssetName)
         var req = URLRequest(url: url)
@@ -133,7 +133,7 @@ enum AppUpdater {
         try FileManager.default.createDirectory(at: extract, withIntermediateDirectories: true)
         try run("/usr/bin/ditto", ["-x", "-k", zip.path, extract.path])
         guard let app = findApp(in: extract) else {
-            throw CursorAPIError("安装包里没有 CursorTokenTray.app")
+            throw CursorAPIError("安装包里没有 CursorRemain.app")
         }
         return app
     }
@@ -143,7 +143,7 @@ enum AppUpdater {
         guard let en = fm.enumerator(at: directory, includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
         for case let url as URL in en {
             if url.pathExtension.lowercased() == "app",
-               url.lastPathComponent.caseInsensitiveCompare("CursorTokenTray.app") == .orderedSame {
+               AppUpdate.isOurMacApp(url.lastPathComponent) {
                 return url
             }
         }
@@ -153,7 +153,7 @@ enum AppUpdater {
     private static func launchHelper(newApp: URL) -> Bool {
         let dest = Bundle.main.bundleURL
         let script = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CursorTokenTray-apply-\(UUID().uuidString).sh")
+            .appendingPathComponent("CursorRemain-apply-\(UUID().uuidString).sh")
         let body = """
         #!/bin/bash
         PID="$1"

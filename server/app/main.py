@@ -1,4 +1,4 @@
-"""CursorTokenTray 云同步 API。客户端只上传口令加密信封，服务器不解密。"""
+"""CursorRemain 云同步 API。客户端只上传口令加密信封，服务器不解密。"""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from .db import get_conn, lock
 
 SUPPORTED_FORMATS = {"cursortokentray.accounts.v1", "cursortokentray.sync.v2"}
 
-app = FastAPI(title="CursorTokenTray Sync", version="1.0.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="CursorRemain Sync", version="1.0.0", docs_url=None, redoc_url=None)
 
 
 @app.middleware("http")
@@ -170,7 +170,7 @@ def put_sync(body: SyncPutBody, request: Request):
 def validate_envelope(envelope: dict) -> dict:
     fmt = str(envelope.get("format") or "")
     if fmt not in SUPPORTED_FORMATS:
-        raise HTTPException(status_code=400, detail="不是 CursorTokenTray 账号同步文件")
+        raise HTTPException(status_code=400, detail="不是 Cursor 余量账号同步文件")
     if str(envelope.get("kdf") or "") != "pbkdf2-sha256":
         raise HTTPException(status_code=400, detail="不支持的同步文件密钥算法")
     for key in ("salt", "nonce", "ciphertext"):

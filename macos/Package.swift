@@ -23,9 +23,9 @@ var targets: [Target] = [
 #if os(macOS)
 targets.append(
     .executableTarget(
-        name: "CursorTokenTray",
+        name: "CursorRemain",
         dependencies: ["CursorTokenCore"],
-        path: "Sources/CursorTokenTray"
+        path: "Sources/CursorRemain"
     )
 )
 #endif
@@ -34,11 +34,11 @@ var products: [Product] = [
     .library(name: "CursorTokenCore", targets: ["CursorTokenCore"]),
 ]
 #if os(macOS)
-products.append(.executable(name: "CursorTokenTray", targets: ["CursorTokenTray"]))
+products.append(.executable(name: "CursorRemain", targets: ["CursorRemain"]))
 #endif
 
 let package = Package(
-    name: "CursorTokenTray",
+    name: "CursorRemain",
     platforms: [.macOS(.v13)],
     products: products,
     targets: targets

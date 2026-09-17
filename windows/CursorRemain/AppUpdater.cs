@@ -2,7 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 static class AppUpdater
 {
@@ -184,7 +184,7 @@ static class AppUpdater
     {
         if (!AppUpdate.IsAllowedDownloadUrl(asset.Url))
             throw new InvalidOperationException("更新地址无效");
-        var root = Path.Combine(Path.GetTempPath(), "CursorTokenTray-update-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "CursorRemain-update-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         var zip = Path.Combine(root, AppUpdate.WindowsAssetName);
         using (var req = new HttpRequestMessage(HttpMethod.Get, asset.Url))
@@ -215,14 +215,14 @@ static class AppUpdater
         var extract = Path.Combine(root, "extract");
         AppUpdate.ExtractZipSafe(zip, extract);
         return AppUpdate.FindExtractedWindowsExe(extract)
-            ?? throw new InvalidOperationException("安装包里没有 CursorTokenTray.exe");
+            ?? throw new InvalidOperationException("安装包里没有 CursorRemain.exe");
     }
 
     static bool LaunchHelper(string newExe)
     {
         var dest = Environment.ProcessPath ?? Application.ExecutablePath;
         if (string.IsNullOrWhiteSpace(dest)) return false;
-        var bat = Path.Combine(Path.GetTempPath(), "CursorTokenTray-apply-" + Guid.NewGuid().ToString("N") + ".cmd");
+        var bat = Path.Combine(Path.GetTempPath(), "CursorRemain-apply-" + Guid.NewGuid().ToString("N") + ".cmd");
         var script =
             "@echo off\r\n" +
             "setlocal EnableExtensions\r\n" +

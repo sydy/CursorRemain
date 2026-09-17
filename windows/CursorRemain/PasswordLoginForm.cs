@@ -2,7 +2,7 @@ using CursorTokenCore;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 sealed class PasswordLoginForm : Form
 {

@@ -100,6 +100,31 @@ public class AppUpdateTests
     }
 
     [Fact]
+    public void PrefersNewAssetThenFallsBackToLegacy()
+    {
+        var release = new AppRelease
+        {
+            Tag = "latest",
+            CommitSha = "518192b000000000000000000000000000000000",
+            Assets =
+            [
+                new()
+                {
+                    Name = AppUpdate.LegacyWindowsAssetName,
+                    Url = AppUpdate.AssetDownloadUrl(AppUpdate.LegacyWindowsAssetName),
+                    Id = 7,
+                },
+            ],
+        };
+        var asset = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName);
+        Assert.NotNull(asset);
+        Assert.Equal(AppUpdate.LegacyWindowsAssetName, asset!.Name);
+        var decision = AppUpdate.Evaluate(release, AppUpdate.WindowsAssetName, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        Assert.True(decision.Available);
+        Assert.Equal(7, decision.Asset?.Id);
+    }
+
+    [Fact]
     public void DisplayVersionAndInformationalSha()
     {
         Assert.Equal("2.0.0", AppUpdate.DisplayVersion(""));
@@ -141,13 +166,24 @@ public class AppUpdateTests
             var zip = Path.Combine(root, "ok.zip");
             using (var archive = ZipFile.Open(zip, ZipArchiveMode.Create))
             {
-                var entry = archive.CreateEntry("CursorTokenTray.exe");
+                var entry = archive.CreateEntry("CursorRemain.exe");
                 using var w = new StreamWriter(entry.Open());
                 w.Write("exe");
             }
             var dest = Path.Combine(root, "out");
             AppUpdate.ExtractZipSafe(zip, dest);
-            Assert.Equal(Path.Combine(dest, "CursorTokenTray.exe"), AppUpdate.FindExtractedWindowsExe(dest));
+            Assert.Equal(Path.Combine(dest, "CursorRemain.exe"), AppUpdate.FindExtractedWindowsExe(dest));
+
+            var legacyZip = Path.Combine(root, "legacy.zip");
+            using (var archive = ZipFile.Open(legacyZip, ZipArchiveMode.Create))
+            {
+                var entry = archive.CreateEntry("CursorTokenTray.exe");
+                using var w = new StreamWriter(entry.Open());
+                w.Write("old");
+            }
+            var legacyDest = Path.Combine(root, "legacy-out");
+            AppUpdate.ExtractZipSafe(legacyZip, legacyDest);
+            Assert.Equal(Path.Combine(legacyDest, "CursorTokenTray.exe"), AppUpdate.FindExtractedWindowsExe(legacyDest));
 
             var evil = Path.Combine(root, "evil.zip");
             using (var archive = ZipFile.Open(evil, ZipArchiveMode.Create))

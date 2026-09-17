@@ -3,12 +3,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 cd "$ROOT"
-swift build -c release --product CursorTokenTray
-BIN="$(swift build -c release --show-bin-path)/CursorTokenTray"
-DIST="$ROOT/dist/CursorTokenTray.app"
+swift build -c release --product CursorRemain
+BIN="$(swift build -c release --show-bin-path)/CursorRemain"
+DIST="$ROOT/dist/CursorRemain.app"
 rm -rf "$DIST"
 mkdir -p "$DIST/Contents/MacOS" "$DIST/Contents/Resources"
-cp "$BIN" "$DIST/Contents/MacOS/CursorTokenTray"
+cp "$BIN" "$DIST/Contents/MacOS/CursorRemain"
 cp "$ROOT/Resources/Info.plist" "$DIST/Contents/Info.plist"
 SHA="${SOURCE_REVISION:-}"
 if [[ -z "$SHA" ]]; then
@@ -33,7 +33,7 @@ elif [[ -f "$REPO/assets/app_icon.png" ]] && command -v sips >/dev/null; then
   iconutil -c icns "$ICONSET" -o "$DIST/Contents/Resources/AppIcon.icns"
   /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string AppIcon' "$DIST/Contents/Info.plist" 2>/dev/null || true
 fi
-chmod +x "$DIST/Contents/MacOS/CursorTokenTray"
+chmod +x "$DIST/Contents/MacOS/CursorRemain"
 # Ad-hoc sign so the bundle is a valid Mach-O app. Each build gets a new
 # CDHash, so keychain items must not use the default app-bound ACL
 # (see TokenProtector). Downloads still get Gatekeeper quarantine;
@@ -48,9 +48,12 @@ cp -R "$DIST" "$STAGE/"
 cat > "$STAGE/首次打开.command" << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
-APP="CursorTokenTray.app"
+APP="CursorRemain.app"
+if [[ ! -d "$APP" && -d "CursorTokenTray.app" ]]; then
+  APP="CursorTokenTray.app"
+fi
 if [[ ! -d "$APP" ]]; then
-  osascript -e 'display alert "找不到 CursorTokenTray.app" message "请把本脚本和 App 放在同一文件夹后再双击。"' >/dev/null
+  osascript -e 'display alert "找不到 CursorRemain.app" message "请把本脚本和 App 放在同一文件夹后再双击。"' >/dev/null
   exit 1
 fi
 xattr -cr "$APP" >/dev/null 2>&1 || true

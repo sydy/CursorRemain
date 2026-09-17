@@ -131,7 +131,7 @@ class ExportImportTests(unittest.TestCase):
         from accounts import upsert_account
 
         with tempfile.TemporaryDirectory() as tmp:
-            dest = Path(tmp) / "CursorTokenTray.accounts.sync"
+            dest = Path(tmp) / "CursorRemain.accounts.sync"
             a = {
                 "accounts": [],
                 "active_account_id": "",

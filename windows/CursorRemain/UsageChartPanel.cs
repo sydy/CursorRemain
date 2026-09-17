@@ -1,7 +1,7 @@
 using System.Drawing.Drawing2D;
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 static class UsageChartPalette
 {

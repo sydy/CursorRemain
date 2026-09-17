@@ -333,15 +333,79 @@ public sealed class AppConfig
 
 public static class AppPaths
 {
-    public const string AppName = "CursorTokenTray";
+    public const string AppName = "CursorRemain";
+    public const string LegacyAppName = "CursorTokenTray";
     public const string DisplayName = "Cursor 余量";
     public const string SettingsTitle = "余量设置";
 
     public static string ConfigDirectory(string? overrideDir = null)
     {
         if (!string.IsNullOrEmpty(overrideDir)) return overrideDir;
-        var appdata = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        return Path.Combine(appdata, AppName);
+        var dest = Path.Combine(RoamingAppData(), AppName);
+        TryMigrateLegacyDirectory(Path.Combine(RoamingAppData(), LegacyAppName), dest);
+        return dest;
+    }
+
+    public static string LegacyConfigDirectory() => Path.Combine(RoamingAppData(), LegacyAppName);
+
+    static string RoamingAppData() =>
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+    /// <summary>
+    /// Move or copy an old CursorTokenTray config folder into CursorRemain.
+    /// If dest already has config.json it wins. Returns true when dest received data.
+    /// </summary>
+    public static bool TryMigrateLegacyDirectory(string? sourceDir, string? destDir)
+    {
+        var source = (sourceDir ?? "").Trim();
+        var dest = (destDir ?? "").Trim();
+        if (source.Length == 0 || dest.Length == 0) return false;
+        try
+        {
+            var sourceFull = Path.GetFullPath(source);
+            var destFull = Path.GetFullPath(dest);
+            if (string.Equals(sourceFull, destFull, StringComparison.OrdinalIgnoreCase)) return false;
+            if (File.Exists(Path.Combine(destFull, "config.json"))) return false;
+            if (!Directory.Exists(sourceFull)) return false;
+            if (!Directory.Exists(destFull))
+            {
+                var parent = Path.GetDirectoryName(destFull);
+                if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
+                try
+                {
+                    Directory.Move(sourceFull, destFull);
+                    return true;
+                }
+                catch
+                {
+                    Directory.CreateDirectory(destFull);
+                    CopyDirectory(sourceFull, destFull);
+                    return File.Exists(Path.Combine(destFull, "config.json"));
+                }
+            }
+            CopyDirectory(sourceFull, destFull);
+            return File.Exists(Path.Combine(destFull, "config.json"));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static void CopyDirectory(string source, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (var file in Directory.EnumerateFiles(source))
+        {
+            var target = Path.Combine(dest, Path.GetFileName(file));
+            if (!File.Exists(target)) File.Copy(file, target, false);
+        }
+        foreach (var dir in Directory.EnumerateDirectories(source))
+        {
+            var name = Path.GetFileName(dir);
+            if (name.Length == 0) continue;
+            CopyDirectory(dir, Path.Combine(dest, name));
+        }
     }
 
     public static string ConfigPath(string? dir = null) => Path.Combine(ConfigDirectory(dir), "config.json");

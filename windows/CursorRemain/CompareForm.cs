@@ -1,7 +1,7 @@
 using System.Globalization;
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 sealed class CompareForm : Form
 {

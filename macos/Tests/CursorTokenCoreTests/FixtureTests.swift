@@ -1076,6 +1076,9 @@ final class PasswordLoginFixtureTests: XCTestCase {
 
 final class InstanceLockTests: XCTestCase {
     func testLooksLikeOurExecutable() {
+        XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/Applications/CursorRemain.app/Contents/MacOS/CursorRemain"))
+        XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/Users/me/Downloads/CursorRemain.app/Contents/MacOS/CursorRemain"))
+        XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/tmp/CursorRemain"))
         XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/Applications/CursorTokenTray.app/Contents/MacOS/CursorTokenTray"))
         XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/Users/me/Downloads/CursorTokenTray.app/Contents/MacOS/CursorTokenTray"))
         XCTAssertTrue(InstanceLock.looksLikeOurExecutable("/tmp/CursorTokenTray"))

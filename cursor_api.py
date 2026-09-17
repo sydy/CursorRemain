@@ -735,7 +735,7 @@ def _request_json(
         "Cookie": f"WorkosCursorSessionToken={token}",
         "Origin": "https://cursor.com",
         "Referer": "https://cursor.com/dashboard",
-        "User-Agent": "Mozilla/5.0 CursorTokenTray/1.0",
+        "User-Agent": "Mozilla/5.0 CursorRemain/1.0",
     }
     data = None if body is None else json.dumps(body).encode("utf-8")
     try:

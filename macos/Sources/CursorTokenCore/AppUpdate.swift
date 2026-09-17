@@ -62,10 +62,17 @@ public struct UpdateDecision: Equatable, Sendable {
 
 public enum AppUpdate {
     public static let repoOwner = "sydy"
+    // GitHub 仓库 slug 仍是 CursorTokenTray；改名需管理员在 GitHub 操作。发布包与 exe 已用 CursorRemain。
     public static let repoName = "CursorTokenTray"
     public static let latestTag = "latest"
-    public static let windowsAssetName = "CursorTokenTray-windows.zip"
-    public static let macosAssetName = "CursorTokenTray-macos.zip"
+    public static let windowsAssetName = "CursorRemain-windows.zip"
+    public static let macosAssetName = "CursorRemain-macos.zip"
+    public static let legacyWindowsAssetName = "CursorTokenTray-windows.zip"
+    public static let legacyMacosAssetName = "CursorTokenTray-macos.zip"
+    public static let windowsExeName = "CursorRemain.exe"
+    public static let legacyWindowsExeName = "CursorTokenTray.exe"
+    public static let macAppName = "CursorRemain.app"
+    public static let legacyMacAppName = "CursorTokenTray.app"
     public static let productVersion = "2.0.0"
     public static let maxZipBytes: Int64 = 80 * 1024 * 1024
     public static let autoCheckInterval: TimeInterval = 12 * 60 * 60
@@ -84,7 +91,7 @@ public enum AppUpdate {
     }
 
     public static var userAgent: String {
-        "CursorTokenTray/\(productVersion) (+https://github.com/\(repoOwner)/\(repoName))"
+        "CursorRemain/\(productVersion) (+https://github.com/\(repoOwner)/\(repoName))"
     }
 
     public static func assetDownloadURL(_ assetName: String) -> String {
@@ -166,7 +173,7 @@ public enum AppUpdate {
         if path.isEmpty { return false }
         let normalized = path.replacingOccurrences(of: "/", with: "\\")
         let name = normalized.split(separator: "\\").last.map(String.init) ?? normalized
-        guard name.caseInsensitiveCompare("CursorTokenTray.exe") == .orderedSame else { return false }
+        guard isOurWindowsExe(name) else { return false }
         let lower = normalized.lowercased()
         if lower.contains("\\bin\\") { return false }
         if lower.contains("\\obj\\") { return false }
@@ -180,7 +187,7 @@ public enum AppUpdate {
         let lower = path.lowercased()
         if lower.contains("/.build/") || lower.contains("/deriveddata/") { return false }
         if lower.hasSuffix(".app") || lower.contains(".app/contents/") {
-            return appBundlePath(path).lowercased().hasSuffix("/cursortokentray.app")
+            return isOurMacApp((appBundlePath(path) as NSString).lastPathComponent)
         }
         return false
     }
@@ -287,6 +294,37 @@ public enum AppUpdate {
         release.assets.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
     }
 
+    public static func assetNameCandidates(_ preferred: String) -> [String] {
+        if preferred.caseInsensitiveCompare(windowsAssetName) == .orderedSame
+            || preferred.caseInsensitiveCompare(legacyWindowsAssetName) == .orderedSame {
+            return [windowsAssetName, legacyWindowsAssetName]
+        }
+        if preferred.caseInsensitiveCompare(macosAssetName) == .orderedSame
+            || preferred.caseInsensitiveCompare(legacyMacosAssetName) == .orderedSame {
+            return [macosAssetName, legacyMacosAssetName]
+        }
+        return [preferred]
+    }
+
+    public static func findPreferredAsset(_ release: AppRelease, name: String) -> AppReleaseAsset? {
+        for candidate in assetNameCandidates(name) {
+            if let asset = findAsset(release, name: candidate) { return asset }
+        }
+        return nil
+    }
+
+    public static func isOurWindowsExe(_ fileName: String?) -> Bool {
+        let name = (fileName ?? "").trimmingCharacters(in: .whitespaces)
+        return name.caseInsensitiveCompare(windowsExeName) == .orderedSame
+            || name.caseInsensitiveCompare(legacyWindowsExeName) == .orderedSame
+    }
+
+    public static func isOurMacApp(_ fileName: String?) -> Bool {
+        let name = (fileName ?? "").trimmingCharacters(in: .whitespaces)
+        return name.caseInsensitiveCompare(macAppName) == .orderedSame
+            || name.caseInsensitiveCompare(legacyMacAppName) == .orderedSame
+    }
+
     public static func evaluate(
         release: AppRelease,
         assetName: String,
@@ -294,7 +332,7 @@ public enum AppUpdate {
         installedSha: String = "",
         installedAssetId: Int64 = 0
     ) -> UpdateDecision {
-        guard let asset = findAsset(release, name: assetName) else {
+        guard let asset = findPreferredAsset(release, name: assetName) else {
             return UpdateDecision(message: "最新发布没有本平台安装包")
         }
         if !isAllowedDownloadURL(asset.url) {

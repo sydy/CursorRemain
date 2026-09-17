@@ -1,6 +1,6 @@
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 static class CursorLoginUi
 {

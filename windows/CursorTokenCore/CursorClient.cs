@@ -128,7 +128,7 @@ public sealed class CursorClient
             req.Headers.TryAddWithoutValidation("Cookie", $"{Token.CookieName}={token}");
             req.Headers.TryAddWithoutValidation("Origin", "https://cursor.com");
             req.Headers.TryAddWithoutValidation("Referer", "https://cursor.com/dashboard");
-            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 CursorTokenTray/1.0");
+            req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 CursorRemain/1.0");
             if (body is not null) req.Content = new StringContent(body, Encoding.UTF8, "application/json");
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeout));
