@@ -1,4 +1,5 @@
-# 把已发布的 CursorRemain.exe 打成用户级 Inno Setup 安装包。
+# Build a per-user Inno Setup installer from a published CursorRemain.exe.
+# ASCII-only so Windows PowerShell can parse this file without a UTF-8 BOM.
 param(
     [string]$PublishDir = "",
     [string]$OutputDir = "",
@@ -16,7 +17,7 @@ $OutputDir = (Resolve-Path $OutputDir).Path
 
 $exe = Join-Path $PublishDir "CursorRemain.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
-    throw "找不到 $exe，请先 dotnet publish 到 $PublishDir"
+    throw "Missing $exe. Publish the app into $PublishDir first."
 }
 
 function Find-ISCC {
@@ -45,7 +46,7 @@ function Install-InnoSetup {
             $downloaded = $true
             break
         } catch {
-            Write-Host "下载 Inno Setup 失败: $url ($($_.Exception.Message))"
+            Write-Host "Failed to download Inno Setup from $url ($($_.Exception.Message))"
         }
     }
     if (-not $downloaded) {
@@ -53,11 +54,11 @@ function Install-InnoSetup {
             choco install innosetup --no-progress -y
             return
         }
-        throw "无法下载或安装 Inno Setup"
+        throw "Could not download or install Inno Setup"
     }
     $proc = Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
-        throw "Inno Setup 安装失败，退出码 $($proc.ExitCode)"
+        throw "Inno Setup installer exited with code $($proc.ExitCode)"
     }
 }
 
@@ -67,7 +68,7 @@ if (-not $iscc) {
     $iscc = Find-ISCC
 }
 if (-not $iscc) {
-    throw "未找到 Inno Setup 编译器 ISCC.exe。请安装 https://jrsoftware.org/isinfo.php"
+    throw "ISCC.exe not found. Install Inno Setup from https://jrsoftware.org/isinfo.php"
 }
 
 $iss = Join-Path $PSScriptRoot "setup.iss"
@@ -85,18 +86,18 @@ Write-Host "ISCC $iscc"
 Write-Host ($defines -join " ")
 & $iscc @defines $iss
 if ($LASTEXITCODE -ne 0) {
-    throw "Inno Setup 编译失败: $LASTEXITCODE"
+    throw "Inno Setup compile failed: $LASTEXITCODE"
 }
 
 $out = Join-Path $OutputDir "CursorRemain-windows-setup.exe"
 if (-not (Test-Path -LiteralPath $out)) {
-    throw "未生成 $out"
+    throw "Installer was not created: $out"
 }
 $item = Get-Item -LiteralPath $out
 if ($item.Length -lt 100KB) {
-    throw "安装包过小: $($item.Length) bytes"
+    throw "Installer is unexpectedly small: $($item.Length) bytes"
 }
 if ($item.Length -gt 30MB) {
-    throw ("安装包过大: {0:N2} MB" -f ($item.Length / 1MB))
+    throw ("Installer is unexpectedly large: {0:N2} MB" -f ($item.Length / 1MB))
 }
 "{0} {1:N2} MB" -f $item.Name, ($item.Length / 1MB)

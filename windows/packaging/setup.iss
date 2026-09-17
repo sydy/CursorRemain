@@ -1,4 +1,4 @@
-; Cursor 余量 Windows 安装程序（用户目录，无需管理员）。
+﻿; Cursor 余量 Windows 安装程序（用户目录，无需管理员）。
 ; 本地 / CI：ISCC.exe /DAppPublishDir=... /DRepoRoot=... /DOutputDir=...
 
 #ifndef RepoRoot

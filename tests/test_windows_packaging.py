@@ -72,10 +72,17 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
     def test_ci_builds_and_publishes_installer(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         self.assertIn("build_installer.ps1", workflow)
+        self.assertIn("innosetup", workflow)
         self.assertIn("CursorRemain-windows-setup.exe", workflow)
         self.assertGreaterEqual(workflow.count("CursorRemain-windows-setup.exe"), 3)
         notes = (ROOT / ".github" / "scripts" / "update-latest-release.sh").read_text(encoding="utf-8")
         self.assertIn("CursorRemain-windows-setup.exe", notes)
+
+    def test_installer_ps1_is_ascii(self) -> None:
+        raw = (ROOT / "windows" / "packaging" / "build_installer.ps1").read_bytes()
+        if raw.startswith(b"\xef\xbb\xbf"):
+            raw = raw[3:]
+        raw.decode("ascii")
 
     def test_program_mutex_matches_installer(self) -> None:
         program = (ROOT / "windows" / "CursorRemain" / "Program.cs").read_text(encoding="utf-8")

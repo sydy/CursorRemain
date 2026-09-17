@@ -117,6 +117,9 @@ jobs:
           Copy-Item -Force dist-win\CursorRemain.exe dist-win\CursorTokenTray.exe
           Compress-Archive -Path dist-win\CursorTokenTray.exe, dist-win\首次运行.txt -DestinationPath CursorTokenTray-windows.zip -Force
           '{0} {1:N2} MB' -f 'CursorRemain-windows.zip', ((Get-Item CursorRemain-windows.zip).Length / 1MB)
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
       - name: Build Windows installer
         shell: pwsh
         run: |
