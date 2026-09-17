@@ -13,6 +13,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-for-sync-please-use-32b+")
 from fastapi.testclient import TestClient
 
 from app import settings
+from app.auth import LIMITER
 from app.db import reset_for_tests
 from app.main import app
 from app.settings import DEV_JWT_FALLBACK, JWT_SECRET_MIN_LEN, resolve_jwt_secret
@@ -32,6 +33,7 @@ class ApiTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         reset_for_tests(Path(self.tmp.name) / "sync.db")
+        LIMITER.reset()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

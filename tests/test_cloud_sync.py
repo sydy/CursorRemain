@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
 os.environ.setdefault("JWT_SECRET", "test-secret-for-sync-please-use-32b+")
 
+from app.auth import LIMITER  # noqa: E402
 from app.db import reset_for_tests  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app  # noqa: E402
@@ -32,6 +33,7 @@ class CloudSyncTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         reset_for_tests(Path(self.tmp.name) / "sync.db")
+        LIMITER.reset()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:

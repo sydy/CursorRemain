@@ -83,6 +83,9 @@ class RateLimiter:
         bucket.append(window)
         self._hits[key] = bucket
 
+    def reset(self) -> None:
+        self._hits.clear()
+
 
 LIMITER = RateLimiter()
 
