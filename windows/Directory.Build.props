@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <_VersionFile>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\VERSION'))</_VersionFile>
+    <Version Condition="Exists('$(_VersionFile)')">$([System.IO.File]::ReadAllText('$(_VersionFile)').Trim())</Version>
+    <Version Condition="'$(Version)' == ''">0.0.0</Version>
+  </PropertyGroup>
+</Project>

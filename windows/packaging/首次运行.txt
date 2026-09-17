@@ -1,15 +1,5 @@
 ﻿Cursor 余量（Windows）
 
-本包是框架依赖版，不再内嵌 .NET 运行时（体积大约从 65MB 降到几 MB）。
-
-第一次运行前请安装 .NET 8 Desktop Runtime（x64，不是 SDK）：
-https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe
-
-也可以打开：
-https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0
-在「运行时」里选择「桌面运行时」Windows x64。
-
-装过一次之后，直接运行 CursorRemain.exe 即可，可拷到任意位置。
-开机自启会指向该 exe。
-
-若双击后提示缺少 Microsoft.WindowsDesktop.App 8.0，就是还没装 Desktop Runtime。
+本包已内嵌 .NET 运行时，解压后直接运行 CursorRemain.exe 即可，无需另装 Desktop Runtime。
+可拷到任意位置使用；开机自启会指向该 exe。
+正式版本号见设置里的「当前版本」，或 GitHub Releases 的 v* 标签。

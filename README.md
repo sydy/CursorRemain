@@ -24,15 +24,15 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - **账号对比**：独立窗口，按渠道标签（自费 / 第三方）分组。每个账号一行，First-party / API / Grok Bot 各占一行，数字按列对齐。窗口按各号自己的最新周期或有效期（没有则近 30 天），日均持有 = 折合月费÷30，窗口实付把月费/实际成本按窗口天数折算后再摊，且不超过所填实际成本。表里同时给出 ¥/百万 Token、¥/次。打开先读本地明细，点「同步」再逐号拉取；可导出 CSV。短期号请把买价折成月费（买价÷天数×30）
 - 默认每 10 分钟刷新（可配置）
 - 开机自启（默认开启；Windows 写当前用户注册表 `Run` 项，macOS 用 `SMAppService` / LaunchAgent）
-- **自动更新**（默认开启）：启动后对照 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest)，有新构建就下载本平台 zip、替换当前程序并重启。设置里的「托盘 / 菜单栏」页可关掉或手动检查；开发运行不会覆盖本机文件，只会打开下载页
+- **自动更新**（默认开启）：启动后对照 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest)（`v*`），有新版本就下载本平台 zip、替换当前程序并重启。设置里会显示 `主版本号 (提交哈希)`，例如 `2.1.0 (abc1234)`。开发运行不会覆盖本机文件，只会打开下载页
 
 悬浮框与 macOS 相同为左右分栏：左侧圆环剩余百分比、套餐说明与用量链接；右侧金额 / First-party·API / Grok Bot 进度卡片、Token / 重置 / 近日消耗与能否撑到重置，以及复制 / 刷新 / 报表 / 对比 / 设置。  
 预计可用按本周期已用比例与已过天数估算，并与重置日对比提示「预计能撑到重置」或「可能提前耗尽」。企业 / 团队账号打开 [用量页](https://cursor.com/dashboard/usage)，个人账号仍打开账单页。
 
 ## 环境
 
-- Windows 10/11（需安装 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe) x64）或 **macOS 13+**
-- 发布包为原生程序：Windows 是 .NET 8 框架依赖单文件 exe，macOS 是 Swift 菜单栏 `.app`
+- Windows 10/11 或 **macOS 13+**。Windows 安装版 / zip 已内嵌 .NET 运行时，**不必再装 Desktop Runtime**
+- 发布包为原生程序：Windows 是 .NET 8 自包含单文件 exe，macOS 是 Swift 菜单栏 `.app`
 - 配置兼容旧版工具：仍读写同一份 `config.json`
 
 仓库里的 Python 只保留解析对照（`cursor_api` / `usage_report` 等与 `fixtures/`），桌面壳已移除。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
@@ -84,27 +84,25 @@ swift test --package-path macos
 
 **安装版（推荐）**
 
-1. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorRemain-windows-setup.exe`
+1. 从 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest) 下载 `CursorRemain-windows-setup.exe`
 2. 双击安装。默认装到当前用户目录（`%LOCALAPPDATA%\Programs\CursorRemain`），不需要管理员；开始菜单会出现「Cursor 余量」
-3. 安装程序会检测 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。没有就下载并安装；已装过可跳过
-4. 装完可直接启动。开机自启由程序自己注册，之后会自动对照 Latest 更新（可在设置里关闭）
+3. 装完可直接启动，无需另装 .NET。开机自启由程序自己注册，之后会自动对照正式版更新（可在设置里关闭）
 
 **便携版**
 
-1. 本机先安装一次 Desktop Runtime（已装过可跳过）
-2. 下载 `CursorRemain-windows.zip`，解压运行 `CursorRemain.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
-3. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
+1. 下载 `CursorRemain-windows.zip`，解压运行 `CursorRemain.exe`。已内嵌运行时，不必另装 .NET
+2. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
 
 本地发布：
 
 ```powershell
-dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist
 powershell -File windows/packaging/build_installer.ps1 -PublishDir dist
 ```
 
 ### macOS
 
-1. 下载 `CursorRemain-macos.zip`，解压后将 `.app` 拖到「应用程序」（也可先放在下载文件夹）
+1. 从 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest) 下载 `CursorRemain-macos.zip`，解压后将 `.app` 拖到「应用程序」（也可先放在下载文件夹）
 2. 双击打开。若弹出「已损坏 / 移到废纸篓」：**点「取消」，不要移到废纸篓**
 3. 打开 **系统设置 → 隐私与安全性**，拉到下面的安全性，点 **「仍要打开」**，再输入本机密码。这就是以前右键打开时那次放行，只是 Sequoia 以后不再允许用右键绕过
 4. 若设置里没有「仍要打开」，再双击 zip 里的 **`首次打开.command`**（系统会用「来自互联网，要打开吗」那种确认）。仍不行再在终端执行：
@@ -125,15 +123,16 @@ open /Applications/CursorRemain.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 框架依赖，需本机 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
+3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
 4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`；同时保留旧名 zip）
 
-合入 `main` 后可在两处下载程序包：
+版本号写在仓库根目录 `VERSION`。合入 `main` 后：
 
-- **[Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest)**（随每次合入覆盖，不占 Actions 制品配额）
+- 若 `v{VERSION}` 还不存在，会创建**正式版** Release（例如 [v2.1.0](https://github.com/sydy/CursorTokenTray/releases/latest)），之后自动更新以它为准
+- 同时覆盖滚动预发布 **[latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest)**，给旧客户端兜底
 - 对应 run 的 **Artifacts**（保留 1 天；若制品配额尚未重算，这里可能暂时没有）
 
-PR 不上传制品。打 `v*` 标签（例如 `v1.0.0`）会创建正式 GitHub Release 并挂上 Windows 安装版 / zip 与 macOS zip。  
+PR 不上传制品。要发下一个正式版，只需改 `VERSION`（例如 `2.1.0` → `2.2.0`）后合入 `main`；也可以打匹配的 `v*` 标签。  
 也可在仓库 **Actions** 页点 **Run workflow** 手动触发。
 
 ## 获取 Token

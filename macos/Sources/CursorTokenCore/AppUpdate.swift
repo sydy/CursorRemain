@@ -18,6 +18,8 @@ public struct AppReleaseAsset: Equatable, Sendable {
 
 public struct AppRelease: Equatable, Sendable {
     public var tag: String
+    public var version: String
+    public var body: String
     public var commitSha: String
     public var pageUrl: String
     public var publishedAt: String
@@ -25,12 +27,16 @@ public struct AppRelease: Equatable, Sendable {
 
     public init(
         tag: String = "",
+        version: String = "",
+        body: String = "",
         commitSha: String = "",
         pageUrl: String = "",
         publishedAt: String = "",
         assets: [AppReleaseAsset] = []
     ) {
         self.tag = tag
+        self.version = version
+        self.body = body
         self.commitSha = commitSha
         self.pageUrl = pageUrl
         self.publishedAt = publishedAt
@@ -73,13 +79,21 @@ public enum AppUpdate {
     public static let legacyWindowsExeName = "CursorTokenTray.exe"
     public static let macAppName = "CursorRemain.app"
     public static let legacyMacAppName = "CursorTokenTray.app"
-    public static let productVersion = "2.0.0"
-    public static let maxZipBytes: Int64 = 80 * 1024 * 1024
+    public static let productVersion = "2.1.0"
+    public static let maxZipBytes: Int64 = 140 * 1024 * 1024
     public static let autoCheckInterval: TimeInterval = 12 * 60 * 60
     public static let startupDelay: TimeInterval = 20
 
+    public static var officialLatestPageURL: URL {
+        URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/latest")!
+    }
+
     public static var latestReleasePageURL: URL {
         URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/tag/\(latestTag)")!
+    }
+
+    public static var apiOfficialLatestURL: URL {
+        URL(string: "https://api.github.com/repos/\(repoOwner)/\(repoName)/releases/latest")!
     }
 
     public static var apiLatestReleaseURL: URL {
@@ -94,8 +108,10 @@ public enum AppUpdate {
         "CursorRemain/\(productVersion) (+https://github.com/\(repoOwner)/\(repoName))"
     }
 
-    public static func assetDownloadURL(_ assetName: String) -> String {
-        "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(latestTag)/\(assetName)"
+    public static func assetDownloadURL(_ assetName: String, tag: String? = nil) -> String {
+        let releaseTag = (tag ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let used = releaseTag.isEmpty ? latestTag : releaseTag
+        return "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(used)/\(assetName)"
     }
 
     public static func shouldFallbackFromApi(_ statusCode: Int) -> Bool {
@@ -141,6 +157,85 @@ public enum AppUpdate {
         let info = informational ?? ""
         guard let plus = info.lastIndex(of: "+") else { return "" }
         return normalizeSha(String(info[info.index(after: plus)...]))
+    }
+
+    public static func versionFromInformational(_ informational: String?) -> String {
+        var info = (informational ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if info.isEmpty { return "" }
+        if let plus = info.firstIndex(of: "+") {
+            info = String(info[..<plus])
+        }
+        return normalizeProductVersion(info)
+    }
+
+    public static func normalizeProductVersion(_ raw: String?) -> String {
+        var value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.first == "v" || value.first == "V" { value.removeFirst() }
+        return firstMatch(value, pattern: #"^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"#) ?? ""
+    }
+
+    public static func extractProductVersion(_ text: String?) -> String {
+        let raw = text ?? ""
+        if let match = firstMatch(raw, pattern: #"(?i)\bv?(\d+\.\d+\.\d+)\b"#) {
+            return match
+        }
+        return normalizeProductVersion(raw)
+    }
+
+    public static func productVersionFromRelease(_ tag: String?, body: String? = nil) -> String {
+        let fromTag = normalizeProductVersion(tag)
+        if !fromTag.isEmpty { return fromTag }
+        let raw = body ?? ""
+        if let match = firstMatch(raw, pattern: #"(?i)(?:\*\*)?版本(?:\*\*)?\s*[:：]\s*`?v?(\d+\.\d+\.\d+)"#) {
+            return match
+        }
+        return extractProductVersion(raw)
+    }
+
+    public static func compareProductVersions(_ left: String?, _ right: String?) -> Int {
+        guard let a = parseProductVersion(left), let b = parseProductVersion(right) else { return 0 }
+        if a[0] != b[0] { return a[0] < b[0] ? -1 : 1 }
+        if a[1] != b[1] { return a[1] < b[1] ? -1 : 1 }
+        if a[2] != b[2] { return a[2] < b[2] ? -1 : 1 }
+        return 0
+    }
+
+    public static func parseProductVersion(_ raw: String?) -> [Int]? {
+        let version = normalizeProductVersion(raw)
+        if version.isEmpty { return nil }
+        let core = version.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? version
+        let bits = core.split(separator: ".")
+        guard bits.count == 3 else { return nil }
+        var parts: [Int] = []
+        for bit in bits {
+            guard let n = Int(bit), n >= 0 else { return nil }
+            parts.append(n)
+        }
+        return parts
+    }
+
+    public static func formatReleaseLabel(version: String?, sha: String?) -> String {
+        let ver = normalizeProductVersion(version)
+        let short = shortSha(sha)
+        if !ver.isEmpty && !short.isEmpty && short != latestTag {
+            return "\(ver) (\(short))"
+        }
+        if !ver.isEmpty { return ver }
+        return short.isEmpty ? latestTag : short
+    }
+
+    public static func chooseRelease(official: AppRelease?, rolling: AppRelease?, currentVersion: String? = nil) -> AppRelease? {
+        if official == nil { return rolling }
+        if rolling == nil { return official }
+        let current = normalizeProductVersion(currentVersion ?? productVersion)
+        var officialVer = normalizeProductVersion(official?.version)
+        if officialVer.isEmpty {
+            officialVer = productVersionFromRelease(official?.tag, body: official?.body)
+        }
+        if !current.isEmpty, !officialVer.isEmpty, compareProductVersions(officialVer, current) > 0 {
+            return official
+        }
+        return rolling
     }
 
     public static var currentCommitSha: String {
@@ -222,9 +317,14 @@ public enum AppUpdate {
 
     public static func parseRelease(_ raw: [String: Any]) -> AppRelease {
         let tag = stringValue(raw["tag_name"])
+        let body = stringValue(raw["body"])
         var page = stringValue(raw["html_url"])
-        if page.isEmpty { page = latestReleasePageURL.absoluteString }
-        var sha = extractSha(stringValue(raw["body"]))
+        if page.isEmpty {
+            page = !tag.isEmpty && tag != latestTag
+                ? "https://github.com/\(repoOwner)/\(repoName)/releases/tag/\(tag)"
+                : latestReleasePageURL.absoluteString
+        }
+        var sha = extractSha(body)
         if sha.isEmpty { sha = normalizeSha(stringValue(raw["target_commitish"])) }
         var assets: [AppReleaseAsset] = []
         if let rows = raw["assets"] as? [[String: Any]] {
@@ -243,6 +343,8 @@ public enum AppUpdate {
         }
         return AppRelease(
             tag: tag.isEmpty ? latestTag : tag,
+            version: productVersionFromRelease(tag, body: body),
+            body: body,
             commitSha: sha,
             pageUrl: page,
             publishedAt: stringValue(raw["published_at"]),
@@ -250,10 +352,10 @@ public enum AppUpdate {
         )
     }
 
-    public static func knownAssets() -> [AppReleaseAsset] {
+    public static func knownAssets(_ tag: String? = nil) -> [AppReleaseAsset] {
         [
-            AppReleaseAsset(name: windowsAssetName, url: assetDownloadURL(windowsAssetName)),
-            AppReleaseAsset(name: macosAssetName, url: assetDownloadURL(macosAssetName)),
+            AppReleaseAsset(name: windowsAssetName, url: assetDownloadURL(windowsAssetName, tag: tag)),
+            AppReleaseAsset(name: macosAssetName, url: assetDownloadURL(macosAssetName, tag: tag)),
         ]
     }
 
@@ -265,6 +367,8 @@ public enum AppUpdate {
         if sha.isEmpty { throw CursorAPIError("发布页里找不到提交哈希") }
         return AppRelease(
             tag: latestTag,
+            version: productVersionFromRelease("", body: html),
+            body: html,
             commitSha: sha,
             pageUrl: latestReleasePageURL.absoluteString,
             assets: knownAssets()
@@ -274,7 +378,7 @@ public enum AppUpdate {
     public static func httpStatusMessage(_ statusCode: Int) -> String {
         switch statusCode {
         case 401, 403: return "GitHub 接口拒绝访问（403）"
-        case 404: return "找不到 Latest 发布"
+        case 404: return "找不到正式版或 Latest 发布"
         case 429: return "GitHub 请求过于频繁，请稍后重试"
         default: return "GitHub \(statusCode)"
         }
@@ -330,7 +434,8 @@ public enum AppUpdate {
         assetName: String,
         currentSha: String,
         installedSha: String = "",
-        installedAssetId: Int64 = 0
+        installedAssetId: Int64 = 0,
+        currentVersion: String? = nil
     ) -> UpdateDecision {
         guard let asset = findPreferredAsset(release, name: assetName) else {
             return UpdateDecision(message: "最新发布没有本平台安装包")
@@ -340,6 +445,20 @@ public enum AppUpdate {
         }
         if asset.size > maxZipBytes {
             return UpdateDecision(message: "安装包过大，已取消更新")
+        }
+        var remoteVersion = normalizeProductVersion(release.version)
+        if remoteVersion.isEmpty {
+            remoteVersion = productVersionFromRelease(release.tag, body: release.body)
+        }
+        let localVersion = normalizeProductVersion(currentVersion ?? productVersion)
+        if !remoteVersion.isEmpty, !localVersion.isEmpty {
+            let cmp = compareProductVersions(remoteVersion, localVersion)
+            if cmp < 0 {
+                return UpdateDecision(upToDate: true, message: "已是最新版本", release: release, asset: asset)
+            }
+            if cmp > 0 {
+                return available(release, asset)
+            }
         }
         var localSha = normalizeSha(currentSha)
         if localSha.isEmpty { localSha = normalizeSha(installedSha) }
@@ -407,9 +526,10 @@ public enum AppUpdate {
     }
 
     static func available(_ release: AppRelease, _ asset: AppReleaseAsset) -> UpdateDecision {
-        UpdateDecision(
+        let version = release.version.isEmpty ? productVersionFromRelease(release.tag, body: release.body) : release.version
+        return UpdateDecision(
             available: true,
-            message: "发现新版本 \(shortSha(release.commitSha))",
+            message: "发现新版本 \(formatReleaseLabel(version: version, sha: release.commitSha))",
             release: release,
             asset: asset
         )

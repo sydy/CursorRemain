@@ -10,6 +10,11 @@ rm -rf "$DIST"
 mkdir -p "$DIST/Contents/MacOS" "$DIST/Contents/Resources"
 cp "$BIN" "$DIST/Contents/MacOS/CursorRemain"
 cp "$ROOT/Resources/Info.plist" "$DIST/Contents/Info.plist"
+VERSION="$(tr -d '[:space:]' < "$REPO/VERSION" 2>/dev/null || true)"
+if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$DIST/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$DIST/Contents/Info.plist"
+fi
 SHA="${SOURCE_REVISION:-}"
 if [[ -z "$SHA" ]]; then
   SHA="$(git -C "$REPO" rev-parse HEAD 2>/dev/null || true)"

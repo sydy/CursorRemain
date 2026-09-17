@@ -32,6 +32,9 @@ final class AppUpdateTests: XCTestCase {
             let parsed = AppUpdate.parseRelease(row["json"] as! [String: Any])
             let exp = row["expected"] as! [String: Any]
             XCTAssertEqual(parsed.tag, exp["tag"] as? String)
+            if let version = exp["version"] as? String {
+                XCTAssertEqual(parsed.version, version)
+            }
             XCTAssertEqual(parsed.commitSha, exp["sha"] as? String)
             XCTAssertEqual(parsed.pageUrl, exp["page_url"] as? String)
             XCTAssertEqual(AppUpdate.findAsset(parsed, name: AppUpdate.windowsAssetName)?.url, exp["windows_url"] as? String)
@@ -57,16 +60,51 @@ final class AppUpdateTests: XCTestCase {
             if row["clear_release_sha"] as? Bool == true {
                 release.commitSha = ""
             }
+            if let tag = row["tag"] as? String {
+                release.tag = tag
+                if let version = row["version"] as? String { release.version = version }
+            }
             let asset = (row["asset"] as? String) == "macos" ? AppUpdate.macosAssetName : AppUpdate.windowsAssetName
+            let currentVersion = row["current_version"] as? String ?? AppUpdate.productVersion
             let decision = AppUpdate.evaluate(
                 release: release,
                 assetName: asset,
                 currentSha: row["current_sha"] as? String ?? "",
                 installedSha: row["installed_sha"] as? String ?? "",
-                installedAssetId: int64(row["installed_asset_id"])
+                installedAssetId: int64(row["installed_asset_id"]),
+                currentVersion: currentVersion
             )
             XCTAssertEqual(decision.available, row["available"] as? Bool, row["name"] as? String ?? "?")
             XCTAssertEqual(decision.upToDate, row["up_to_date"] as? Bool, row["name"] as? String ?? "?")
+        }
+
+        for row in root["extract_version"] as! [[String: Any]] {
+            XCTAssertEqual(
+                AppUpdate.productVersionFromRelease(row["tag"] as? String, body: row["body"] as? String),
+                row["version"] as? String
+            )
+        }
+        for row in root["compare_versions"] as! [[String: Any]] {
+            XCTAssertEqual(
+                AppUpdate.compareProductVersions(row["left"] as? String, row["right"] as? String),
+                Int(int64(row["cmp"]))
+            )
+        }
+        for row in root["choose_release"] as! [[String: Any]] {
+            let officialTag = row["official_tag"] as? String ?? ""
+            let official: AppRelease? = officialTag.isEmpty ? nil : AppRelease(
+                tag: officialTag,
+                version: row["official_version"] as? String ?? "",
+                assets: sample.assets
+            )
+            let rolling = AppRelease(tag: row["rolling_tag"] as? String ?? "latest", assets: sample.assets)
+            let chosen = AppUpdate.chooseRelease(
+                official: official,
+                rolling: rolling,
+                currentVersion: row["current_version"] as? String
+            )
+            let choice = (official != nil && chosen?.tag == official?.tag) ? "official" : "rolling"
+            XCTAssertEqual(choice, row["choice"] as? String, row["name"] as? String ?? "?")
         }
     }
 
@@ -95,9 +133,10 @@ final class AppUpdateTests: XCTestCase {
 
     func testDisplayVersionAndInformationalSha() {
         XCTAssertEqual(AppUpdate.displayVersion(""), AppUpdate.productVersion)
-        XCTAssertEqual(AppUpdate.displayVersion("518192b000000000000000000000000000000000"), "2.0.0 (518192b)")
-        XCTAssertEqual(AppUpdate.shaFromInformationalVersion("2.0.0+518192b"), "518192b")
-        XCTAssertEqual(AppUpdate.shaFromInformationalVersion("2.0.0"), "")
+        XCTAssertEqual(AppUpdate.displayVersion("518192b000000000000000000000000000000000"), "\(AppUpdate.productVersion) (518192b)")
+        XCTAssertEqual(AppUpdate.shaFromInformationalVersion("\(AppUpdate.productVersion)+518192b"), "518192b")
+        XCTAssertEqual(AppUpdate.shaFromInformationalVersion(AppUpdate.productVersion), "")
+        XCTAssertEqual(AppUpdate.normalizeProductVersion("v\(AppUpdate.productVersion)"), AppUpdate.productVersion)
         XCTAssertTrue(AppUpdate.shouldFallbackFromApi(403))
         XCTAssertTrue(AppUpdate.shouldFallbackFromApi(429))
         XCTAssertFalse(AppUpdate.shouldFallbackFromApi(400))
