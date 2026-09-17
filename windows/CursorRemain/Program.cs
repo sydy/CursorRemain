@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 static class Program
 {
@@ -542,23 +542,25 @@ sealed partial class TrayContext : ApplicationContext
 static class Autostart
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string ValueName = "CursorTokenTray";
+    const string ValueName = "CursorRemain";
+    const string LegacyValueName = "CursorTokenTray";
     static string StartupDir => Environment.GetFolderPath(Environment.SpecialFolder.Startup);
 
     public static void Apply(bool enabled)
     {
-        foreach (var path in new[]
+        foreach (var name in new[] { "CursorRemain", "CursorTokenTray" })
         {
-            Path.Combine(StartupDir, "CursorTokenTray.lnk"),
-            Path.Combine(StartupDir, "CursorTokenTray.vbs"),
-            Path.Combine(StartupDir, "CursorTokenTray.cmd"),
-        })
-            try { File.Delete(path); } catch { }
+            foreach (var ext in new[] { ".lnk", ".vbs", ".cmd" })
+            {
+                try { File.Delete(Path.Combine(StartupDir, name + ext)); } catch { }
+            }
+        }
 
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(RunKey);
             if (key is null) return;
+            try { key.DeleteValue(LegacyValueName, false); } catch { }
             if (!enabled)
             {
                 try { key.DeleteValue(ValueName, false); } catch { }

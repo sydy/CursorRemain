@@ -4,7 +4,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CursorTokenCore", "CursorTo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CursorTokenCore.Tests", "CursorTokenCore.Tests\CursorTokenCore.Tests.csproj", "{A1B2C3D4-E5F6-7890-ABCD-222222222222}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CursorTokenTray", "CursorTokenTray\CursorTokenTray.csproj", "{A1B2C3D4-E5F6-7890-ABCD-333333333333}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CursorRemain", "CursorRemain\CursorRemain.csproj", "{A1B2C3D4-E5F6-7890-ABCD-333333333333}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

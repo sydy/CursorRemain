@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>CursorTokenTray</string>
+    <string>CursorRemain</string>
     <key>CFBundleDisplayName</key>
     <string>Cursor 余量</string>
     <key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
     <key>CFBundleShortVersionString</key>
     <string>2.0.0</string>
     <key>CFBundleExecutable</key>
-    <string>CursorTokenTray</string>
+    <string>CursorRemain</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>LSMinimumSystemVersion</key>

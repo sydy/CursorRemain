@@ -6,7 +6,7 @@ import CursorTokenCore
 /// sits in the menu bar host with no extra. Keep a strong retain: `NSApplication.delegate` is weak.
 @main
 @MainActor
-enum CursorTokenTrayMain {
+enum CursorRemainMain {
     private static var retainedDelegate: AppDelegate?
 
     static func main() {

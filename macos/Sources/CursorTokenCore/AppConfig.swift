@@ -4,25 +4,84 @@ import Darwin
 #endif
 
 public enum AppPaths {
-    public static let appSupportName = "CursorTokenTray"
+    public static let appSupportName = "CursorRemain"
+    public static let legacyAppSupportName = "CursorTokenTray"
     public static let displayName = "Cursor 余量"
     public static let settingsTitle = "余量设置"
     public static let launchLabel = "com.harker.cursortokentray"
 
-    public static func configDirectory(home: URL? = nil) -> URL {
+    public static func supportDirectory(home: URL? = nil, name: String) -> URL {
         #if os(macOS)
         let base = home ?? FileManager.default.homeDirectoryForCurrentUser
-        return base.appendingPathComponent("Library/Application Support/\(appSupportName)", isDirectory: true)
+        return base.appendingPathComponent("Library/Application Support/\(name)", isDirectory: true)
         #elseif os(Windows)
         if let appdata = ProcessInfo.processInfo.environment["APPDATA"], !appdata.isEmpty {
-            return URL(fileURLWithPath: appdata, isDirectory: true).appendingPathComponent(appSupportName, isDirectory: true)
+            return URL(fileURLWithPath: appdata, isDirectory: true).appendingPathComponent(name, isDirectory: true)
         }
         let base = home ?? FileManager.default.homeDirectoryForCurrentUser
-        return base.appendingPathComponent("AppData/Roaming/\(appSupportName)", isDirectory: true)
+        return base.appendingPathComponent("AppData/Roaming/\(name)", isDirectory: true)
         #else
         let base = home ?? FileManager.default.homeDirectoryForCurrentUser
-        return base.appendingPathComponent(".config/\(appSupportName)", isDirectory: true)
+        return base.appendingPathComponent(".config/\(name)", isDirectory: true)
         #endif
+    }
+
+    public static func configDirectory(home: URL? = nil) -> URL {
+        supportDirectory(home: home, name: appSupportName)
+    }
+
+    @discardableResult
+    public static func prepareDefaultDirectory(home: URL? = nil) -> URL {
+        let dest = configDirectory(home: home)
+        _ = tryMigrateLegacyDirectory(from: legacyConfigDirectory(home: home), to: dest)
+        return dest
+    }
+
+    public static func legacyConfigDirectory(home: URL? = nil) -> URL {
+        supportDirectory(home: home, name: legacyAppSupportName)
+    }
+
+    /// Move or copy an old CursorTokenTray config folder into CursorRemain.
+    /// If dest already has config.json it wins.
+    @discardableResult
+    public static func tryMigrateLegacyDirectory(from source: URL, to dest: URL) -> Bool {
+        let fm = FileManager.default
+        let destConfig = dest.appendingPathComponent("config.json")
+        if fm.fileExists(atPath: destConfig.path) { return false }
+        if !fm.fileExists(atPath: source.path) { return false }
+        if source.standardizedFileURL.path == dest.standardizedFileURL.path { return false }
+        do {
+            if !fm.fileExists(atPath: dest.path) {
+                try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                do {
+                    try fm.moveItem(at: source, to: dest)
+                    return true
+                } catch {
+                    try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+                    try copyDirectory(from: source, to: dest)
+                    return fm.fileExists(atPath: destConfig.path)
+                }
+            }
+            try copyDirectory(from: source, to: dest)
+            return fm.fileExists(atPath: destConfig.path)
+        } catch {
+            return false
+        }
+    }
+
+    static func copyDirectory(from source: URL, to dest: URL) throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+        guard let items = try? fm.contentsOfDirectory(at: source, includingPropertiesForKeys: nil) else { return }
+        for item in items {
+            let target = dest.appendingPathComponent(item.lastPathComponent)
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: item.path, isDirectory: &isDir), isDir.boolValue {
+                try copyDirectory(from: item, to: target)
+            } else if !fm.fileExists(atPath: target.path) {
+                try fm.copyItem(at: item, to: target)
+            }
+        }
     }
 
     public static func configPath(in directory: URL? = nil) -> URL {
@@ -49,9 +108,9 @@ public enum AppPaths {
     public static func logPath() -> URL {
         #if os(macOS)
         return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/CursorTokenTray.log")
+            .appendingPathComponent("Library/Logs/CursorRemain.log")
         #else
-        return configDirectory().appendingPathComponent("CursorTokenTray.log")
+        return configDirectory().appendingPathComponent("CursorRemain.log")
         #endif
     }
 
@@ -537,7 +596,7 @@ public enum ConfigStore {
     private static let cacheGate = NSLock()
 
     public static func load(from directory: URL? = nil) -> AppConfig {
-        let dir = directory ?? AppPaths.configDirectory()
+        let dir = directory ?? AppPaths.prepareDefaultDirectory()
         AppPaths.ensureDirectory(dir)
         return withLock(dir, body: {
             remember(dir, loadUnlocked(from: dir))
@@ -549,7 +608,7 @@ public enum ConfigStore {
 
     @discardableResult
     public static func save(_ cfg: AppConfig, to directory: URL? = nil) -> Bool {
-        let dir = directory ?? AppPaths.configDirectory()
+        let dir = directory ?? AppPaths.prepareDefaultDirectory()
         AppPaths.ensureDirectory(dir)
         return withLock(dir, body: {
             let ok = saveUnlocked(cfg, to: dir)
@@ -565,7 +624,7 @@ public enum ConfigStore {
     /// long-running refresh cannot clobber settings saved in the meantime.
     @discardableResult
     public static func update(from directory: URL? = nil, mutate: (inout AppConfig) -> Void) -> AppConfig {
-        let dir = directory ?? AppPaths.configDirectory()
+        let dir = directory ?? AppPaths.prepareDefaultDirectory()
         AppPaths.ensureDirectory(dir)
         return withLock(dir, body: {
             var cfg = loadUnlocked(from: dir)

@@ -3,7 +3,7 @@ using System.Drawing.Text;
 using System.Runtime.InteropServices;
 using CursorTokenCore;
 
-namespace CursorTokenTray;
+namespace CursorRemain;
 
 sealed class FlyoutForm : Form
 {

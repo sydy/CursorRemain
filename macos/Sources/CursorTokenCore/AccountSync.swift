@@ -164,7 +164,8 @@ public struct SyncStatus: Sendable {
 public enum AccountSync {
     public static let format = "cursortokentray.accounts.v1"
     public static let formatV2 = "cursortokentray.sync.v2"
-    public static let filename = "CursorTokenTray.accounts.sync"
+    public static let filename = "CursorRemain.accounts.sync"
+    public static let legacyFilename = "CursorTokenTray.accounts.sync"
     public static let kdf = "pbkdf2-sha256"
     public static let defaultIterations = 210_000
     public static let keyLen = 32
@@ -726,7 +727,7 @@ public enum AccountSync {
 
     public static func decryptEnvelope(_ envelope: [String: Any], passphrase: String) throws -> SyncSnapshot {
         let fmt = str(envelope["format"])
-        if fmt != format && fmt != formatV2 { throw CursorAPIError("不是 CursorTokenTray 账号同步文件") }
+        if fmt != format && fmt != formatV2 { throw CursorAPIError("不是 Cursor 余量账号同步文件") }
         if str(envelope["kdf"]) != kdf { throw CursorAPIError("不支持的同步文件密钥算法") }
         guard let salt = Data(base64Encoded: str(envelope["salt"])),
               let nonce = Data(base64Encoded: str(envelope["nonce"])),

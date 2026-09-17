@@ -1,1 +1,1 @@
-"""CursorTokenTray 云同步服务。"""
+"""CursorRemain 云同步服务。"""

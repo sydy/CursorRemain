@@ -70,6 +70,29 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
+    func testPrefersNewAssetThenFallsBackToLegacy() {
+        let release = AppRelease(
+            tag: "latest",
+            commitSha: "518192b000000000000000000000000000000000",
+            assets: [
+                AppReleaseAsset(
+                    id: 7,
+                    name: AppUpdate.legacyWindowsAssetName,
+                    url: AppUpdate.assetDownloadURL(AppUpdate.legacyWindowsAssetName)
+                )
+            ]
+        )
+        let asset = AppUpdate.findPreferredAsset(release, name: AppUpdate.windowsAssetName)
+        XCTAssertEqual(asset?.name, AppUpdate.legacyWindowsAssetName)
+        let decision = AppUpdate.evaluate(
+            release: release,
+            assetName: AppUpdate.windowsAssetName,
+            currentSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        )
+        XCTAssertTrue(decision.available)
+        XCTAssertEqual(decision.asset?.id, 7)
+    }
+
     func testDisplayVersionAndInformationalSha() {
         XCTAssertEqual(AppUpdate.displayVersion(""), AppUpdate.productVersion)
         XCTAssertEqual(AppUpdate.displayVersion("518192b000000000000000000000000000000000"), "2.0.0 (518192b)")

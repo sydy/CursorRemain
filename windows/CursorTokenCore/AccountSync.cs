@@ -77,7 +77,8 @@ public static class AccountSync
 {
     public const string Format = "cursortokentray.accounts.v1";
     public const string FormatV2 = "cursortokentray.sync.v2";
-    public const string Filename = "CursorTokenTray.accounts.sync";
+    public const string Filename = "CursorRemain.accounts.sync";
+    public const string LegacyFilename = "CursorTokenTray.accounts.sync";
     public const string Kdf = "pbkdf2-sha256";
     public const int DefaultIterations = 210_000;
     public const int KeyLen = 32;
@@ -656,7 +657,7 @@ public static class AccountSync
     public static SyncSnapshot DecryptEnvelope(JsonElement envelope, string passphrase)
     {
         var format = Str(envelope, "format");
-        if (format != Format && format != FormatV2) throw new CursorApiException("不是 CursorTokenTray 账号同步文件");
+        if (format != Format && format != FormatV2) throw new CursorApiException("不是 Cursor 余量账号同步文件");
         if (Str(envelope, "kdf") != Kdf) throw new CursorApiException("不支持的同步文件密钥算法");
         byte[] salt, nonce, blob;
         int iterations;

@@ -326,14 +326,14 @@ class SourceGuardTests(unittest.TestCase):
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        win_prog = (root / "windows" / "CursorTokenTray" / "Program.cs").read_text(encoding="utf-8")
+        win_prog = (root / "windows" / "CursorRemain" / "Program.cs").read_text(encoding="utf-8")
         win_parser = (root / "windows" / "CursorTokenCore" / "UsageParser.cs").read_text(encoding="utf-8")
-        win_report = (root / "windows" / "CursorTokenTray" / "ReportForm.cs").read_text(encoding="utf-8")
-        win_chart = (root / "windows" / "CursorTokenTray" / "UsageChartPanel.cs").read_text(encoding="utf-8")
-        mac_menu = (root / "macos" / "Sources" / "CursorTokenTray" / "StatusItemController.swift").read_text(encoding="utf-8")
+        win_report = (root / "windows" / "CursorRemain" / "ReportForm.cs").read_text(encoding="utf-8")
+        win_chart = (root / "windows" / "CursorRemain" / "UsageChartPanel.cs").read_text(encoding="utf-8")
+        mac_menu = (root / "macos" / "Sources" / "CursorRemain" / "StatusItemController.swift").read_text(encoding="utf-8")
         mac_parser = (root / "macos" / "Sources" / "CursorTokenCore" / "UsageParser.swift").read_text(encoding="utf-8")
-        mac_report = (root / "macos" / "Sources" / "CursorTokenTray" / "ReportView.swift").read_text(encoding="utf-8")
-        mac_chart = (root / "macos" / "Sources" / "CursorTokenTray" / "UsageChartView.swift").read_text(encoding="utf-8")
+        mac_report = (root / "macos" / "Sources" / "CursorRemain" / "ReportView.swift").read_text(encoding="utf-8")
+        mac_chart = (root / "macos" / "Sources" / "CursorRemain" / "UsageChartView.swift").read_text(encoding="utf-8")
         self.assertIn("用量报表", win_prog)
         self.assertIn("OpenReport", win_prog)
         self.assertIn("账号对比", win_prog)
@@ -395,8 +395,8 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("企业额度", win_report)
         self.assertIn("UsesActualCny", win_report)
         self.assertIn("按需已计入", win_report)
-        win_settings = (root / "windows" / "CursorTokenTray" / "UiForms.cs").read_text(encoding="utf-8")
-        mac_settings = (root / "macos" / "Sources" / "CursorTokenTray" / "SettingsView.swift").read_text(encoding="utf-8")
+        win_settings = (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8")
+        mac_settings = (root / "macos" / "Sources" / "CursorRemain" / "SettingsView.swift").read_text(encoding="utf-8")
         self.assertIn("FormatLocal", win_settings)
         self.assertIn("formatLocal", mac_settings)
         for src in (win_settings, mac_settings):
@@ -406,8 +406,8 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("折合月费", src)
             self.assertIn("自费", src)
             self.assertIn("第三方", src)
-        win_compare = (root / "windows" / "CursorTokenTray" / "CompareForm.cs").read_text(encoding="utf-8")
-        mac_compare = (root / "macos" / "Sources" / "CursorTokenTray" / "CompareView.swift").read_text(encoding="utf-8")
+        win_compare = (root / "windows" / "CursorRemain" / "CompareForm.cs").read_text(encoding="utf-8")
+        mac_compare = (root / "macos" / "Sources" / "CursorRemain" / "CompareView.swift").read_text(encoding="utf-8")
         for src in (win_compare, mac_compare):
             self.assertIn("账号对比", src)
             self.assertIn("日均持有", src)
@@ -435,8 +435,8 @@ class SourceGuardTests(unittest.TestCase):
 
         root = Path(__file__).resolve().parents[1]
         win_layout = (root / "windows" / "CursorTokenCore" / "UiLayout.cs").read_text(encoding="utf-8")
-        win_flyout = (root / "windows" / "CursorTokenTray" / "FlyoutForm.cs").read_text(encoding="utf-8")
-        mac_flyout = (root / "macos" / "Sources" / "CursorTokenTray" / "FlyoutView.swift").read_text(encoding="utf-8")
+        win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
+        mac_flyout = (root / "macos" / "Sources" / "CursorRemain" / "FlyoutView.swift").read_text(encoding="utf-8")
         for snippet in (
             "static let width: CGFloat = 500",
             "static let height: CGFloat = 280",

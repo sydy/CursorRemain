@@ -31,7 +31,8 @@ from value_util import now_iso, parse_iso
 SYNC_FORMAT = "cursortokentray.accounts.v1"
 SYNC_FORMAT_V2 = "cursortokentray.sync.v2"
 SYNC_FORMATS = {SYNC_FORMAT, SYNC_FORMAT_V2}
-SYNC_FILENAME = "CursorTokenTray.accounts.sync"
+SYNC_FILENAME = "CursorRemain.accounts.sync"
+LEGACY_SYNC_FILENAME = "CursorTokenTray.accounts.sync"
 SYNC_KDF = "pbkdf2-sha256"
 DEFAULT_ITERATIONS = 210_000
 KEY_LEN = 32
@@ -682,7 +683,7 @@ def encrypt_envelope(
 
 def decrypt_envelope(envelope: dict[str, Any], passphrase: str) -> dict[str, Any]:
     if str(envelope.get("format") or "") not in SYNC_FORMATS:
-        raise ValueError("不是 CursorTokenTray 账号同步文件")
+        raise ValueError("不是 Cursor 余量账号同步文件")
     if str(envelope.get("kdf") or "") != SYNC_KDF:
         raise ValueError("不支持的同步文件密钥算法")
     try:

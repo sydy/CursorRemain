@@ -1,6 +1,6 @@
-# Cursor 余量（系统托盘 / 菜单栏）
+# Cursor 余量
 
-Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，用**圆形进度条**显示**剩余百分比**。
+Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，用**圆形进度条**显示**剩余百分比**。程序名 **CursorRemain**。
 
 > 使用非官方 Dashboard 接口，接口或 Cookie 可能变更；Token 请勿分享。
 
@@ -44,7 +44,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 ### Windows（C# / .NET 8）
 
 ```powershell
-dotnet run --project windows/CursorTokenTray/CursorTokenTray.csproj -c Release
+dotnet run --project windows/CursorRemain/CursorRemain.csproj -c Release
 ```
 
 核心解析单测（不含 WinForms）：
@@ -56,14 +56,14 @@ dotnet test windows/CursorTokenCore.Tests/CursorTokenCore.Tests.csproj
 ### macOS（Swift）
 
 ```bash
-swift run --package-path macos CursorTokenTray
+swift run --package-path macos CursorRemain
 ```
 
 或打包成 `.app`：
 
 ```bash
 ./macos/scripts/package_app.sh
-open macos/dist/CursorTokenTray.app
+open macos/dist/CursorRemain.app
 ```
 
 核心解析单测：
@@ -74,7 +74,7 @@ swift test --package-path macos
 
 图标会出现在屏幕右上角菜单栏。首次从 Safari 导入 Cookie 时，如读不到请到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」打开「Cursor 余量」。
 
-本地运行日志：`~/Library/Logs/CursorTokenTray.log`。
+本地运行日志：`~/Library/Logs/CursorRemain.log`。
 
 夹具（Python / Swift / C# 共用）在 `fixtures/`。
 
@@ -83,26 +83,26 @@ swift test --package-path macos
 ### Windows
 
 1. 本机先安装一次 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。已装过可跳过
-2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorTokenTray-windows.zip`
-3. 解压运行 `CursorTokenTray.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
+2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorRemain-windows.zip`
+3. 解压运行 `CursorRemain.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
 4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe。之后会自动对照 Latest 更新（可在设置里关闭）
 
 本地发布：
 
 ```powershell
-dotnet publish windows/CursorTokenTray/CursorTokenTray.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
 ```
 
 ### macOS
 
-1. 下载 `CursorTokenTray-macos.zip`，解压后将 `.app` 拖到「应用程序」（也可先放在下载文件夹）
+1. 下载 `CursorRemain-macos.zip`，解压后将 `.app` 拖到「应用程序」（也可先放在下载文件夹）
 2. 双击打开。若弹出「已损坏 / 移到废纸篓」：**点「取消」，不要移到废纸篓**
 3. 打开 **系统设置 → 隐私与安全性**，拉到下面的安全性，点 **「仍要打开」**，再输入本机密码。这就是以前右键打开时那次放行，只是 Sequoia 以后不再允许用右键绕过
 4. 若设置里没有「仍要打开」，再双击 zip 里的 **`首次打开.command`**（系统会用「来自互联网，要打开吗」那种确认）。仍不行再在终端执行：
 
 ```bash
-xattr -cr /Applications/CursorTokenTray.app
-open /Applications/CursorTokenTray.app
+xattr -cr /Applications/CursorRemain.app
+open /Applications/CursorRemain.app
 ```
 
 路径按实际位置改。放行一次之后就可以正常打开。  
@@ -116,8 +116,8 @@ open /Applications/CursorTokenTray.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorTokenTray-windows.zip`（.NET 8 框架依赖 exe，需本机 Desktop Runtime）
-4. 在 `macos-latest` 打出 `CursorTokenTray-macos.zip`（Swift `.app`）
+3. 在 `windows-latest` 打出 `CursorRemain-windows.zip`（.NET 8 框架依赖 exe，需本机 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
+4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`；同时保留旧名 zip）
 
 合入 `main` 后可在两处下载程序包：
 
@@ -164,8 +164,9 @@ PR 不上传制品。打 `v*` 标签（例如 `v1.0.0`）会创建正式 GitHub 
 
 ## 配置文件位置
 
-Windows：`%APPDATA%\CursorTokenTray\config.json`  
-macOS：`~/Library/Application Support/CursorTokenTray/config.json`  
+Windows：`%APPDATA%\CursorRemain\config.json`  
+macOS：`~/Library/Application Support/CursorRemain/config.json`  
+旧版若还在 `CursorTokenTray` 目录，启动时会迁到新目录（新目录已有 `config.json` 则不覆盖）。  
 用量历史：同目录 `usage_history.<账号ID>.jsonl`（旧版单文件 `usage_history.jsonl` 会在首次启动时归到当时那个账号）  
 用量明细缓存：同目录 `usage_events.<账号ID>.jsonl`（团队全员为 `usage_events.<账号ID>.team.jsonl`）
 
