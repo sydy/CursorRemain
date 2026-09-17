@@ -16,6 +16,12 @@ struct SettingsRootView: View {
     @State private var cloudEmail = ""
     @State private var cloudPassword = ""
     @State private var syncStatus = ""
+    @State private var showChangePassword = false
+    @State private var oldCloudPassword = ""
+    @State private var newCloudPassword = ""
+    @State private var confirmCloudPassword = ""
+    @State private var deletePassword = ""
+    @State private var showDeleteConfirm = false
     @State private var hint = ""
     @FocusState private var tokenFocused: Bool
     var startImport: Bool = false
@@ -216,8 +222,23 @@ struct SettingsRootView: View {
                 HStack {
                     Button("立即同步") { syncNow() }
                     Button("退出登录") { logoutCloud() }
+                    Button("修改密码") { showChangePassword.toggle() }
+                    Button("注销账号") { showDeleteConfirm.toggle() }
                     Button("导出…") { exportFile() }
                     Button("导入…") { importFile() }
+                }
+                if showChangePassword {
+                    SecureField("当前密码", text: $oldCloudPassword)
+                    SecureField("新密码（至少 8 位）", text: $newCloudPassword)
+                    SecureField("确认新密码", text: $confirmCloudPassword)
+                    Button("确认修改") { changePassword() }
+                }
+                if showDeleteConfirm {
+                    Text("将删除云端账号和加密数据，本机账号不受影响。忘记密码也不能恢复云端数据。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    SecureField("输入登录密码确认", text: $deletePassword)
+                    Button("确认注销") { deleteCloudAccount() }
                 }
             } else {
                 TextField("邮箱", text: $cloudEmail)
@@ -229,7 +250,7 @@ struct SettingsRootView: View {
                     Button("导入…") { importFile() }
                 }
             }
-            Text("登录后自动同步账号、设置和用量。数据用登录密码在本地加密，服务器看不到 Token。")
+            Text("登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(syncStatus.isEmpty ? " " : syncStatus)
@@ -320,21 +341,21 @@ struct SettingsRootView: View {
     var notifyBinding: Binding<Bool> {
         Binding(
             get: { store.config.notifyEnabled },
-            set: { v in var c = store.config; c.notifyEnabled = v; store.applyConfig(c, refresh: false) }
+            set: { v in applySetting { $0.notifyEnabled = v } }
         )
     }
 
     var exhaustBinding: Binding<Bool> {
         Binding(
             get: { store.config.notifyExhaustionRisk },
-            set: { v in var c = store.config; c.notifyExhaustionRisk = v; store.applyConfig(c, refresh: false) }
+            set: { v in applySetting { $0.notifyExhaustionRisk = v } }
         )
     }
 
     var modeBinding: Binding<String> {
         Binding(
             get: { store.config.trayDisplayMode },
-            set: { v in var c = store.config; c.trayDisplayMode = v; store.applyConfig(c, refresh: false) }
+            set: { v in applySetting { $0.trayDisplayMode = v } }
         )
     }
 
@@ -481,8 +502,17 @@ struct SettingsRootView: View {
         hint = result.ok ? "已写入 Cursor" : result.message
     }
 
+    func applySetting(_ update: (inout AppConfig) -> Void) {
+        var c = store.config
+        let before = AccountSync.snapshotSettings(c)
+        update(&c)
+        AccountSync.touchChangedSettings(&c, previous: before)
+        store.applyConfig(c, refresh: false)
+    }
+
     func save(close: Bool) {
         var cfg = store.config
+        let before = AccountSync.snapshotSettings(cfg)
         if let n = Int(intervalText.trimmingCharacters(in: .whitespaces)), n >= 1 {
             cfg.refreshIntervalMinutes = n
         }
@@ -500,6 +530,7 @@ struct SettingsRootView: View {
         if CursorAccountPaste.isSingleToken(tokenText) {
             _ = try? cfg.upsertAccount(token: tokenText, activate: true)
         }
+        AccountSync.touchChangedSettings(&cfg, previous: before)
         store.applyConfig(cfg, refresh: true)
         hint = close ? "" : "已应用"
         if close { SettingsWindowController.shared.close() }
@@ -536,6 +567,64 @@ struct SettingsRootView: View {
                     syncStatus = status.message
                     hint = status.message
                     cloudPassword = ""
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func changePassword() {
+        let old = oldCloudPassword.trimmingCharacters(in: .whitespaces)
+        let next = newCloudPassword.trimmingCharacters(in: .whitespaces)
+        let confirm = confirmCloudPassword.trimmingCharacters(in: .whitespaces)
+        if next.count < 8 {
+            syncStatus = "密码至少 8 位"
+            return
+        }
+        if next != confirm {
+            syncStatus = "两次输入的新密码不一致"
+            return
+        }
+        syncStatus = "正在修改密码…"
+        var cfg = store.config
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.changePassword(&cfg, oldPassword: old, newPassword: next)
+                DispatchQueue.main.async {
+                    store.applyConfig(cfg, refresh: false)
+                    oldCloudPassword = ""
+                    newCloudPassword = ""
+                    confirmCloudPassword = ""
+                    showChangePassword = false
+                    syncStatus = "密码已更新，云端数据已用新密码重封"
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func deleteCloudAccount() {
+        let password = deletePassword.trimmingCharacters(in: .whitespaces)
+        if password.isEmpty {
+            syncStatus = "请输入密码以确认注销"
+            return
+        }
+        syncStatus = "正在注销…"
+        var cfg = store.config
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.deleteAccount(&cfg, password: password)
+                DispatchQueue.main.async {
+                    store.applyConfig(cfg, refresh: false)
+                    deletePassword = ""
+                    showDeleteConfirm = false
+                    syncStatus = "云端账号已删除"
                 }
             } catch {
                 DispatchQueue.main.async {

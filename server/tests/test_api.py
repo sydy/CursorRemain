@@ -222,6 +222,130 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(res.status_code, 413)
         self.assertIn("过大", res.json()["detail"])
 
+    def test_accepts_gzip_compression_field(self) -> None:
+        access = self._register("gzip@harker.cn")
+        env = {**ENVELOPE, "compression": "gzip"}
+        res = self.client.put(
+            "/v1/sync",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"revision": 0, "envelope": env},
+        )
+        self.assertEqual(res.status_code, 200, res.text)
+        got = self.client.get("/v1/sync", headers={"Authorization": f"Bearer {access}"})
+        self.assertEqual(got.json()["envelope"]["compression"], "gzip")
+
+        bad = self.client.put(
+            "/v1/sync",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"revision": 1, "envelope": {**ENVELOPE, "compression": "lz4"}},
+        )
+        self.assertEqual(bad.status_code, 400)
+
+    def test_change_password_reseals_and_revokes_refresh(self) -> None:
+        created = self.client.post(
+            "/v1/auth/register",
+            json={"email": "pw@harker.cn", "password": "password1"},
+        )
+        access = created.json()["access_token"]
+        refresh = created.json()["refresh_token"]
+        put = self.client.put(
+            "/v1/sync",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"revision": 0, "envelope": ENVELOPE},
+        )
+        self.assertEqual(put.status_code, 200)
+
+        missing = self.client.post(
+            "/v1/auth/password",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"old_password": "password1", "new_password": "password2", "revision": 1},
+        )
+        self.assertEqual(missing.status_code, 400)
+
+        changed = self.client.post(
+            "/v1/auth/password",
+            headers={"Authorization": f"Bearer {access}"},
+            json={
+                "old_password": "password1",
+                "new_password": "password2",
+                "revision": 1,
+                "envelope": ENVELOPE,
+            },
+        )
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertEqual(changed.json()["revision"], 2)
+        self.assertTrue(changed.json()["access_token"])
+        reused = self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        self.assertEqual(reused.status_code, 401)
+
+        old_login = self.client.post(
+            "/v1/auth/login",
+            json={"email": "pw@harker.cn", "password": "password1"},
+        )
+        self.assertEqual(old_login.status_code, 401)
+        new_login = self.client.post(
+            "/v1/auth/login",
+            json={"email": "pw@harker.cn", "password": "password2"},
+        )
+        self.assertEqual(new_login.status_code, 200)
+
+    def test_delete_account_wipes_blob(self) -> None:
+        created = self.client.post(
+            "/v1/auth/register",
+            json={"email": "gone@harker.cn", "password": "password1"},
+        )
+        access = created.json()["access_token"]
+        self.client.put(
+            "/v1/sync",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"revision": 0, "envelope": ENVELOPE},
+        )
+        wrong = self.client.request(
+            "DELETE",
+            "/v1/me",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"password": "password2"},
+        )
+        self.assertEqual(wrong.status_code, 401)
+        gone = self.client.request(
+            "DELETE",
+            "/v1/me",
+            headers={"Authorization": f"Bearer {access}"},
+            json={"password": "password1"},
+        )
+        self.assertEqual(gone.status_code, 200, gone.text)
+        me = self.client.get("/v1/me", headers={"Authorization": f"Bearer {access}"})
+        self.assertEqual(me.status_code, 401)
+        again = self.client.post(
+            "/v1/auth/login",
+            json={"email": "gone@harker.cn", "password": "password1"},
+        )
+        self.assertEqual(again.status_code, 401)
+
+    def test_purge_revoked_refresh_tokens(self) -> None:
+        from app.auth import purge_refresh_tokens
+        from app.db import get_conn
+
+        created = self.client.post(
+            "/v1/auth/register",
+            json={"email": "purge@harker.cn", "password": "password1"},
+        )
+        refresh = created.json()["refresh_token"]
+        self.client.post("/v1/auth/logout", json={"refresh_token": refresh})
+        removed = purge_refresh_tokens()
+        self.assertGreaterEqual(removed, 1)
+        row = get_conn().execute("SELECT COUNT(*) AS n FROM refresh_tokens").fetchone()
+        self.assertEqual(int(row["n"]), 0)
+
+    def test_sqlite_backup_creates_copy(self) -> None:
+        from app import db
+
+        self._register("bak@harker.cn")
+        with patch.object(db, "BACKUP_INTERVAL_SEC", 0):
+            dest = db.maybe_backup_db()
+        self.assertIsNotNone(dest)
+        self.assertTrue(dest.is_file())
+
 
 if __name__ == "__main__":
     unittest.main()

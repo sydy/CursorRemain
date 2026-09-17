@@ -251,6 +251,8 @@ public struct AppConfig: Equatable, Sendable {
     public var sessionToken: String
     public var accounts: [Account]
     public var activeAccountId: String
+    public var activeAccountUpdatedAt: String
+    public var settingsFieldUpdatedAt: [String: String]
     public var refreshIntervalMinutes: Int
     public var lowQuotaThreshold: Int
     public var alertThresholds: [Int]
@@ -297,6 +299,8 @@ public struct AppConfig: Equatable, Sendable {
         sessionToken: "",
         accounts: [],
         activeAccountId: "",
+        activeAccountUpdatedAt: "",
+        settingsFieldUpdatedAt: [:],
         refreshIntervalMinutes: 10,
         lowQuotaThreshold: 20,
         alertThresholds: [50, 20, 5],
@@ -436,7 +440,10 @@ public struct AppConfig: Equatable, Sendable {
                 AccountSync.touchAccount(&accounts[idx])
                 AccountSync.forgetDeleted(&self, accountId: accountId)
             }
-            if activate { activeAccountId = accountId }
+            if activate {
+                if activeAccountId != accountId { AccountSync.touchActiveAccount(&self) }
+                activeAccountId = accountId
+            }
             syncLegacyFields()
             return (accounts[idx], false)
         }
@@ -454,13 +461,17 @@ public struct AppConfig: Equatable, Sendable {
         AccountSync.touchAccount(&acc)
         AccountSync.forgetDeleted(&self, accountId: accountId)
         accounts.append(acc)
-        if activate { activeAccountId = accountId }
+        if activate {
+            if activeAccountId != accountId { AccountSync.touchActiveAccount(&self) }
+            activeAccountId = accountId
+        }
         syncLegacyFields()
         return (acc, true)
     }
 
     public mutating func setActiveAccount(_ accountId: String) -> Bool {
         guard accounts.contains(where: { $0.id == accountId }) else { return false }
+        if activeAccountId != accountId { AccountSync.touchActiveAccount(&self) }
         activeAccountId = accountId
         syncLegacyFields()
         return true
@@ -508,6 +519,7 @@ public struct AppConfig: Equatable, Sendable {
         if accounts.count == before { return false }
         if activeAccountId == accountId {
             activeAccountId = accounts.first?.id ?? ""
+            AccountSync.touchActiveAccount(&self)
         }
         AccountSync.rememberDeleted(&self, accountId: accountId)
         syncLegacyFields()
@@ -750,6 +762,12 @@ public enum ConfigStore {
             }
         }
         if let v = raw["active_account_id"] as? String { cfg.activeAccountId = v }
+        if let v = raw["active_account_updated_at"] as? String { cfg.activeAccountUpdatedAt = v.trimmingCharacters(in: .whitespaces) }
+        if let rawFields = raw["settings_field_updated_at"] as? [String: Any] {
+            var fields: [String: String] = [:]
+            for (key, value) in rawFields { fields[key] = (value as? String) ?? "" }
+            cfg.settingsFieldUpdatedAt = AccountSync.sanitizeFieldUpdatedAt(fields)
+        }
         if let v = intValue(raw["refresh_interval_minutes"]) { cfg.refreshIntervalMinutes = max(1, v) }
         if let v = intValue(raw["low_quota_threshold"]) { cfg.lowQuotaThreshold = min(100, max(1, v)) }
         if let v = raw["notify_enabled"] as? Bool { cfg.notifyEnabled = v }
@@ -1031,6 +1049,8 @@ public enum ConfigStore {
                 return d
             },
             "active_account_id": cfg.activeAccountId,
+            "active_account_updated_at": cfg.activeAccountUpdatedAt,
+            "settings_field_updated_at": cfg.settingsFieldUpdatedAt,
             "refresh_interval_minutes": cfg.refreshIntervalMinutes,
             "low_quota_threshold": cfg.lowQuotaThreshold,
             "alert_thresholds": cfg.alertThresholds,

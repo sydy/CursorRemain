@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import settings
@@ -35,6 +37,51 @@ CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
 """
 
 
+BACKUP_KEEP = 7
+BACKUP_INTERVAL_SEC = 86_400
+
+
+def backup_dir(db_path: Path | None = None) -> Path:
+    path = Path(db_path or settings.DATABASE_PATH)
+    return path.parent / "backups"
+
+
+def maybe_backup_db(conn: sqlite3.Connection | None = None, path: Path | None = None) -> Path | None:
+    db_path = Path(path or settings.DATABASE_PATH)
+    if not db_path.is_file() or db_path.stat().st_size <= 0:
+        return None
+    dest_dir = backup_dir(db_path)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    existing = sorted(dest_dir.glob("sync-*.db"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if existing and (time.time() - existing[0].stat().st_mtime) < BACKUP_INTERVAL_SEC:
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = dest_dir / f"sync-{stamp}.db"
+    src = conn
+    close_src = False
+    if src is None:
+        src = sqlite3.connect(str(db_path))
+        close_src = True
+    try:
+        dst = sqlite3.connect(str(dest))
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        if close_src:
+            src.close()
+    keep = existing[: BACKUP_KEEP - 1]
+    for old in existing:
+        if old in keep:
+            continue
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    return dest
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     global _CONN
     db_path = Path(path or settings.DATABASE_PATH)
@@ -45,6 +92,10 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
     conn.commit()
+    try:
+        maybe_backup_db(conn, db_path)
+    except Exception:
+        pass
     return conn
 
 

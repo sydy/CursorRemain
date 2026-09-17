@@ -14,8 +14,12 @@ from .auth import (
     bearer_user,
     client_ip,
     create_user,
+    delete_user,
+    get_user,
     get_user_by_email,
+    hash_password,
     issue_refresh,
+    maybe_purge_refresh,
     now_iso,
     revoke_refresh,
     rotate_refresh,
@@ -66,6 +70,17 @@ class SyncPutBody(BaseModel):
     envelope: dict
 
 
+class PasswordConfirmBody(BaseModel):
+    password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
+
+
+class ChangePasswordBody(BaseModel):
+    old_password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
+    new_password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
+    revision: int = Field(default=0, ge=0)
+    envelope: dict | None = None
+
+
 @app.exception_handler(HTTPException)
 async def http_error(_, exc: HTTPException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
@@ -79,6 +94,7 @@ def health():
 @app.post("/v1/auth/register")
 def register(body: AuthBody, request: Request):
     LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    maybe_purge_refresh()
     email = validate_email(body.email)
     password = validate_password(body.password)
     user = create_user(email, password)
@@ -88,6 +104,7 @@ def register(body: AuthBody, request: Request):
 @app.post("/v1/auth/login")
 def login(body: AuthBody, request: Request):
     LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    maybe_purge_refresh()
     email = validate_email(body.email)
     password = validate_password(body.password)
     user = get_user_by_email(email)
@@ -99,6 +116,7 @@ def login(body: AuthBody, request: Request):
 @app.post("/v1/auth/refresh")
 def refresh(body: RefreshBody, request: Request):
     LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    maybe_purge_refresh()
     access, raw = rotate_refresh(body.refresh_token.strip())
     payload = {"access_token": access, "refresh_token": raw, "expires_in": settings.ACCESS_MINUTES * 60}
     return payload
@@ -116,6 +134,72 @@ def logout(body: LogoutBody, request: Request):
 def me(request: Request):
     user = bearer_user(request)
     return {"id": user["id"], "email": user["email"]}
+
+
+@app.delete("/v1/me")
+def delete_me(body: PasswordConfirmBody, request: Request):
+    user = bearer_user(request)
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    password = validate_password(body.password)
+    if not verify_password(user["password_hash"], password):
+        raise HTTPException(status_code=401, detail="密码不正确")
+    delete_user(user["id"])
+    return {"ok": True}
+
+
+@app.post("/v1/auth/password")
+def change_password(body: ChangePasswordBody, request: Request):
+    user = bearer_user(request)
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    old = validate_password(body.old_password)
+    new = validate_password(body.new_password)
+    if old == new:
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
+    if not verify_password(user["password_hash"], old):
+        raise HTTPException(status_code=401, detail="当前密码不正确")
+    envelope = validate_envelope(body.envelope) if body.envelope is not None else None
+    stamp = now_iso()
+    with lock():
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT revision FROM sync_blobs WHERE user_id = ?",
+            (user["id"],),
+        ).fetchone()
+        current = int(row["revision"]) if row else 0
+        if row is not None:
+            if envelope is None:
+                raise HTTPException(status_code=400, detail="请先用新密码重新加密同步数据")
+            if body.revision != current:
+                raise HTTPException(status_code=409, detail="同步冲突，请重试")
+            next_rev = current + 1
+            payload = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+            conn.execute(
+                "UPDATE sync_blobs SET revision = ?, envelope = ?, updated_at = ? WHERE user_id = ?",
+                (next_rev, payload, stamp, user["id"]),
+            )
+        elif envelope is not None:
+            if body.revision != current:
+                raise HTTPException(status_code=409, detail="同步冲突，请重试")
+            next_rev = current + 1
+            payload = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+            conn.execute(
+                "INSERT INTO sync_blobs (user_id, revision, envelope, updated_at) VALUES (?, ?, ?, ?)",
+                (user["id"], next_rev, payload, stamp),
+            )
+        else:
+            next_rev = current
+        conn.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hash_password(new), user["id"]),
+        )
+        conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user["id"],))
+        conn.commit()
+    fresh = get_user(user["id"])
+    if fresh is None:
+        raise HTTPException(status_code=401, detail="请先登录云同步")
+    tokens = token_payload(fresh, issue_refresh(fresh["id"]))
+    tokens["revision"] = next_rev
+    return tokens
 
 
 @app.get("/v1/sync")
@@ -187,7 +271,10 @@ def validate_envelope(envelope: dict) -> dict:
     ciphertext = str(envelope["ciphertext"])
     if len(ciphertext) > settings.MAX_CIPHERTEXT_CHARS:
         raise HTTPException(status_code=413, detail="密文过长")
-    return {
+    compression = str(envelope.get("compression") or "").strip().lower()
+    if compression and compression not in {"gzip"}:
+        raise HTTPException(status_code=400, detail="不支持的同步压缩")
+    out = {
         "format": fmt,
         "kdf": "pbkdf2-sha256",
         "iterations": iterations,
@@ -195,3 +282,6 @@ def validate_envelope(envelope: dict) -> dict:
         "nonce": str(envelope["nonce"]),
         "ciphertext": ciphertext,
     }
+    if compression:
+        out["compression"] = compression
+    return out

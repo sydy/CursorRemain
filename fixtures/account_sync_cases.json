@@ -714,6 +714,98 @@
         "auth_error_notified": true,
         "low_quota_notified": true
       }
+    },
+    {
+      "name": "split_settings_and_active_account",
+      "local": {
+        "updated_at": "2026-09-01T00:00:00.000Z",
+        "active_account_id": "user_01B",
+        "active_account_updated_at": "2026-09-12T00:00:00.000Z",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "个人",
+            "token": "tok-a",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-01T00:00:00.000Z"
+          },
+          {
+            "id": "user_01B",
+            "label": "公司",
+            "token": "tok-b",
+            "membership_type": "team",
+            "sync_updated_at": "2026-09-02T00:00:00.000Z"
+          }
+        ],
+        "deleted": [],
+        "settings": {
+          "refresh_interval_minutes": 10,
+          "alert_thresholds": [50, 20, 5],
+          "notify_enabled": true,
+          "notify_exhaustion_risk": true,
+          "tray_display_mode": "ring",
+          "monthly_plan_usd": 20,
+          "usd_cny_rate": 7.5,
+          "field_updated_at": {
+            "alert_thresholds": "2026-09-12T00:00:00.000Z",
+            "notify_enabled": "2026-09-12T00:00:00.000Z"
+          }
+        }
+      },
+      "remote": {
+        "updated_at": "2026-09-10T00:00:00.000Z",
+        "active_account_id": "user_01A",
+        "active_account_updated_at": "2026-09-02T00:00:00.000Z",
+        "accounts": [
+          {
+            "id": "user_01A",
+            "label": "个人",
+            "token": "tok-a",
+            "membership_type": "pro",
+            "sync_updated_at": "2026-09-01T00:00:00.000Z"
+          },
+          {
+            "id": "user_01B",
+            "label": "公司",
+            "token": "tok-b",
+            "membership_type": "team",
+            "sync_updated_at": "2026-09-02T00:00:00.000Z"
+          }
+        ],
+        "deleted": [],
+        "settings": {
+          "refresh_interval_minutes": 15,
+          "alert_thresholds": [40, 10],
+          "notify_enabled": false,
+          "notify_exhaustion_risk": false,
+          "tray_display_mode": "number",
+          "monthly_plan_usd": 60,
+          "usd_cny_rate": 7.2,
+          "field_updated_at": {
+            "refresh_interval_minutes": "2026-09-11T00:00:00.000Z",
+            "tray_display_mode": "2026-09-11T00:00:00.000Z",
+            "monthly_plan_usd": "2026-09-11T00:00:00.000Z",
+            "usd_cny_rate": "2026-09-11T00:00:00.000Z",
+            "notify_exhaustion_risk": "2026-09-11T00:00:00.000Z"
+          }
+        }
+      },
+      "expected": {
+        "active_account_id": "user_01B",
+        "ids": ["user_01A", "user_01B"],
+        "labels": { "user_01A": "个人", "user_01B": "公司" },
+        "tokens": { "user_01A": "tok-a", "user_01B": "tok-b" },
+        "deleted_ids": [],
+        "settings": {
+          "refresh_interval_minutes": 15,
+          "alert_thresholds": [50, 20, 5],
+          "notify_enabled": true,
+          "notify_exhaustion_risk": false,
+          "tray_display_mode": "number",
+          "monthly_plan_usd": 60,
+          "usd_cny_rate": 7.2
+        }
+      }
     }
   ],
   "crypto": {

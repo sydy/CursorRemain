@@ -128,6 +128,71 @@ def logout(cfg: dict[str, Any], *, requester: Requester | None = None, base: str
     clear_session(cfg)
 
 
+def change_password(
+    cfg: dict[str, Any],
+    old_password: str,
+    new_password: str,
+    *,
+    requester: Requester | None = None,
+    base: str = API_BASE,
+) -> dict[str, Any]:
+    old = (old_password or "").strip()
+    new = (new_password or "").strip()
+    if len(new) < 8:
+        raise CloudSyncError("密码至少 8 位")
+    if old == new:
+        raise CloudSyncError("新密码不能与当前密码相同")
+    code, payload = _authed(cfg, "GET", "/v1/sync", requester=requester, base=base)
+    if code >= 400:
+        raise CloudSyncError(_detail(payload, "无法读取云端同步数据"), code)
+    revision = int(payload.get("revision") or 0)
+    envelope = payload.get("envelope")
+    sealed = None
+    if envelope:
+        remote = decrypt_envelope(envelope, old)
+        sealed = encrypt_envelope(remote, new)
+    body: dict[str, Any] = {
+        "old_password": old,
+        "new_password": new,
+        "revision": revision,
+    }
+    if sealed is not None:
+        body["envelope"] = sealed
+    status, result = _authed(cfg, "POST", "/v1/auth/password", body=body, requester=requester, base=base)
+    if status == 409:
+        code, payload = _authed(cfg, "GET", "/v1/sync", requester=requester, base=base)
+        if code >= 400:
+            raise CloudSyncError(_detail(payload, "同步冲突，请重试"), code)
+        revision = int(payload.get("revision") or 0)
+        envelope = payload.get("envelope")
+        body["revision"] = revision
+        if envelope:
+            remote = decrypt_envelope(envelope, old)
+            body["envelope"] = encrypt_envelope(remote, new)
+        status, result = _authed(cfg, "POST", "/v1/auth/password", body=body, requester=requester, base=base)
+    if status >= 400:
+        raise CloudSyncError(_detail(result, "修改密码失败"), status)
+    apply_session(cfg, str(cfg.get("cloud_email") or result.get("email") or ""), new, result)
+    cfg["cloud_revision"] = int(result.get("revision") or revision)
+    return result
+
+
+def delete_account(
+    cfg: dict[str, Any],
+    password: str,
+    *,
+    requester: Requester | None = None,
+    base: str = API_BASE,
+) -> None:
+    secret = (password or "").strip()
+    if not secret:
+        raise CloudSyncError("请输入密码以确认注销")
+    status, payload = _authed(cfg, "DELETE", "/v1/me", body={"password": secret}, requester=requester, base=base)
+    if status >= 400:
+        raise CloudSyncError(_detail(payload, "注销失败"), status)
+    clear_session(cfg, keep_email=False)
+
+
 def _refresh(cfg: dict[str, Any], requester: Requester | None, base: str) -> bool:
     refresh = str(cfg.get("cloud_refresh_token") or "").strip()
     if not refresh:
@@ -167,6 +232,7 @@ def empty_snapshot() -> dict[str, Any]:
         "updated_at": "",
         "device_id": "",
         "active_account_id": "",
+        "active_account_updated_at": "",
         "accounts": [],
         "deleted": [],
         "settings": None,

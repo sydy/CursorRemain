@@ -209,6 +209,44 @@ class CloudSyncTests(unittest.TestCase):
         self.assertTrue(logs)
         self.assertIn("口令", logs[0])
 
+    def test_change_password_reseals_cloud_blob(self) -> None:
+        from accounts import upsert_account
+        from cloud_sync import apply_session, change_password, login, reconcile, register
+
+        http = _requester(self.client)
+        tokens = register("pw@harker.cn", "password1", requester=http)
+        a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
+        upsert_account(a, "user_01PW%3A%3Ajwt.part.sig", label="改密号", activate=True)
+        apply_session(a, "pw@harker.cn", "password1", tokens)
+        _, status = reconcile(a, requester=http)
+        self.assertTrue(status["ok"], status["message"])
+
+        change_password(a, "password1", "password2", requester=http)
+        self.assertEqual(a["sync_secret"], "password2")
+        self.assertTrue(a["cloud_access_token"])
+
+        b = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
+        apply_session(b, "pw@harker.cn", "password2", login("pw@harker.cn", "password2", requester=http))
+        _, status_b = reconcile(b, requester=http)
+        self.assertTrue(status_b["ok"], status_b["message"])
+        self.assertEqual(b["accounts"][0]["label"], "改密号")
+
+    def test_delete_account_wipes_cloud(self) -> None:
+        from accounts import upsert_account
+        from cloud_sync import apply_session, delete_account, login, reconcile, register
+
+        http = _requester(self.client)
+        tokens = register("gone@harker.cn", "password1", requester=http)
+        a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
+        upsert_account(a, "user_01DEL%3A%3Ajwt.part.sig", label="注销号", activate=True)
+        apply_session(a, "gone@harker.cn", "password1", tokens)
+        reconcile(a, requester=http)
+        delete_account(a, "password1", requester=http)
+        self.assertFalse(a["sync_enabled"])
+        self.assertEqual(a["cloud_email"], "")
+        with self.assertRaises(Exception):
+            login("gone@harker.cn", "password1", requester=http)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -937,6 +937,15 @@ final class AccountSyncFixtureTests: XCTestCase {
                 XCTAssertEqual(merged.settings?.trayDisplayMode, str(expSettings["tray_display_mode"]))
                 XCTAssertEqual(merged.settings?.notifyEnabled, expSettings["notify_enabled"] as? Bool)
                 XCTAssertEqual(merged.settings?.monthlyPlanUsd ?? -1, num(expSettings["monthly_plan_usd"]) ?? -2, accuracy: 0.001)
+                if let th = expSettings["alert_thresholds"] as? [Int] {
+                    XCTAssertEqual(merged.settings?.alertThresholds, th)
+                }
+                if let ner = expSettings["notify_exhaustion_risk"] as? Bool {
+                    XCTAssertEqual(merged.settings?.notifyExhaustionRisk, ner)
+                }
+                if let rate = num(expSettings["usd_cny_rate"]) {
+                    XCTAssertEqual(merged.settings?.usdCnyRate ?? -1, rate, accuracy: 0.001)
+                }
             }
             if let remaining = exp["remaining"] as? [String: Any] {
                 for acc in merged.accounts {

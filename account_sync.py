@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import json
 import os
@@ -40,6 +41,19 @@ SALT_LEN = 16
 NONCE_LEN = 12
 TAG_LEN = 16
 SYNC_FILE_SUFFIXES = {".sync", ".json"}
+SYNC_USAGE_HISTORY_DAYS = 21
+SYNC_USAGE_EVENT_DAYS = 21
+SYNC_PLAINTEXT_BUDGET = 360_000
+SYNC_COMPRESS_MIN_BYTES = 2048
+SETTINGS_FIELD_KEYS = (
+    "refresh_interval_minutes",
+    "alert_thresholds",
+    "notify_enabled",
+    "notify_exhaustion_risk",
+    "tray_display_mode",
+    "monthly_plan_usd",
+    "usd_cny_rate",
+)
 
 SYNC_CONFIG_KEYS = (
     "sync_enabled",
@@ -52,6 +66,8 @@ SYNC_CONFIG_KEYS = (
     "cloud_refresh_token",
     "cloud_revision",
     "deleted_accounts",
+    "active_account_updated_at",
+    "settings_field_updated_at",
 )
 
 
@@ -303,19 +319,84 @@ def snapshot_usage_row(raw: Any) -> dict[str, Any] | None:
 
 
 def snapshot_usage_from_files(account_ids: list[str], directory: Any = None) -> list[dict[str, Any]]:
-    from usage_history import KEEP_DAYS, load_points
-    from usage_report import USAGE_EVENT_KEEP_DAYS, event_to_dict, load_cached_events, prune_usage_events
+    from usage_history import load_points
+    from usage_report import event_to_dict, load_cached_events, prune_usage_events
 
-    cutoff = int((datetime.now(timezone.utc).timestamp() - USAGE_EVENT_KEEP_DAYS * 86400) * 1000)
+    cutoff = int((datetime.now(timezone.utc).timestamp() - SYNC_USAGE_EVENT_DAYS * 86400) * 1000)
     rows: list[dict[str, Any]] = []
     for aid in account_ids:
-        history = load_points(days=KEEP_DAYS, account_id=aid, directory=directory)
+        history = load_points(days=SYNC_USAGE_HISTORY_DAYS, account_id=aid, directory=directory)
         events = [event_to_dict(e) for e in prune_usage_events(load_cached_events(aid, False, directory), cutoff)]
         team = [event_to_dict(e) for e in prune_usage_events(load_cached_events(aid, True, directory), cutoff)]
         if not history and not events and not team:
             continue
         rows.append({"account_id": aid, "history": history, "events": events, "team_events": team})
     return rows
+
+
+def _snapshot_byte_size(snap: dict[str, Any]) -> int:
+    return len(json.dumps(snap, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8"))
+
+
+def _drop_oldest_usage(usage: list[dict[str, Any]]) -> bool:
+    best_aid = ""
+    best_kind = ""
+    best_ts = float("inf")
+    for row in usage:
+        aid = str(row.get("account_id") or "")
+        for point in row.get("history") or []:
+            try:
+                ts = float(point.get("ts") or 0)
+            except (TypeError, ValueError):
+                continue
+            if ts < best_ts:
+                best_ts = ts
+                best_aid = aid
+                best_kind = "history"
+        for kind in ("events", "team_events"):
+            for ev in row.get(kind) or []:
+                try:
+                    ts = float(ev.get("timestamp_ms") or 0) / 1000.0
+                except (TypeError, ValueError):
+                    continue
+                if ts < best_ts:
+                    best_ts = ts
+                    best_aid = aid
+                    best_kind = kind
+    if not best_aid or not best_kind:
+        return False
+    for row in usage:
+        if row.get("account_id") != best_aid:
+            continue
+        items = list(row.get(best_kind) or [])
+        if not items:
+            return False
+        if best_kind == "history":
+            items.sort(key=lambda p: float(p.get("ts") or 0))
+        else:
+            items.sort(key=lambda e: float(e.get("timestamp_ms") or 0))
+        row[best_kind] = items[1:]
+        return True
+    return False
+
+
+def trim_snapshot_for_upload(snap: dict[str, Any], budget: int = SYNC_PLAINTEXT_BUDGET) -> dict[str, Any]:
+    out = dict(snap)
+    if not isinstance(out.get("usage"), list):
+        return out
+    usage = [dict(row) for row in out["usage"]]
+    for row in usage:
+        row["history"] = list(row.get("history") or [])
+        row["events"] = list(row.get("events") or [])
+        row["team_events"] = list(row.get("team_events") or [])
+    while usage and _snapshot_byte_size({**out, "usage": usage}) > budget:
+        if not _drop_oldest_usage(usage):
+            break
+    usage = [row for row in usage if row.get("history") or row.get("events") or row.get("team_events")]
+    if _snapshot_byte_size({**out, "usage": usage}) > budget:
+        usage = []
+    out["usage"] = usage
+    return out
 
 
 def merge_usage(local: Any, remote: Any, keep_ids: set[str]) -> list[dict[str, Any]] | None:
@@ -385,6 +466,17 @@ def usage_identity(usage: Any) -> tuple:
     return tuple(rows)
 
 
+def sanitize_field_updated_at(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key in SETTINGS_FIELD_KEYS:
+        stamp = str(raw.get(key) or "").strip()
+        if stamp and parse_iso(stamp) is not None:
+            out[key] = stamp
+    return out
+
+
 def snapshot_settings(raw: Any) -> dict[str, Any]:
     from config import _VALID_DISPLAY_MODES, _parse_thresholds
     from usage_report import clamp_monthly_plan_usd, clamp_usd_cny_rate
@@ -397,7 +489,10 @@ def snapshot_settings(raw: Any) -> dict[str, Any]:
         interval = max(1, int(source.get("refresh_interval_minutes") or 10))
     except (TypeError, ValueError):
         interval = 10
-    return {
+    stamps = sanitize_field_updated_at(source.get("field_updated_at"))
+    if not stamps:
+        stamps = sanitize_field_updated_at(source.get("settings_field_updated_at"))
+    row = {
         "refresh_interval_minutes": interval,
         "alert_thresholds": _parse_thresholds(source.get("alert_thresholds")),
         "notify_enabled": bool(source.get("notify_enabled", True)),
@@ -406,6 +501,17 @@ def snapshot_settings(raw: Any) -> dict[str, Any]:
         "monthly_plan_usd": clamp_monthly_plan_usd(source.get("monthly_plan_usd")),
         "usd_cny_rate": clamp_usd_cny_rate(source.get("usd_cny_rate")),
     }
+    if stamps:
+        row["field_updated_at"] = stamps
+    return row
+
+
+def settings_value_key(settings: Any) -> tuple:
+    if not isinstance(settings, dict):
+        return ()
+    row = snapshot_settings(settings)
+    row.pop("field_updated_at", None)
+    return tuple(sorted((k, tuple(v) if isinstance(v, list) else v) for k, v in row.items()))
 
 
 def apply_settings(cfg: dict[str, Any], settings: Any) -> None:
@@ -419,6 +525,61 @@ def apply_settings(cfg: dict[str, Any], settings: Any) -> None:
     cfg["tray_display_mode"] = row["tray_display_mode"]
     cfg["monthly_plan_usd"] = row["monthly_plan_usd"]
     cfg["usd_cny_rate"] = row["usd_cny_rate"]
+    if row.get("field_updated_at"):
+        cfg["settings_field_updated_at"] = dict(row["field_updated_at"])
+
+
+def touch_active_account(cfg: dict[str, Any], stamp: str | None = None) -> str:
+    value = stamp or now_iso()
+    cfg["active_account_updated_at"] = value
+    return value
+
+
+def touch_changed_settings(cfg: dict[str, Any], previous: Any, stamp: str | None = None) -> dict[str, str]:
+    when = stamp or now_iso()
+    before = snapshot_settings(previous if isinstance(previous, dict) else {})
+    after = snapshot_settings(cfg)
+    stamps = sanitize_field_updated_at(cfg.get("settings_field_updated_at") or after.get("field_updated_at"))
+    for key in SETTINGS_FIELD_KEYS:
+        if before.get(key) != after.get(key):
+            stamps[key] = when
+    cfg["settings_field_updated_at"] = stamps
+    return stamps
+
+
+def merge_settings(
+    local: Any,
+    remote: Any,
+    local_fallback: Any,
+    remote_fallback: Any,
+) -> dict[str, Any] | None:
+    if not isinstance(local, dict) and not isinstance(remote, dict):
+        return None
+    if not isinstance(local, dict):
+        return snapshot_settings(remote)
+    if not isinstance(remote, dict):
+        return snapshot_settings(local)
+    left = snapshot_settings(local)
+    right = snapshot_settings(remote)
+    left_ts = left.get("field_updated_at") or {}
+    right_ts = right.get("field_updated_at") or {}
+    out: dict[str, Any] = {}
+    stamps: dict[str, str] = {}
+    for key in SETTINGS_FIELD_KEYS:
+        l_at = str(left_ts.get(key) or local_fallback or "")
+        r_at = str(right_ts.get(key) or remote_fallback or "")
+        if compare_iso(r_at, l_at) > 0:
+            out[key] = right[key]
+            if r_at:
+                stamps[key] = r_at
+        else:
+            out[key] = left[key]
+            if l_at:
+                stamps[key] = l_at
+    merged = snapshot_settings(out)
+    if stamps:
+        merged["field_updated_at"] = sanitize_field_updated_at(stamps)
+    return merged
 
 
 def snapshot_from_config(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -434,6 +595,7 @@ def snapshot_from_config(cfg: dict[str, Any]) -> dict[str, Any]:
         "updated_at": str(cfg.get("sync_last_at") or ""),
         "device_id": str(cfg.get("sync_device_id") or ""),
         "active_account_id": str(cfg.get("active_account_id") or ""),
+        "active_account_updated_at": str(cfg.get("active_account_updated_at") or ""),
         "accounts": accounts,
         "deleted": sanitize_deleted(cfg.get("deleted_accounts")),
         "settings": snapshot_settings(cfg),
@@ -470,8 +632,13 @@ def snapshot_identity(snap: dict[str, Any]) -> tuple:
         for d in sorted(snap.get("deleted") or [], key=lambda x: x.get("id") or "")
     )
     settings = snap.get("settings")
-    settings_key = tuple(sorted(snapshot_settings(settings).items())) if isinstance(settings, dict) else ()
-    return (str(snap.get("active_account_id") or ""), accounts, deleted, settings_key, usage_identity(snap.get("usage")))
+    return (
+        str(snap.get("active_account_id") or ""),
+        accounts,
+        deleted,
+        settings_value_key(settings),
+        usage_identity(snap.get("usage")),
+    )
 
 
 def merge_snapshots(local: dict[str, Any], remote: dict[str, Any]) -> dict[str, Any]:
@@ -501,12 +668,20 @@ def merge_snapshots(local: dict[str, Any], remote: dict[str, Any]) -> dict[str, 
         if aid in chosen:
             tombstones.pop(aid, None)
 
-    if compare_iso(remote.get("updated_at"), local.get("updated_at")) > 0:
+    local_active_at = str(local.get("active_account_updated_at") or local.get("updated_at") or "")
+    remote_active_at = str(remote.get("active_account_updated_at") or remote.get("updated_at") or "")
+    if compare_iso(remote_active_at, local_active_at) > 0:
         active = str(remote.get("active_account_id") or "")
-        settings = remote.get("settings") if remote.get("settings") is not None else local.get("settings")
+        active_at = remote_active_at
     else:
         active = str(local.get("active_account_id") or "")
-        settings = local.get("settings") if local.get("settings") is not None else remote.get("settings")
+        active_at = local_active_at
+    settings = merge_settings(
+        local.get("settings"),
+        remote.get("settings"),
+        local.get("updated_at"),
+        remote.get("updated_at"),
+    )
     if active not in chosen:
         active = next(iter(sorted(chosen)), "")
 
@@ -515,9 +690,10 @@ def merge_snapshots(local: dict[str, Any], remote: dict[str, Any]) -> dict[str, 
         "updated_at": newer_iso(local.get("updated_at"), remote.get("updated_at")),
         "device_id": str(local.get("device_id") or remote.get("device_id") or ""),
         "active_account_id": active,
+        "active_account_updated_at": active_at,
         "accounts": [chosen[k] for k in sorted(chosen)],
         "deleted": [{"id": aid, "deleted_at": tombstones[aid]} for aid in sorted(tombstones)],
-        "settings": snapshot_settings(settings) if isinstance(settings, dict) else None,
+        "settings": settings,
         "usage": merge_usage(local.get("usage"), remote.get("usage"), set(chosen)),
     }
 
@@ -580,6 +756,7 @@ def apply_snapshot_to_config(cfg: dict[str, Any], snap: dict[str, Any]) -> bool:
     else:
         cfg["active_account_id"] = ""
     apply_settings(cfg, snap.get("settings"))
+    cfg["active_account_updated_at"] = str(snap.get("active_account_updated_at") or "")
     usage_changed = apply_usage_to_files(snap.get("usage"), ids)
     sync_legacy_fields(cfg)
     after = [
@@ -667,11 +844,16 @@ def encrypt_envelope(
     nonce_b = nonce if nonce is not None else secrets.token_bytes(NONCE_LEN)
     if len(salt_b) != SALT_LEN or len(nonce_b) != NONCE_LEN:
         raise ValueError("salt/nonce 长度不正确")
-    raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    to_seal = trim_snapshot_for_upload(payload)
+    raw = json.dumps(to_seal, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    compression = ""
+    if len(raw) >= SYNC_COMPRESS_MIN_BYTES:
+        raw = gzip.compress(raw, compresslevel=6)
+        compression = "gzip"
     key = derive_key(passphrase, salt_b, iterations)
     blob = _aes_gcm_encrypt(key, nonce_b, raw)
-    fmt = SYNC_FORMAT_V2 if payload.get("settings") is not None or payload.get("usage") else SYNC_FORMAT
-    return {
+    fmt = SYNC_FORMAT_V2 if to_seal.get("settings") is not None or to_seal.get("usage") else SYNC_FORMAT
+    envelope = {
         "format": fmt,
         "kdf": SYNC_KDF,
         "iterations": iterations,
@@ -679,6 +861,9 @@ def encrypt_envelope(
         "nonce": base64.b64encode(nonce_b).decode("ascii"),
         "ciphertext": base64.b64encode(blob).decode("ascii"),
     }
+    if compression:
+        envelope["compression"] = compression
+    return envelope
 
 
 def decrypt_envelope(envelope: dict[str, Any], passphrase: str) -> dict[str, Any]:
@@ -700,6 +885,14 @@ def decrypt_envelope(envelope: dict[str, Any], passphrase: str) -> dict[str, Any
         raw = _aes_gcm_decrypt(key, nonce, blob)
     except Exception as exc:
         raise ValueError("同步口令不正确或文件已损坏") from exc
+    compression = str(envelope.get("compression") or "").strip().lower()
+    if compression == "gzip":
+        try:
+            raw = gzip.decompress(raw)
+        except Exception as exc:
+            raise ValueError("同步文件损坏") from exc
+    elif compression:
+        raise ValueError("不支持的同步压缩")
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception as exc:
@@ -709,6 +902,7 @@ def decrypt_envelope(envelope: dict[str, Any], passphrase: str) -> dict[str, Any
     payload["accounts"] = [snapshot_account(a) for a in payload.get("accounts") or [] if isinstance(a, dict)]
     payload["deleted"] = sanitize_deleted(payload.get("deleted"))
     payload["active_account_id"] = str(payload.get("active_account_id") or "")
+    payload["active_account_updated_at"] = str(payload.get("active_account_updated_at") or "")
     payload["updated_at"] = str(payload.get("updated_at") or "")
     payload["device_id"] = str(payload.get("device_id") or "")
     payload["version"] = 1
@@ -811,5 +1005,11 @@ def normalize_sync_config(cfg: dict[str, Any], *, raw: dict[str, Any] | None = N
     logged_in = bool(cfg["cloud_access_token"] or cfg["cloud_refresh_token"])
     cfg["sync_enabled"] = bool(source.get("sync_enabled", cfg.get("sync_enabled", False))) and logged_in
     cfg["deleted_accounts"] = sanitize_deleted(source.get("deleted_accounts", cfg.get("deleted_accounts")))
+    cfg["active_account_updated_at"] = str(
+        source.get("active_account_updated_at", cfg.get("active_account_updated_at", "")) or ""
+    ).strip()
+    cfg["settings_field_updated_at"] = sanitize_field_updated_at(
+        source.get("settings_field_updated_at", cfg.get("settings_field_updated_at"))
+    )
     cfg.pop("sync_path", None)
     return cfg

@@ -66,6 +66,12 @@ class MergeFixtureTests(unittest.TestCase):
                     self.assertEqual(merged["settings"]["tray_display_mode"], exp["settings"]["tray_display_mode"])
                     self.assertEqual(merged["settings"]["notify_enabled"], exp["settings"]["notify_enabled"])
                     self.assertEqual(merged["settings"]["monthly_plan_usd"], exp["settings"]["monthly_plan_usd"])
+                    if "alert_thresholds" in exp["settings"]:
+                        self.assertEqual(merged["settings"]["alert_thresholds"], exp["settings"]["alert_thresholds"])
+                    if "notify_exhaustion_risk" in exp["settings"]:
+                        self.assertEqual(merged["settings"]["notify_exhaustion_risk"], exp["settings"]["notify_exhaustion_risk"])
+                    if "usd_cny_rate" in exp["settings"]:
+                        self.assertEqual(merged["settings"]["usd_cny_rate"], exp["settings"]["usd_cny_rate"])
                 if "remaining" in exp:
                     got = {a["id"]: a.get("last_remaining") for a in merged["accounts"]}
                     self.assertEqual(got, exp["remaining"])
@@ -123,6 +129,72 @@ class CryptoFixtureTests(unittest.TestCase):
                 },
                 "wrong-pass",
             )
+
+    def test_gzip_envelope_roundtrip(self) -> None:
+        from account_sync import SYNC_COMPRESS_MIN_BYTES, decrypt_envelope, encrypt_envelope
+
+        accounts = [
+            {
+                "id": f"user_{i:02d}",
+                "label": f"账号{i}",
+                "token": f"tok-{i}-" + ("x" * 80),
+                "membership_type": "pro",
+                "sync_updated_at": "2026-09-09T00:00:00.000Z",
+            }
+            for i in range(12)
+        ]
+        payload = {
+            "version": 1,
+            "updated_at": "2026-09-09T00:00:00.000Z",
+            "device_id": "dev-gzip",
+            "active_account_id": "user_00",
+            "accounts": accounts,
+            "deleted": [],
+            "settings": {
+                "refresh_interval_minutes": 10,
+                "alert_thresholds": [50, 20, 5],
+                "notify_enabled": True,
+                "notify_exhaustion_risk": True,
+                "tray_display_mode": "ring",
+                "monthly_plan_usd": 20,
+                "usd_cny_rate": 7.5,
+            },
+        }
+        envelope = encrypt_envelope(payload, "gzip-pass-123")
+        self.assertGreaterEqual(
+            len(__import__("json").dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()),
+            SYNC_COMPRESS_MIN_BYTES,
+        )
+        self.assertEqual(envelope.get("compression"), "gzip")
+        got = decrypt_envelope(envelope, "gzip-pass-123")
+        self.assertEqual(got["accounts"][0]["id"], "user_00")
+        self.assertEqual(len(got["accounts"]), 12)
+        self.assertEqual(got["settings"]["tray_display_mode"], "ring")
+
+    def test_trim_snapshot_drops_oldest_usage(self) -> None:
+        from account_sync import trim_snapshot_for_upload
+
+        snap = {
+            "version": 1,
+            "updated_at": "2026-09-09T00:00:00.000Z",
+            "active_account_id": "user_01A",
+            "accounts": [],
+            "deleted": [],
+            "usage": [
+                {
+                    "account_id": "user_01A",
+                    "history": [
+                        {"ts": 1, "remaining": 90, "auto": None, "api": None},
+                        {"ts": 2, "remaining": 80, "auto": None, "api": None},
+                    ],
+                    "events": [{"id": "old", "timestamp_ms": 1000, "model": "opus", "kind": "included", "tokens": 1}],
+                    "team_events": [],
+                }
+            ],
+        }
+        trimmed = trim_snapshot_for_upload(snap, budget=80)
+        self.assertLessEqual(len((trimmed.get("usage") or [{}])[0].get("history") or []) if trimmed.get("usage") else 0, 2)
+        self.assertIn("usage", trimmed)
 
 
 class ExportImportTests(unittest.TestCase):

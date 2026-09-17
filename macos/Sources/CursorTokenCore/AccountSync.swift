@@ -96,6 +96,7 @@ public struct SyncSettings: Equatable, Sendable {
     public var trayDisplayMode: String
     public var monthlyPlanUsd: Double
     public var usdCnyRate: Double
+    public var fieldUpdatedAt: [String: String]
     public init(
         refreshIntervalMinutes: Int = 10,
         alertThresholds: [Int] = [50, 20, 5],
@@ -103,7 +104,8 @@ public struct SyncSettings: Equatable, Sendable {
         notifyExhaustionRisk: Bool = true,
         trayDisplayMode: String = "ring",
         monthlyPlanUsd: Double = 0,
-        usdCnyRate: Double = UsageEvents.defaultUsdCnyRate
+        usdCnyRate: Double = UsageEvents.defaultUsdCnyRate,
+        fieldUpdatedAt: [String: String] = [:]
     ) {
         self.refreshIntervalMinutes = max(1, refreshIntervalMinutes)
         self.alertThresholds = alertThresholds.isEmpty ? [50, 20, 5] : alertThresholds
@@ -113,6 +115,7 @@ public struct SyncSettings: Equatable, Sendable {
         self.trayDisplayMode = AppConfig.displayModes.contains(mode) ? mode : "ring"
         self.monthlyPlanUsd = UsageEvents.clampMonthlyPlanUsd(monthlyPlanUsd)
         self.usdCnyRate = UsageEvents.clampUsdCnyRate(usdCnyRate)
+        self.fieldUpdatedAt = AccountSync.sanitizeFieldUpdatedAt(fieldUpdatedAt)
     }
 }
 
@@ -121,6 +124,7 @@ public struct SyncSnapshot: Equatable, Sendable {
     public var updatedAt: String
     public var deviceId: String
     public var activeAccountId: String
+    public var activeAccountUpdatedAt: String
     public var accounts: [SyncAccount]
     public var deleted: [DeletedAccount]
     public var settings: SyncSettings?
@@ -130,6 +134,7 @@ public struct SyncSnapshot: Equatable, Sendable {
         updatedAt: String = "",
         deviceId: String = "",
         activeAccountId: String = "",
+        activeAccountUpdatedAt: String = "",
         accounts: [SyncAccount] = [],
         deleted: [DeletedAccount] = [],
         settings: SyncSettings? = nil,
@@ -139,6 +144,7 @@ public struct SyncSnapshot: Equatable, Sendable {
         self.updatedAt = updatedAt
         self.deviceId = deviceId
         self.activeAccountId = activeAccountId
+        self.activeAccountUpdatedAt = activeAccountUpdatedAt
         self.accounts = accounts
         self.deleted = deleted
         self.settings = settings
@@ -172,6 +178,19 @@ public enum AccountSync {
     public static let saltLen = 16
     public static let nonceLen = 12
     public static let tagLen = 16
+    public static let syncUsageHistoryDays = 21
+    public static let syncUsageEventDays = 21
+    public static let syncPlaintextBudget = 360_000
+    public static let syncCompressMinBytes = 2048
+    public static let settingsFieldKeys = [
+        "refresh_interval_minutes",
+        "alert_thresholds",
+        "notify_enabled",
+        "notify_exhaustion_risk",
+        "tray_display_mode",
+        "monthly_plan_usd",
+        "usd_cny_rate",
+    ]
     static let fileSuffixes: Set<String> = [".sync", ".json"]
 
     public static func nowIso(_ now: Date? = nil) -> String {
@@ -391,10 +410,10 @@ public enum AccountSync {
     }
 
     static func snapshotUsageFromFiles(_ accountIds: [String], directory: URL? = nil) -> [SyncUsage] {
-        let cutoff = Int64((Date().timeIntervalSince1970 - 120 * 86_400) * 1000)
+        let cutoff = Int64((Date().timeIntervalSince1970 - Double(syncUsageEventDays) * 86_400) * 1000)
         var rows: [SyncUsage] = []
         for aid in accountIds {
-            let history = UsageHistory.loadRecent(days: UsageHistory.keepDays, accountId: aid, directory: directory)
+            let history = UsageHistory.loadRecent(days: syncUsageHistoryDays, accountId: aid, directory: directory)
             let events = UsageEvents.prune(UsageEvents.load(accountId: aid, teamScope: false, directory: directory), minTimestampMs: cutoff)
             let team = UsageEvents.prune(UsageEvents.load(accountId: aid, teamScope: true, directory: directory), minTimestampMs: cutoff)
             if history.isEmpty && events.isEmpty && team.isEmpty { continue }
@@ -427,6 +446,16 @@ public enum AccountSync {
         }.joined(separator: "|")
     }
 
+    public static func sanitizeFieldUpdatedAt(_ raw: [String: String]?) -> [String: String] {
+        var out: [String: String] = [:]
+        guard let raw else { return out }
+        for key in settingsFieldKeys {
+            let stamp = (raw[key] ?? "").trimmingCharacters(in: .whitespaces)
+            if !stamp.isEmpty, parseIso(stamp) != nil { out[key] = stamp }
+        }
+        return out
+    }
+
     public static func snapshotSettings(_ cfg: AppConfig) -> SyncSettings {
         SyncSettings(
             refreshIntervalMinutes: max(1, cfg.refreshIntervalMinutes),
@@ -435,7 +464,8 @@ public enum AccountSync {
             notifyExhaustionRisk: cfg.notifyExhaustionRisk,
             trayDisplayMode: cfg.trayDisplayMode,
             monthlyPlanUsd: cfg.monthlyPlanUsd,
-            usdCnyRate: cfg.usdCnyRate
+            usdCnyRate: cfg.usdCnyRate,
+            fieldUpdatedAt: cfg.settingsFieldUpdatedAt
         )
     }
 
@@ -448,7 +478,8 @@ public enum AccountSync {
             notifyExhaustionRisk: settings.notifyExhaustionRisk,
             trayDisplayMode: settings.trayDisplayMode,
             monthlyPlanUsd: settings.monthlyPlanUsd,
-            usdCnyRate: settings.usdCnyRate
+            usdCnyRate: settings.usdCnyRate,
+            fieldUpdatedAt: settings.fieldUpdatedAt
         )
         cfg.refreshIntervalMinutes = row.refreshIntervalMinutes
         cfg.alertThresholds = row.alertThresholds
@@ -457,6 +488,71 @@ public enum AccountSync {
         cfg.trayDisplayMode = row.trayDisplayMode
         cfg.monthlyPlanUsd = row.monthlyPlanUsd
         cfg.usdCnyRate = row.usdCnyRate
+        if !row.fieldUpdatedAt.isEmpty { cfg.settingsFieldUpdatedAt = row.fieldUpdatedAt }
+    }
+
+    public static func touchActiveAccount(_ cfg: inout AppConfig, stamp: String? = nil) {
+        cfg.activeAccountUpdatedAt = stamp ?? nowIso()
+    }
+
+    public static func touchChangedSettings(_ cfg: inout AppConfig, previous: SyncSettings, stamp: String? = nil) {
+        let when = stamp ?? nowIso()
+        let before = previous
+        let after = snapshotSettings(cfg)
+        var stamps = sanitizeFieldUpdatedAt(cfg.settingsFieldUpdatedAt)
+        for key in settingsFieldKeys {
+            if settingsFieldValue(before, key) != settingsFieldValue(after, key) {
+                stamps[key] = when
+            }
+        }
+        cfg.settingsFieldUpdatedAt = stamps
+    }
+
+    static func settingsFieldValue(_ row: SyncSettings, _ key: String) -> String {
+        switch key {
+        case "refresh_interval_minutes": return String(row.refreshIntervalMinutes)
+        case "alert_thresholds": return row.alertThresholds.map(String.init).joined(separator: ",")
+        case "notify_enabled": return row.notifyEnabled ? "1" : "0"
+        case "notify_exhaustion_risk": return row.notifyExhaustionRisk ? "1" : "0"
+        case "tray_display_mode": return row.trayDisplayMode
+        case "monthly_plan_usd": return String(row.monthlyPlanUsd)
+        case "usd_cny_rate": return String(row.usdCnyRate)
+        default: return ""
+        }
+    }
+
+    static func setSettingsField(_ row: inout SyncSettings, _ key: String, from src: SyncSettings) {
+        switch key {
+        case "refresh_interval_minutes": row.refreshIntervalMinutes = src.refreshIntervalMinutes
+        case "alert_thresholds": row.alertThresholds = src.alertThresholds
+        case "notify_enabled": row.notifyEnabled = src.notifyEnabled
+        case "notify_exhaustion_risk": row.notifyExhaustionRisk = src.notifyExhaustionRisk
+        case "tray_display_mode": row.trayDisplayMode = src.trayDisplayMode
+        case "monthly_plan_usd": row.monthlyPlanUsd = src.monthlyPlanUsd
+        case "usd_cny_rate": row.usdCnyRate = src.usdCnyRate
+        default: break
+        }
+    }
+
+    public static func mergeSettings(_ local: SyncSettings?, _ remote: SyncSettings?, localFallback: String, remoteFallback: String) -> SyncSettings? {
+        if local == nil && remote == nil { return nil }
+        guard let local else { return remote }
+        guard let remote else { return local }
+        var merged = SyncSettings()
+        var stamps: [String: String] = [:]
+        for key in settingsFieldKeys {
+            let lAt = local.fieldUpdatedAt[key] ?? localFallback
+            let rAt = remote.fieldUpdatedAt[key] ?? remoteFallback
+            if compareIso(rAt, lAt) > 0 {
+                setSettingsField(&merged, key, from: remote)
+                if !rAt.isEmpty { stamps[key] = rAt }
+            } else {
+                setSettingsField(&merged, key, from: local)
+                if !lAt.isEmpty { stamps[key] = lAt }
+            }
+        }
+        merged.fieldUpdatedAt = sanitizeFieldUpdatedAt(stamps)
+        return merged
     }
 
     public static func settingsIdentity(_ settings: SyncSettings?) -> String {
@@ -475,6 +571,7 @@ public enum AccountSync {
             updatedAt: cfg.syncLastAt,
             deviceId: cfg.syncDeviceId,
             activeAccountId: cfg.activeAccountId,
+            activeAccountUpdatedAt: cfg.activeAccountUpdatedAt,
             accounts: accounts,
             deleted: sanitizeDeleted(cfg.deletedAccounts),
             settings: snapshotSettings(cfg),
@@ -508,9 +605,11 @@ public enum AccountSync {
             }
         }
         for id in tombstones.keys where chosen[id] != nil { tombstones.removeValue(forKey: id) }
-        let remoteNewer = compareIso(remote.updatedAt, local.updatedAt) > 0
-        var active = remoteNewer ? remote.activeAccountId : local.activeAccountId
-        let settings = remoteNewer ? (remote.settings ?? local.settings) : (local.settings ?? remote.settings)
+        let localActiveAt = local.activeAccountUpdatedAt.isEmpty ? local.updatedAt : local.activeAccountUpdatedAt
+        let remoteActiveAt = remote.activeAccountUpdatedAt.isEmpty ? remote.updatedAt : remote.activeAccountUpdatedAt
+        var active = compareIso(remoteActiveAt, localActiveAt) > 0 ? remote.activeAccountId : local.activeAccountId
+        let activeAt = compareIso(remoteActiveAt, localActiveAt) > 0 ? remoteActiveAt : localActiveAt
+        let settings = mergeSettings(local.settings, remote.settings, localFallback: local.updatedAt, remoteFallback: remote.updatedAt)
         if chosen[active] == nil {
             active = chosen.keys.sorted().first ?? ""
         }
@@ -518,6 +617,7 @@ public enum AccountSync {
             updatedAt: newerIso(local.updatedAt, remote.updatedAt),
             deviceId: local.deviceId.isEmpty ? remote.deviceId : local.deviceId,
             activeAccountId: active,
+            activeAccountUpdatedAt: activeAt,
             accounts: chosen.keys.sorted().compactMap { chosen[$0] },
             deleted: tombstones.keys.sorted().map { DeletedAccount(id: $0, deletedAt: tombstones[$0]!) },
             settings: settings,
@@ -576,6 +676,7 @@ public enum AccountSync {
         if ids.contains(snap.activeAccountId) { cfg.activeAccountId = snap.activeAccountId }
         else { cfg.activeAccountId = merged.first?.id ?? "" }
         applySettings(&cfg, snap.settings)
+        cfg.activeAccountUpdatedAt = snap.activeAccountUpdatedAt
         let usageChanged = applyUsageToFiles(snap.usage, keepIds: ids)
         cfg.syncLegacyFields()
         let after = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
@@ -672,7 +773,14 @@ public enum AccountSync {
         var settings = ""
         if let row = snap.settings {
             let thresholds = row.alertThresholds.map(String.init).joined(separator: ",")
-            settings = ",\"settings\":{\"alert_thresholds\":[\(thresholds)],\"monthly_plan_usd\":\(canonicalNumber(row.monthlyPlanUsd)),\"notify_enabled\":\(row.notifyEnabled),\"notify_exhaustion_risk\":\(row.notifyExhaustionRisk),\"refresh_interval_minutes\":\(row.refreshIntervalMinutes),\"tray_display_mode\":\(q(row.trayDisplayMode)),\"usd_cny_rate\":\(canonicalNumber(row.usdCnyRate))}"
+            var fieldAt = ""
+            if !row.fieldUpdatedAt.isEmpty {
+                let pairs = row.fieldUpdatedAt.keys.sorted().map { key in
+                    "\(q(key)):\(q(row.fieldUpdatedAt[key] ?? ""))"
+                }.joined(separator: ",")
+                fieldAt = ",\"field_updated_at\":{\(pairs)}"
+            }
+            settings = ",\"settings\":{\"alert_thresholds\":[\(thresholds)]\(fieldAt),\"monthly_plan_usd\":\(canonicalNumber(row.monthlyPlanUsd)),\"notify_enabled\":\(row.notifyEnabled),\"notify_exhaustion_risk\":\(row.notifyExhaustionRisk),\"refresh_interval_minutes\":\(row.refreshIntervalMinutes),\"tray_display_mode\":\(q(row.trayDisplayMode)),\"usd_cny_rate\":\(canonicalNumber(row.usdCnyRate))}"
         }
         var usage = ""
         if let rows = snap.usage, !rows.isEmpty {
@@ -688,13 +796,64 @@ public enum AccountSync {
             }.joined(separator: ",")
             usage = ",\"usage\":[\(packed)]"
         }
-        return "{\"accounts\":[\(accounts)],\"active_account_id\":\(q(snap.activeAccountId)),\"deleted\":[\(deleted)],\"device_id\":\(q(snap.deviceId))\(settings),\"updated_at\":\(q(snap.updatedAt))\(usage),\"version\":\(snap.version)}"
+        let activeAt = snap.activeAccountUpdatedAt.isEmpty ? "" : ",\"active_account_updated_at\":\(q(snap.activeAccountUpdatedAt))"
+        return "{\"accounts\":[\(accounts)],\"active_account_id\":\(q(snap.activeAccountId))\(activeAt),\"deleted\":[\(deleted)],\"device_id\":\(q(snap.deviceId))\(settings),\"updated_at\":\(q(snap.updatedAt))\(usage),\"version\":\(snap.version)}"
     }
 
     static func canonicalEvent(_ ev: UsageEvent, q: (String) -> String) -> String {
         let charged = ev.chargedCents.map(canonicalNumber) ?? "null"
         let total = ev.totalCents.map(canonicalNumber) ?? "null"
         return "{\"cache_read_tokens\":\(ev.cacheReadTokens),\"cache_write_tokens\":\(ev.cacheWriteTokens),\"charged_cents\":\(charged),\"id\":\(q(ev.id)),\"input_tokens\":\(ev.inputTokens),\"is_chargeable\":\(ev.isChargeable),\"is_headless\":\(ev.isHeadless),\"kind\":\(q(ev.kind)),\"model\":\(q(ev.model)),\"output_tokens\":\(ev.outputTokens),\"owning_user\":\(q(ev.owningUser)),\"timestamp_ms\":\(ev.timestampMs),\"tokens\":\(ev.tokens),\"total_cents\":\(total),\"user_email\":\(q(ev.userEmail))}"
+    }
+
+    public static func trimSnapshotForUpload(_ snap: SyncSnapshot, budget: Int = syncPlaintextBudget) -> SyncSnapshot {
+        guard var usage = snap.usage else { return snap }
+        var clone = snap
+        clone.usage = usage
+        while !usage.isEmpty, (canonicalJSON(clone).utf8.count) > budget {
+            if !dropOldestUsage(&usage) { break }
+            clone.usage = usage
+        }
+        usage = usage.filter { !$0.history.isEmpty || !$0.events.isEmpty || !$0.teamEvents.isEmpty }
+        clone.usage = usage
+        if (canonicalJSON(clone).utf8.count) > budget { clone.usage = [] }
+        return clone
+    }
+
+    static func dropOldestUsage(_ usage: inout [SyncUsage]) -> Bool {
+        var bestIdx: Int?
+        var kind = ""
+        var bestTs = Double.greatestFiniteMagnitude
+        for (idx, row) in usage.enumerated() {
+            for p in row.history where p.ts < bestTs {
+                bestTs = p.ts; bestIdx = idx; kind = "history"
+            }
+            for ev in row.events {
+                let ts = Double(ev.timestampMs) / 1000
+                if ts < bestTs { bestTs = ts; bestIdx = idx; kind = "events" }
+            }
+            for ev in row.teamEvents {
+                let ts = Double(ev.timestampMs) / 1000
+                if ts < bestTs { bestTs = ts; bestIdx = idx; kind = "team" }
+            }
+        }
+        guard let idx = bestIdx else { return false }
+        if kind == "history", !usage[idx].history.isEmpty {
+            usage[idx].history.sort { $0.ts < $1.ts }
+            usage[idx].history.removeFirst()
+            return true
+        }
+        if kind == "events", !usage[idx].events.isEmpty {
+            usage[idx].events.sort { $0.timestampMs < $1.timestampMs }
+            usage[idx].events.removeFirst()
+            return true
+        }
+        if kind == "team", !usage[idx].teamEvents.isEmpty {
+            usage[idx].teamEvents.sort { $0.timestampMs < $1.timestampMs }
+            usage[idx].teamEvents.removeFirst()
+            return true
+        }
+        return false
     }
 
     public static func encryptEnvelope(
@@ -708,18 +867,28 @@ public enum AccountSync {
         let saltB = salt ?? Data((0..<saltLen).map { _ in UInt8.random(in: 0...255) })
         let nonceB = nonce ?? Data((0..<nonceLen).map { _ in UInt8.random(in: 0...255) })
         if saltB.count != saltLen || nonceB.count != nonceLen { throw CursorAPIError("salt/nonce 长度不正确") }
-        let raw = Data(canonicalJSON(payload).utf8)
+        let toSeal = trimSnapshotForUpload(payload)
+        var raw = Data(canonicalJSON(toSeal).utf8)
+        var compression = ""
+        #if canImport(Compression)
+        if raw.count >= syncCompressMinBytes {
+            raw = try GzipCodec.compress(raw)
+            compression = "gzip"
+        }
+        #endif
         let key = SymmetricKey(data: try deriveKey(passphrase: passphrase, salt: saltB, iterations: iterations))
         let sealed = try AES.GCM.seal(raw, using: key, nonce: AES.GCM.Nonce(data: nonceB))
         let blob = sealed.ciphertext + sealed.tag
-        return [
-            "format": payload.settings == nil && (payload.usage == nil || payload.usage?.isEmpty == true) ? format : formatV2,
+        var envelope: [String: Any] = [
+            "format": toSeal.settings == nil && (toSeal.usage == nil || toSeal.usage?.isEmpty == true) ? format : formatV2,
             "kdf": kdf,
             "iterations": iterations,
             "salt": saltB.base64EncodedString(),
             "nonce": nonceB.base64EncodedString(),
             "ciphertext": blob.base64EncodedString(),
         ]
+        if !compression.isEmpty { envelope["compression"] = compression }
+        return envelope
         #else
         throw CursorAPIError("当前平台无法加密同步文件")
         #endif
@@ -743,7 +912,13 @@ public enum AccountSync {
         let tag = blob.suffix(tagLen)
         do {
             let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: cipher, tag: tag)
-            let opened = try AES.GCM.open(box, using: key)
+            var opened = try AES.GCM.open(box, using: key)
+            let compression = str(envelope["compression"]).trimmingCharacters(in: .whitespaces).lowercased()
+            if compression == "gzip" {
+                opened = try GzipCodec.decompress(opened)
+            } else if !compression.isEmpty {
+                throw CursorAPIError("不支持的同步压缩")
+            }
             let obj = try JSONSerialization.jsonObject(with: opened)
             guard let dict = obj as? [String: Any] else { throw CursorAPIError("同步文件内容无法解析") }
             return parseSnapshot(dict)
@@ -761,7 +936,8 @@ public enum AccountSync {
         var snap = SyncSnapshot(
             updatedAt: str(raw["updated_at"]),
             deviceId: str(raw["device_id"]),
-            activeAccountId: str(raw["active_account_id"])
+            activeAccountId: str(raw["active_account_id"]),
+            activeAccountUpdatedAt: str(raw["active_account_updated_at"])
         )
         if let arr = raw["accounts"] as? [[String: Any]] {
             snap.accounts = arr.map {
@@ -794,6 +970,10 @@ public enum AccountSync {
         }
         if let rawSettings = raw["settings"] as? [String: Any] {
             let mode = str(rawSettings["tray_display_mode"]).trimmingCharacters(in: .whitespaces).lowercased()
+            var fields: [String: String] = [:]
+            if let rawFields = rawSettings["field_updated_at"] as? [String: Any] {
+                for (key, value) in rawFields { fields[key] = str(value) }
+            }
             snap.settings = SyncSettings(
                 refreshIntervalMinutes: intValue(rawSettings["refresh_interval_minutes"]) ?? 10,
                 alertThresholds: ConfigStore.parseThresholds(rawSettings["alert_thresholds"]),
@@ -801,7 +981,8 @@ public enum AccountSync {
                 notifyExhaustionRisk: boolValue(rawSettings["notify_exhaustion_risk"], default: true),
                 trayDisplayMode: mode,
                 monthlyPlanUsd: num(rawSettings["monthly_plan_usd"]) ?? 0,
-                usdCnyRate: num(rawSettings["usd_cny_rate"]) ?? UsageEvents.defaultUsdCnyRate
+                usdCnyRate: num(rawSettings["usd_cny_rate"]) ?? UsageEvents.defaultUsdCnyRate,
+                fieldUpdatedAt: fields
             )
         }
         if let rawUsage = raw["usage"] as? [[String: Any]] {
