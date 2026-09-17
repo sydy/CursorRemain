@@ -82,15 +82,24 @@ swift test --package-path macos
 
 ### Windows
 
-1. 本机先安装一次 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。已装过可跳过
-2. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorRemain-windows.zip`
-3. 解压运行 `CursorRemain.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
-4. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe。之后会自动对照 Latest 更新（可在设置里关闭）
+**安装版（推荐）**
+
+1. 从 [Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest) 下载 `CursorRemain-windows-setup.exe`
+2. 双击安装。默认装到当前用户目录（`%LOCALAPPDATA%\Programs\CursorRemain`），不需要管理员；开始菜单会出现「Cursor 余量」
+3. 安装程序会检测 [.NET 8 Desktop Runtime](https://aka.ms/dotnet/8.0/windowsdesktop-runtime-win-x64.exe)（x64，不是 SDK）。没有就下载并安装；已装过可跳过
+4. 装完可直接启动。开机自启由程序自己注册，之后会自动对照 Latest 更新（可在设置里关闭）
+
+**便携版**
+
+1. 本机先安装一次 Desktop Runtime（已装过可跳过）
+2. 下载 `CursorRemain-windows.zip`，解压运行 `CursorRemain.exe`。若提示缺少 `Microsoft.WindowsDesktop.App 8.0`，就是还没装 Desktop Runtime
+3. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
 
 本地发布：
 
 ```powershell
 dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
+powershell -File windows/packaging/build_installer.ps1 -PublishDir dist
 ```
 
 ### macOS
@@ -116,7 +125,7 @@ open /Applications/CursorRemain.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorRemain-windows.zip`（.NET 8 框架依赖 exe，需本机 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
+3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 框架依赖，需本机 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
 4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`；同时保留旧名 zip）
 
 合入 `main` 后可在两处下载程序包：
@@ -124,7 +133,7 @@ open /Applications/CursorRemain.app
 - **[Releases / Latest](https://github.com/sydy/CursorTokenTray/releases/tag/latest)**（随每次合入覆盖，不占 Actions 制品配额）
 - 对应 run 的 **Artifacts**（保留 1 天；若制品配额尚未重算，这里可能暂时没有）
 
-PR 不上传制品。打 `v*` 标签（例如 `v1.0.0`）会创建正式 GitHub Release 并挂上这两个 zip。  
+PR 不上传制品。打 `v*` 标签（例如 `v1.0.0`）会创建正式 GitHub Release 并挂上 Windows 安装版 / zip 与 macOS zip。  
 也可在仓库 **Actions** 页点 **Run workflow** 手动触发。
 
 ## 获取 Token

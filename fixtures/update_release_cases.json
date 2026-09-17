@@ -72,6 +72,10 @@
       "ok": true
     },
     {
+      "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows-setup.exe",
+      "ok": true
+    },
+    {
       "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorTokenTray-windows.zip",
       "ok": true
     },
@@ -99,6 +103,10 @@
   "packaged_windows": [
     {
       "path": "C:/Users/me/Apps/CursorRemain.exe",
+      "ok": true
+    },
+    {
+      "path": "C:/Users/me/AppData/Local/Programs/CursorRemain/CursorRemain.exe",
       "ok": true
     },
     {

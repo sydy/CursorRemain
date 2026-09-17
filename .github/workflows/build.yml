@@ -117,6 +117,10 @@ jobs:
           Copy-Item -Force dist-win\CursorRemain.exe dist-win\CursorTokenTray.exe
           Compress-Archive -Path dist-win\CursorTokenTray.exe, dist-win\首次运行.txt -DestinationPath CursorTokenTray-windows.zip -Force
           '{0} {1:N2} MB' -f 'CursorRemain-windows.zip', ((Get-Item CursorRemain-windows.zip).Length / 1MB)
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File ./windows/packaging/build_installer.ps1 -PublishDir dist-win -OutputDir . -SourceRevisionId $env:GITHUB_SHA
       - uses: actions/upload-artifact@v6
         if: github.event_name != 'pull_request'
         continue-on-error: true
@@ -124,6 +128,7 @@ jobs:
           name: CursorRemain-windows
           path: |
             CursorRemain-windows.zip
+            CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           if-no-files-found: error
           retention-days: 1
@@ -140,10 +145,11 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: |
             CursorRemain-windows.zip
+            CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           body: |
             最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 为 .NET 8 框架依赖 exe（需本机已装 Desktop Runtime），macOS 为 Swift `.app`。
+            Windows 提供安装版 `CursorRemain-windows-setup.exe` 与 zip 便携包（均为 .NET 8 框架依赖，需本机 Desktop Runtime），macOS 为 Swift `.app`。
             程序已更名为 CursorRemain；旧版自动更新仍可下载 CursorTokenTray-*.zip。
             从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorRemain.app`。
             正式版请打 `v*` 标签。
@@ -159,6 +165,7 @@ jobs:
         with:
           files: |
             CursorRemain-windows.zip
+            CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           generate_release_notes: true
 
@@ -207,7 +214,7 @@ jobs:
             CursorTokenTray-macos.zip
           body: |
             最新 `main` 构建（`${{ github.sha }}`），随每次合入覆盖更新。
-            Windows 为 .NET 8 框架依赖 exe（需本机已装 Desktop Runtime），macOS 为 Swift `.app`。
+            Windows 提供安装版 `CursorRemain-windows-setup.exe` 与 zip 便携包（均为 .NET 8 框架依赖，需本机 Desktop Runtime），macOS 为 Swift `.app`。
             程序已更名为 CursorRemain；旧版自动更新仍可下载 CursorTokenTray-*.zip。
             从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 `xattr -cr CursorRemain.app`。
             正式版请打 `v*` 标签。
