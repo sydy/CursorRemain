@@ -67,6 +67,60 @@ public static class CloudSync
         return ReadAuth(payload);
     }
 
+    public static async Task ChangePasswordAsync(AppConfig cfg, string oldPassword, string newPassword, CancellationToken ct = default)
+    {
+        var old = (oldPassword ?? "").Trim();
+        var next = (newPassword ?? "").Trim();
+        if (next.Length < 8) throw new CursorApiException("密码至少 8 位");
+        if (old == next) throw new CursorApiException("新密码不能与当前密码相同");
+        using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
+        var revision = ReadRevision(got, 0);
+        object? envelope = null;
+        if (got.RootElement.TryGetProperty("envelope", out var env) && env.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            envelope = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(env, old), next);
+        var body = new Dictionary<string, object?>
+        {
+            ["old_password"] = old,
+            ["new_password"] = next,
+            ["revision"] = revision,
+        };
+        if (envelope is not null) body["envelope"] = envelope;
+        try
+        {
+            using var put = await AuthedAsync(cfg, HttpMethod.Post, "/v1/auth/password", body, ct);
+            ApplyPasswordResult(cfg, next, put, revision);
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 409)
+        {
+            using var retryGot = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
+            revision = ReadRevision(retryGot, 0);
+            body["revision"] = revision;
+            if (retryGot.RootElement.TryGetProperty("envelope", out var retryEnv) && retryEnv.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+                body["envelope"] = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(retryEnv, old), next);
+            using var put = await AuthedAsync(cfg, HttpMethod.Post, "/v1/auth/password", body, ct);
+            ApplyPasswordResult(cfg, next, put, revision);
+        }
+    }
+
+    static void ApplyPasswordResult(AppConfig cfg, string password, JsonDocument doc, int fallbackRevision)
+    {
+        var root = doc.RootElement;
+        var access = root.TryGetProperty("access_token", out var a) ? a.GetString() ?? "" : "";
+        var refresh = root.TryGetProperty("refresh_token", out var r) ? r.GetString() ?? "" : "";
+        var email = root.TryGetProperty("email", out var e) ? e.GetString() ?? "" : cfg.CloudEmail;
+        if (access.Length == 0) throw new CursorApiException("修改密码失败");
+        ApplySession(cfg, email, password, access, refresh);
+        cfg.CloudRevision = ReadRevision(doc, fallbackRevision);
+    }
+
+    public static async Task DeleteAccountAsync(AppConfig cfg, string password, CancellationToken ct = default)
+    {
+        var secret = (password ?? "").Trim();
+        if (secret.Length == 0) throw new CursorApiException("请输入密码以确认注销");
+        await AuthedAsync(cfg, HttpMethod.Delete, "/v1/me", new { password = secret }, ct);
+        ClearSession(cfg, keepEmail: false);
+    }
+
     public static async Task LogoutAsync(AppConfig cfg, CancellationToken ct = default)
     {
         var refresh = cfg.CloudRefreshToken;

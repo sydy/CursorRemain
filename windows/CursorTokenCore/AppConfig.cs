@@ -72,6 +72,8 @@ public sealed class AppConfig
     public string SessionToken { get; set; } = "";
     public List<Account> Accounts { get; set; } = [];
     public string ActiveAccountId { get; set; } = "";
+    public string ActiveAccountUpdatedAt { get; set; } = "";
+    public Dictionary<string, string> SettingsFieldUpdatedAt { get; set; } = new(StringComparer.Ordinal);
     public int RefreshIntervalMinutes { get; set; } = 10;
     public int LowQuotaThreshold { get; set; } = 20;
     public List<int> AlertThresholds { get; set; } = [50, 20, 5];
@@ -210,7 +212,11 @@ public sealed class AppConfig
             AccountSync.TouchAccount(existing);
             AccountSync.ForgetDeleted(this, accountId);
         }
-        if (activate) ActiveAccountId = accountId;
+        if (activate)
+        {
+            if (ActiveAccountId != accountId) AccountSync.TouchActiveAccount(this);
+            ActiveAccountId = accountId;
+        }
         SyncLegacyFields();
         return (existing, created);
     }
@@ -218,6 +224,7 @@ public sealed class AppConfig
     public bool SetActiveAccount(string id)
     {
         if (!Accounts.Any(a => a.Id == id)) return false;
+        if (ActiveAccountId != id) AccountSync.TouchActiveAccount(this);
         ActiveAccountId = id;
         SyncLegacyFields();
         return true;
@@ -258,7 +265,11 @@ public sealed class AppConfig
     {
         var n = Accounts.RemoveAll(a => a.Id == id);
         if (n == 0) return false;
-        if (ActiveAccountId == id) ActiveAccountId = Accounts.FirstOrDefault()?.Id ?? "";
+        if (ActiveAccountId == id)
+        {
+            ActiveAccountId = Accounts.FirstOrDefault()?.Id ?? "";
+            AccountSync.TouchActiveAccount(this);
+        }
         AccountSync.RememberDeleted(this, id);
         SyncLegacyFields();
         return true;
@@ -631,6 +642,8 @@ public static class ConfigStore
             }
         }
         if (raw.TryGetProperty("active_account_id", out var aid)) cfg.ActiveAccountId = aid.GetString() ?? "";
+        cfg.ActiveAccountUpdatedAt = Str(raw, "active_account_updated_at").Trim();
+        cfg.SettingsFieldUpdatedAt = ParseFieldUpdatedAt(raw);
         if (raw.TryGetProperty("refresh_interval_minutes", out var ri) && ri.TryGetInt32(out var riv)) cfg.RefreshIntervalMinutes = Math.Max(1, riv);
         if (raw.TryGetProperty("low_quota_threshold", out var lq) && lq.TryGetInt32(out var lqv)) cfg.LowQuotaThreshold = Math.Clamp(lqv, 1, 100);
         cfg.NotifyEnabled = Bool(raw, "notify_enabled", true);
@@ -911,6 +924,8 @@ public static class ConfigStore
             ["report_end_date"] = a.ReportEndDate,
         }).ToList(),
         active_account_id = cfg.ActiveAccountId,
+        active_account_updated_at = cfg.ActiveAccountUpdatedAt,
+        settings_field_updated_at = cfg.SettingsFieldUpdatedAt,
         refresh_interval_minutes = cfg.RefreshIntervalMinutes,
         low_quota_threshold = cfg.LowQuotaThreshold,
         alert_thresholds = cfg.AlertThresholds,
@@ -945,6 +960,16 @@ public static class ConfigStore
             ["deleted_at"] = d.DeletedAt,
         }).ToList(),
     };
+
+    static Dictionary<string, string> ParseFieldUpdatedAt(JsonElement raw)
+    {
+        if (!raw.TryGetProperty("settings_field_updated_at", out var obj) || obj.ValueKind != JsonValueKind.Object)
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        var rows = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var prop in obj.EnumerateObject())
+            rows[prop.Name] = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() ?? "" : "";
+        return AccountSync.SanitizeFieldUpdatedAt(rows);
+    }
 
     static List<DeletedAccount> ParseDeleted(JsonElement raw)
     {

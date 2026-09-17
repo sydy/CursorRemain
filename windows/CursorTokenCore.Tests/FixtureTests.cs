@@ -1220,6 +1220,12 @@ public class FixtureTests
                 Assert.Equal(expSettings.GetProperty("tray_display_mode").GetString(), merged.Settings.TrayDisplayMode);
                 Assert.Equal(expSettings.GetProperty("notify_enabled").GetBoolean(), merged.Settings.NotifyEnabled);
                 Assert.Equal(expSettings.GetProperty("monthly_plan_usd").GetDouble(), merged.Settings.MonthlyPlanUsd);
+                if (expSettings.TryGetProperty("alert_thresholds", out var th))
+                    Assert.Equal(th.EnumerateArray().Select(x => x.GetInt32()).ToList(), merged.Settings.AlertThresholds);
+                if (expSettings.TryGetProperty("notify_exhaustion_risk", out var ner))
+                    Assert.Equal(ner.GetBoolean(), merged.Settings.NotifyExhaustionRisk);
+                if (expSettings.TryGetProperty("usd_cny_rate", out var rate))
+                    Assert.Equal(rate.GetDouble(), merged.Settings.UsdCnyRate);
             }
             if (expected.TryGetProperty("remaining", out var rem))
             {

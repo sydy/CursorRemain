@@ -108,6 +108,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "cloud_refresh_token": "",
     "cloud_revision": 0,
     "deleted_accounts": [],
+    "active_account_updated_at": "",
+    "settings_field_updated_at": {},
 }
 
 _VALID_DISPLAY_MODES = frozenset({"ring", "number", "dot"})

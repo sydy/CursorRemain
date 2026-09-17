@@ -83,6 +83,9 @@ class RateLimiter:
         bucket.append(window)
         self._hits[key] = bucket
 
+    def reset(self) -> None:
+        self._hits.clear()
+
 
 LIMITER = RateLimiter()
 
@@ -126,6 +129,13 @@ def issue_refresh(user_id: str) -> str:
         )
         conn.commit()
     return raw
+
+
+def maybe_purge_refresh() -> None:
+    try:
+        purge_refresh_tokens()
+    except Exception:
+        return
 
 
 def revoke_refresh(raw: str) -> None:
@@ -195,6 +205,42 @@ def create_user(email: str, password: str) -> dict:
         )
         conn.commit()
     return user
+
+
+def update_password_hash(user_id: str, password: str) -> None:
+    digest = hash_password(password)
+    with lock():
+        conn = get_conn()
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (digest, user_id))
+        conn.commit()
+
+
+def revoke_all_refresh(user_id: str) -> None:
+    with lock():
+        conn = get_conn()
+        conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user_id,))
+        conn.commit()
+
+
+def purge_refresh_tokens() -> int:
+    stamp = now_iso()
+    with lock():
+        conn = get_conn()
+        cur = conn.execute(
+            "DELETE FROM refresh_tokens WHERE revoked = 1 OR expires_at < ?",
+            (stamp,),
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+
+
+def delete_user(user_id: str) -> None:
+    with lock():
+        conn = get_conn()
+        conn.execute("DELETE FROM sync_blobs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+        conn.commit()
 
 
 def bearer_user(request: Request) -> dict:

@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -50,6 +51,7 @@ public sealed class SyncSettings
     public string TrayDisplayMode { get; set; } = "ring";
     public double MonthlyPlanUsd { get; set; }
     public double UsdCnyRate { get; set; } = UsageEvents.DefaultUsdCnyRate;
+    public Dictionary<string, string> FieldUpdatedAt { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class SyncSnapshot
@@ -58,6 +60,7 @@ public sealed class SyncSnapshot
     public string UpdatedAt { get; set; } = "";
     public string DeviceId { get; set; } = "";
     public string ActiveAccountId { get; set; } = "";
+    public string ActiveAccountUpdatedAt { get; set; } = "";
     public List<SyncAccount> Accounts { get; set; } = [];
     public List<DeletedAccount> Deleted { get; set; } = [];
     public SyncSettings? Settings { get; set; }
@@ -85,6 +88,20 @@ public static class AccountSync
     public const int SaltLen = 16;
     public const int NonceLen = 12;
     public const int TagLen = 16;
+    public const int SyncUsageHistoryDays = 21;
+    public const int SyncUsageEventDays = 21;
+    public const int SyncPlaintextBudget = 360_000;
+    public const int SyncCompressMinBytes = 2048;
+    public static readonly string[] SettingsFieldKeys =
+    [
+        "refresh_interval_minutes",
+        "alert_thresholds",
+        "notify_enabled",
+        "notify_exhaustion_risk",
+        "tray_display_mode",
+        "monthly_plan_usd",
+        "usd_cny_rate",
+    ];
     static readonly HashSet<string> FileSuffixes = new(StringComparer.OrdinalIgnoreCase) { ".sync", ".json" };
 
     public static string NowIso(DateTimeOffset? now = null)
@@ -300,12 +317,12 @@ public static class AccountSync
 
     static List<SyncUsage> SnapshotUsageFromFiles(IEnumerable<string> accountIds, string? directory = null)
     {
-        var cutoff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 120L * 86400 * 1000;
+        var cutoff = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - SyncUsageEventDays * 86400L * 1000;
         var rows = new List<SyncUsage>();
         foreach (var aid in accountIds)
         {
             if (string.IsNullOrWhiteSpace(aid)) continue;
-            var history = UsageHistory.LoadRecent(UsageHistory.KeepDays, aid, directory);
+            var history = UsageHistory.LoadRecent(SyncUsageHistoryDays, aid, directory);
             var events = UsageEvents.Prune(UsageEvents.Load(aid, false, directory), cutoff);
             var team = UsageEvents.Prune(UsageEvents.Load(aid, true, directory), cutoff);
             if (history.Count == 0 && events.Count == 0 && team.Count == 0) continue;
@@ -342,7 +359,20 @@ public static class AccountSync
         }));
     }
 
-    public static SyncSettings SnapshotSettings(AppConfig cfg) => new()
+    public static Dictionary<string, string> SanitizeFieldUpdatedAt(Dictionary<string, string>? raw)
+    {
+        var outMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (raw is null) return outMap;
+        foreach (var key in SettingsFieldKeys)
+        {
+            if (!raw.TryGetValue(key, out var stamp)) continue;
+            stamp = (stamp ?? "").Trim();
+            if (stamp.Length > 0 && ParseIso(stamp) is not null) outMap[key] = stamp;
+        }
+        return outMap;
+    }
+
+    public static SyncSettings SnapshotSettings(AppConfig cfg) => CopySettings(new SyncSettings
     {
         RefreshIntervalMinutes = Math.Max(1, cfg.RefreshIntervalMinutes),
         AlertThresholds = cfg.AlertThresholds.Count == 0 ? [50, 20, 5] : [.. cfg.AlertThresholds],
@@ -351,9 +381,12 @@ public static class AccountSync
         TrayDisplayMode = cfg.TrayDisplayMode is "ring" or "number" or "dot" ? cfg.TrayDisplayMode : "ring",
         MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(cfg.MonthlyPlanUsd),
         UsdCnyRate = UsageEvents.ClampUsdCnyRate(cfg.UsdCnyRate),
-    };
+        FieldUpdatedAt = SanitizeFieldUpdatedAt(cfg.SettingsFieldUpdatedAt),
+    });
 
-    public static SyncSettings SnapshotSettings(SyncSettings settings) => new()
+    public static SyncSettings SnapshotSettings(SyncSettings settings) => CopySettings(settings);
+
+    static SyncSettings CopySettings(SyncSettings settings) => new()
     {
         RefreshIntervalMinutes = Math.Max(1, settings.RefreshIntervalMinutes),
         AlertThresholds = settings.AlertThresholds.Count == 0 ? [50, 20, 5] : [.. settings.AlertThresholds],
@@ -362,7 +395,34 @@ public static class AccountSync
         TrayDisplayMode = settings.TrayDisplayMode is "ring" or "number" or "dot" ? settings.TrayDisplayMode : "ring",
         MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(settings.MonthlyPlanUsd),
         UsdCnyRate = UsageEvents.ClampUsdCnyRate(settings.UsdCnyRate),
+        FieldUpdatedAt = SanitizeFieldUpdatedAt(settings.FieldUpdatedAt),
     };
+
+    static object? SettingsFieldValue(SyncSettings row, string key) => key switch
+    {
+        "refresh_interval_minutes" => row.RefreshIntervalMinutes,
+        "alert_thresholds" => string.Join(",", row.AlertThresholds),
+        "notify_enabled" => row.NotifyEnabled,
+        "notify_exhaustion_risk" => row.NotifyExhaustionRisk,
+        "tray_display_mode" => row.TrayDisplayMode,
+        "monthly_plan_usd" => row.MonthlyPlanUsd,
+        "usd_cny_rate" => row.UsdCnyRate,
+        _ => null,
+    };
+
+    static void SetSettingsField(SyncSettings row, string key, SyncSettings src)
+    {
+        switch (key)
+        {
+            case "refresh_interval_minutes": row.RefreshIntervalMinutes = src.RefreshIntervalMinutes; break;
+            case "alert_thresholds": row.AlertThresholds = [.. src.AlertThresholds]; break;
+            case "notify_enabled": row.NotifyEnabled = src.NotifyEnabled; break;
+            case "notify_exhaustion_risk": row.NotifyExhaustionRisk = src.NotifyExhaustionRisk; break;
+            case "tray_display_mode": row.TrayDisplayMode = src.TrayDisplayMode; break;
+            case "monthly_plan_usd": row.MonthlyPlanUsd = src.MonthlyPlanUsd; break;
+            case "usd_cny_rate": row.UsdCnyRate = src.UsdCnyRate; break;
+        }
+    }
 
     public static void ApplySettings(AppConfig cfg, SyncSettings? settings)
     {
@@ -375,6 +435,54 @@ public static class AccountSync
         cfg.TrayDisplayMode = row.TrayDisplayMode;
         cfg.MonthlyPlanUsd = row.MonthlyPlanUsd;
         cfg.UsdCnyRate = row.UsdCnyRate;
+        if (row.FieldUpdatedAt.Count > 0)
+            cfg.SettingsFieldUpdatedAt = new Dictionary<string, string>(row.FieldUpdatedAt, StringComparer.Ordinal);
+    }
+
+    public static void TouchActiveAccount(AppConfig cfg, string? stamp = null) =>
+        cfg.ActiveAccountUpdatedAt = stamp ?? NowIso();
+
+    public static void TouchChangedSettings(AppConfig cfg, SyncSettings previous, string? stamp = null)
+    {
+        var when = stamp ?? NowIso();
+        var before = SnapshotSettings(previous);
+        var after = SnapshotSettings(cfg);
+        var stamps = SanitizeFieldUpdatedAt(cfg.SettingsFieldUpdatedAt);
+        foreach (var key in SettingsFieldKeys)
+        {
+            if (!Equals(SettingsFieldValue(before, key), SettingsFieldValue(after, key)))
+                stamps[key] = when;
+        }
+        cfg.SettingsFieldUpdatedAt = stamps;
+    }
+
+    public static SyncSettings? MergeSettings(SyncSettings? local, SyncSettings? remote, string? localFallback, string? remoteFallback)
+    {
+        if (local is null && remote is null) return null;
+        if (local is null) return SnapshotSettings(remote!);
+        if (remote is null) return SnapshotSettings(local);
+        var left = SnapshotSettings(local);
+        var right = SnapshotSettings(remote);
+        var merged = new SyncSettings();
+        var stamps = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var key in SettingsFieldKeys)
+        {
+            var lAt = left.FieldUpdatedAt.TryGetValue(key, out var ls) ? ls : localFallback ?? "";
+            var rAt = right.FieldUpdatedAt.TryGetValue(key, out var rs) ? rs : remoteFallback ?? "";
+            if (CompareIso(rAt, lAt) > 0)
+            {
+                SetSettingsField(merged, key, right);
+                if (!string.IsNullOrWhiteSpace(rAt)) stamps[key] = rAt;
+            }
+            else
+            {
+                SetSettingsField(merged, key, left);
+                if (!string.IsNullOrWhiteSpace(lAt)) stamps[key] = lAt;
+            }
+        }
+        var row = SnapshotSettings(merged);
+        row.FieldUpdatedAt = SanitizeFieldUpdatedAt(stamps);
+        return row;
     }
 
     public static string SettingsIdentity(SyncSettings? settings)
@@ -399,6 +507,7 @@ public static class AccountSync
             UpdatedAt = cfg.SyncLastAt ?? "",
             DeviceId = cfg.SyncDeviceId ?? "",
             ActiveAccountId = cfg.ActiveAccountId ?? "",
+            ActiveAccountUpdatedAt = cfg.ActiveAccountUpdatedAt ?? "",
             Accounts = accounts,
             Deleted = SanitizeDeleted(cfg.DeletedAccounts),
             Settings = SnapshotSettings(cfg),
@@ -442,11 +551,11 @@ public static class AccountSync
         foreach (var id in tombstones.Keys.ToList())
             if (chosen.ContainsKey(id)) tombstones.Remove(id);
 
-        var remoteNewer = CompareIso(remote.UpdatedAt, local.UpdatedAt) > 0;
-        var active = remoteNewer ? remote.ActiveAccountId : local.ActiveAccountId;
-        var settings = remoteNewer
-            ? remote.Settings ?? local.Settings
-            : local.Settings ?? remote.Settings;
+        var localActiveAt = string.IsNullOrWhiteSpace(local.ActiveAccountUpdatedAt) ? local.UpdatedAt : local.ActiveAccountUpdatedAt;
+        var remoteActiveAt = string.IsNullOrWhiteSpace(remote.ActiveAccountUpdatedAt) ? remote.UpdatedAt : remote.ActiveAccountUpdatedAt;
+        var active = CompareIso(remoteActiveAt, localActiveAt) > 0 ? remote.ActiveAccountId : local.ActiveAccountId;
+        var activeAt = CompareIso(remoteActiveAt, localActiveAt) > 0 ? remoteActiveAt : localActiveAt;
+        var settings = MergeSettings(local.Settings, remote.Settings, local.UpdatedAt, remote.UpdatedAt);
         if (!chosen.ContainsKey(active ?? ""))
             active = chosen.Keys.OrderBy(x => x, StringComparer.Ordinal).FirstOrDefault() ?? "";
 
@@ -456,10 +565,11 @@ public static class AccountSync
             UpdatedAt = NewerIso(local.UpdatedAt, remote.UpdatedAt),
             DeviceId = string.IsNullOrEmpty(local.DeviceId) ? remote.DeviceId : local.DeviceId,
             ActiveAccountId = active ?? "",
+            ActiveAccountUpdatedAt = activeAt ?? "",
             Accounts = chosen.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value).ToList(),
             Deleted = tombstones.OrderBy(kv => kv.Key, StringComparer.Ordinal)
                 .Select(kv => new DeletedAccount { Id = kv.Key, DeletedAt = kv.Value }).ToList(),
-            Settings = settings is null ? null : SnapshotSettings(settings),
+            Settings = settings,
             Usage = MergeUsage(local.Usage, remote.Usage, chosen.Keys.ToHashSet(StringComparer.Ordinal)),
         };
     }
@@ -519,6 +629,7 @@ public static class AccountSync
         if (ids.Contains(snap.ActiveAccountId)) cfg.ActiveAccountId = snap.ActiveAccountId;
         else cfg.ActiveAccountId = merged.Count > 0 ? merged[0].Id : "";
         ApplySettings(cfg, snap.Settings);
+        cfg.ActiveAccountUpdatedAt = snap.ActiveAccountUpdatedAt ?? "";
         var usageChanged = ApplyUsageToFiles(snap.Usage, ids);
         cfg.SyncLegacyFields();
         return before != Before() || beforeSettings != SettingsIdentity(SnapshotSettings(cfg)) || usageChanged;
@@ -592,7 +703,14 @@ public static class AccountSync
         {
             var row = SnapshotSettings(s);
             var thresholds = string.Join(",", row.AlertThresholds);
-            settings = $",\"settings\":{{\"alert_thresholds\":[{thresholds}],\"monthly_plan_usd\":{CanonicalNumber(row.MonthlyPlanUsd)},\"notify_enabled\":{(row.NotifyEnabled ? "true" : "false")},\"notify_exhaustion_risk\":{(row.NotifyExhaustionRisk ? "true" : "false")},\"refresh_interval_minutes\":{row.RefreshIntervalMinutes},\"tray_display_mode\":{Q(row.TrayDisplayMode)},\"usd_cny_rate\":{CanonicalNumber(row.UsdCnyRate)}}}";
+            var fieldAt = "";
+            if (row.FieldUpdatedAt.Count > 0)
+            {
+                var pairs = string.Join(",", row.FieldUpdatedAt.OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Select(kv => $"{Q(kv.Key)}:{Q(kv.Value)}"));
+                fieldAt = $",\"field_updated_at\":{{{pairs}}}";
+            }
+            settings = $",\"settings\":{{\"alert_thresholds\":[{thresholds}]{fieldAt},\"monthly_plan_usd\":{CanonicalNumber(row.MonthlyPlanUsd)},\"notify_enabled\":{(row.NotifyEnabled ? "true" : "false")},\"notify_exhaustion_risk\":{(row.NotifyExhaustionRisk ? "true" : "false")},\"refresh_interval_minutes\":{row.RefreshIntervalMinutes},\"tray_display_mode\":{Q(row.TrayDisplayMode)},\"usd_cny_rate\":{CanonicalNumber(row.UsdCnyRate)}}}";
         }
         var usage = "";
         if (snap.Usage is { Count: > 0 } rows)
@@ -611,7 +729,8 @@ public static class AccountSync
             }));
             usage = $",\"usage\":[{packed}]";
         }
-        return $"{{\"accounts\":[{accounts}],\"active_account_id\":{Q(snap.ActiveAccountId)},\"deleted\":[{deleted}],\"device_id\":{Q(snap.DeviceId)}{settings},\"updated_at\":{Q(snap.UpdatedAt)}{usage},\"version\":{snap.Version}}}";
+        var activeAt = string.IsNullOrWhiteSpace(snap.ActiveAccountUpdatedAt) ? "" : $",\"active_account_updated_at\":{Q(snap.ActiveAccountUpdatedAt)}";
+        return $"{{\"accounts\":[{accounts}],\"active_account_id\":{Q(snap.ActiveAccountId)}{activeAt},\"deleted\":[{deleted}],\"device_id\":{Q(snap.DeviceId)}{settings},\"updated_at\":{Q(snap.UpdatedAt)}{usage},\"version\":{snap.Version}}}";
     }
 
     static string CanonicalEvent(UsageEvent ev)
@@ -634,7 +753,14 @@ public static class AccountSync
         var saltB = salt ?? RandomNumberGenerator.GetBytes(SaltLen);
         var nonceB = nonce ?? RandomNumberGenerator.GetBytes(NonceLen);
         if (saltB.Length != SaltLen || nonceB.Length != NonceLen) throw new CursorApiException("salt/nonce 长度不正确");
-        var raw = Encoding.UTF8.GetBytes(CanonicalJson(payload));
+        var toSeal = TrimSnapshotForUpload(payload);
+        var raw = Encoding.UTF8.GetBytes(CanonicalJson(toSeal));
+        var compression = "";
+        if (raw.Length >= SyncCompressMinBytes)
+        {
+            raw = GzipCompress(raw);
+            compression = "gzip";
+        }
         var key = DeriveKey(passphrase, saltB, iterations);
         var ciphertext = new byte[raw.Length];
         var tag = new byte[TagLen];
@@ -643,15 +769,111 @@ public static class AccountSync
         var blob = new byte[ciphertext.Length + tag.Length];
         Buffer.BlockCopy(ciphertext, 0, blob, 0, ciphertext.Length);
         Buffer.BlockCopy(tag, 0, blob, ciphertext.Length, tag.Length);
-        return new Dictionary<string, object>
+        var envelope = new Dictionary<string, object>
         {
-            ["format"] = payload.Settings is null && (payload.Usage is null || payload.Usage.Count == 0) ? Format : FormatV2,
+            ["format"] = toSeal.Settings is null && (toSeal.Usage is null || toSeal.Usage.Count == 0) ? Format : FormatV2,
             ["kdf"] = Kdf,
             ["iterations"] = iterations,
             ["salt"] = Convert.ToBase64String(saltB),
             ["nonce"] = Convert.ToBase64String(nonceB),
             ["ciphertext"] = Convert.ToBase64String(blob),
         };
+        if (compression.Length > 0) envelope["compression"] = compression;
+        return envelope;
+    }
+
+    public static SyncSnapshot TrimSnapshotForUpload(SyncSnapshot snap, int budget = SyncPlaintextBudget)
+    {
+        if (snap.Usage is null) return snap;
+        var usage = snap.Usage.Select(u => new SyncUsage
+        {
+            AccountId = u.AccountId,
+            History = [.. u.History],
+            Events = [.. u.Events],
+            TeamEvents = [.. u.TeamEvents],
+        }).ToList();
+        var clone = CloneSnapshot(snap);
+        clone.Usage = usage;
+        while (usage.Count > 0 && Encoding.UTF8.GetByteCount(CanonicalJson(clone)) > budget)
+        {
+            if (!DropOldestUsage(usage)) break;
+            clone.Usage = usage;
+        }
+        clone.Usage = usage.Where(u => u.History.Count > 0 || u.Events.Count > 0 || u.TeamEvents.Count > 0).ToList();
+        if (Encoding.UTF8.GetByteCount(CanonicalJson(clone)) > budget)
+            clone.Usage = [];
+        return clone;
+    }
+
+    static SyncSnapshot CloneSnapshot(SyncSnapshot snap) => new()
+    {
+        Version = snap.Version,
+        UpdatedAt = snap.UpdatedAt,
+        DeviceId = snap.DeviceId,
+        ActiveAccountId = snap.ActiveAccountId,
+        ActiveAccountUpdatedAt = snap.ActiveAccountUpdatedAt,
+        Accounts = snap.Accounts,
+        Deleted = snap.Deleted,
+        Settings = snap.Settings,
+        Usage = snap.Usage,
+    };
+
+    static bool DropOldestUsage(List<SyncUsage> usage)
+    {
+        SyncUsage? best = null;
+        var kind = "";
+        var bestTs = double.MaxValue;
+        foreach (var row in usage)
+        {
+            foreach (var p in row.History)
+            {
+                if (p.Ts < bestTs) { bestTs = p.Ts; best = row; kind = "history"; }
+            }
+            foreach (var ev in row.Events)
+            {
+                var ts = ev.TimestampMs / 1000.0;
+                if (ts < bestTs) { bestTs = ts; best = row; kind = "events"; }
+            }
+            foreach (var ev in row.TeamEvents)
+            {
+                var ts = ev.TimestampMs / 1000.0;
+                if (ts < bestTs) { bestTs = ts; best = row; kind = "team"; }
+            }
+        }
+        if (best is null) return false;
+        if (kind == "history" && best.History.Count > 0)
+        {
+            best.History = best.History.OrderBy(p => p.Ts).Skip(1).ToList();
+            return true;
+        }
+        if (kind == "events" && best.Events.Count > 0)
+        {
+            best.Events = best.Events.OrderBy(e => e.TimestampMs).Skip(1).ToList();
+            return true;
+        }
+        if (kind == "team" && best.TeamEvents.Count > 0)
+        {
+            best.TeamEvents = best.TeamEvents.OrderBy(e => e.TimestampMs).Skip(1).ToList();
+            return true;
+        }
+        return false;
+    }
+
+    static byte[] GzipCompress(byte[] raw)
+    {
+        using var ms = new MemoryStream();
+        using (var gz = new GZipStream(ms, CompressionLevel.SmallestSize, leaveOpen: true))
+            gz.Write(raw, 0, raw.Length);
+        return ms.ToArray();
+    }
+
+    static byte[] GzipDecompress(byte[] raw)
+    {
+        using var input = new MemoryStream(raw);
+        using var gz = new GZipStream(input, CompressionMode.Decompress);
+        using var output = new MemoryStream();
+        gz.CopyTo(output);
+        return output.ToArray();
     }
 
     public static SyncSnapshot DecryptEnvelope(JsonElement envelope, string passphrase)
@@ -684,6 +906,14 @@ public static class AccountSync
         {
             throw new CursorApiException("同步口令不正确或文件已损坏");
         }
+        var compression = Str(envelope, "compression").Trim().ToLowerInvariant();
+        if (compression == "gzip")
+        {
+            try { plain = GzipDecompress(plain); }
+            catch { throw new CursorApiException("同步文件损坏"); }
+        }
+        else if (compression.Length > 0)
+            throw new CursorApiException("不支持的同步压缩");
         using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(plain));
         return ParseSnapshot(doc.RootElement);
     }
@@ -696,6 +926,7 @@ public static class AccountSync
             UpdatedAt = Str(raw, "updated_at"),
             DeviceId = Str(raw, "device_id"),
             ActiveAccountId = Str(raw, "active_account_id"),
+            ActiveAccountUpdatedAt = Str(raw, "active_account_updated_at"),
         };
         if (raw.TryGetProperty("accounts", out var arr) && arr.ValueKind == JsonValueKind.Array)
         {
@@ -736,6 +967,12 @@ public static class AccountSync
         {
             var mode = Str(set, "tray_display_mode").Trim().ToLowerInvariant();
             var thresholds = ConfigStore.ParseThresholds(set.TryGetProperty("alert_thresholds", out var at) ? at : default);
+            var fields = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (set.TryGetProperty("field_updated_at", out var fu) && fu.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in fu.EnumerateObject())
+                    fields[prop.Name] = prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() ?? "" : "";
+            }
             snap.Settings = SnapshotSettings(new SyncSettings
             {
                 RefreshIntervalMinutes = Math.Max(1, IntVal(set, "refresh_interval_minutes") ?? 10),
@@ -745,6 +982,7 @@ public static class AccountSync
                 TrayDisplayMode = mode is "ring" or "number" or "dot" ? mode : "ring",
                 MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(DoubleVal(set, "monthly_plan_usd")),
                 UsdCnyRate = UsageEvents.ClampUsdCnyRate(DoubleVal(set, "usd_cny_rate") == 0 ? UsageEvents.DefaultUsdCnyRate : DoubleVal(set, "usd_cny_rate")),
+                FieldUpdatedAt = fields,
             });
         }
         if (raw.TryGetProperty("usage", out var usageEl) && usageEl.ValueKind == JsonValueKind.Array)

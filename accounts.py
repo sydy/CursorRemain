@@ -355,6 +355,10 @@ def upsert_account(
         forget_deleted(cfg, account_id)
     cfg["accounts"] = accounts
     if activate:
+        if str(cfg.get("active_account_id") or "") != account_id:
+            from account_sync import touch_active_account
+
+            touch_active_account(cfg)
         cfg["active_account_id"] = account_id
     sync_legacy_fields(cfg)
     return existing, created
@@ -427,6 +431,10 @@ def set_active_account(cfg: dict[str, Any], account_id: str) -> bool:
     acc = find_account(cfg, account_id)
     if acc is None:
         return False
+    if str(cfg.get("active_account_id") or "") != acc["id"]:
+        from account_sync import touch_active_account
+
+        touch_active_account(cfg)
     cfg["active_account_id"] = acc["id"]
     sync_legacy_fields(cfg)
     return True
@@ -492,7 +500,10 @@ def remove_account(cfg: dict[str, Any], account_id: str) -> bool:
         return False
     cfg["accounts"] = kept
     if str(cfg.get("active_account_id") or "") == target:
+        from account_sync import touch_active_account
+
         cfg["active_account_id"] = str(kept[0]["id"]) if kept else ""
+        touch_active_account(cfg)
     from account_sync import remember_deleted
 
     remember_deleted(cfg, target)

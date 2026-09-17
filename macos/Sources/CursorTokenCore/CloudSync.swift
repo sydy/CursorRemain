@@ -34,6 +34,53 @@ public enum CloudSync {
         return try readAuth(payload)
     }
 
+    public static func changePassword(_ cfg: inout AppConfig, oldPassword: String, newPassword: String) throws {
+        let old = oldPassword.trimmingCharacters(in: .whitespaces)
+        let next = newPassword.trimmingCharacters(in: .whitespaces)
+        if next.count < 8 { throw CursorAPIError("密码至少 8 位") }
+        if old == next { throw CursorAPIError("新密码不能与当前密码相同") }
+        let got = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
+        var revision = intValue(got["revision"]) ?? 0
+        var body: [String: Any] = [
+            "old_password": old,
+            "new_password": next,
+            "revision": revision,
+        ]
+        if let envelope = got["envelope"] as? [String: Any] {
+            let remote = try AccountSync.decryptEnvelope(envelope, passphrase: old)
+            body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: next)
+        }
+        do {
+            let put = try authed(&cfg, method: "POST", path: "/v1/auth/password", body: body)
+            applyPasswordResult(&cfg, password: next, payload: put, fallbackRevision: revision)
+        } catch let err as CursorAPIError where err.statusCode == 409 {
+            let retry = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
+            revision = intValue(retry["revision"]) ?? 0
+            body["revision"] = revision
+            if let envelope = retry["envelope"] as? [String: Any] {
+                let remote = try AccountSync.decryptEnvelope(envelope, passphrase: old)
+                body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: next)
+            }
+            let put = try authed(&cfg, method: "POST", path: "/v1/auth/password", body: body)
+            applyPasswordResult(&cfg, password: next, payload: put, fallbackRevision: revision)
+        }
+    }
+
+    static func applyPasswordResult(_ cfg: inout AppConfig, password: String, payload: [String: Any], fallbackRevision: Int) {
+        let access = str(payload["access_token"])
+        let refresh = str(payload["refresh_token"])
+        let email = str(payload["email"]).isEmpty ? cfg.cloudEmail : str(payload["email"])
+        applySession(&cfg, email: email, password: password, access: access, refresh: refresh)
+        cfg.cloudRevision = intValue(payload["revision"]) ?? fallbackRevision
+    }
+
+    public static func deleteAccount(_ cfg: inout AppConfig, password: String) throws {
+        let secret = password.trimmingCharacters(in: .whitespaces)
+        if secret.isEmpty { throw CursorAPIError("请输入密码以确认注销") }
+        _ = try authed(&cfg, method: "DELETE", path: "/v1/me", body: ["password": secret])
+        clearSession(&cfg, keepEmail: false)
+    }
+
     public static func logout(_ cfg: inout AppConfig) {
         let refresh = cfg.cloudRefreshToken
         if !refresh.isEmpty {

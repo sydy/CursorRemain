@@ -50,9 +50,13 @@ docker compose up -d
 | POST | `/v1/auth/login` | 登录 |
 | POST | `/v1/auth/refresh` | `{refresh_token}` |
 | POST | `/v1/auth/logout` | 作废 refresh |
+| POST | `/v1/auth/password` | 改密：`{old_password,new_password,revision,envelope?}`。有云端密文时必须带用新密码重封的信封；成功后作废全部 refresh |
 | GET | `/v1/me` | 当前用户 |
+| DELETE | `/v1/me` | `{password}` 注销账号并删除云端密文 |
 | GET | `/v1/sync` | 取加密信封 + revision |
 | PUT | `/v1/sync` | `{revision, envelope}`，revision 不对返回 409 |
 
-密码至少 8 位，邮箱小写去重，无需验证。Access token 默认 15 分钟，refresh 30 天。
-`PUT /v1/sync` 限制 JSON 约 1MB、ciphertext 长度，以及 KDF iterations 在 1000–600000。超限返回 413 或 400。
+密码至少 8 位，邮箱小写去重，无需验证。Access token 默认 15 分钟，refresh 30 天；过期或已作废的 refresh 会在登录 / 刷新时清掉。
+`PUT /v1/sync` 限制 JSON 约 1MB、ciphertext 长度，以及 KDF iterations 在 1000–600000。信封可带 `compression=gzip`。超限返回 413 或 400。
+
+SQLite 启动时若距上次备份超过 24 小时，会复制到 `data/backups/sync-*.db`，最多保留 7 份。

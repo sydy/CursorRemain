@@ -61,9 +61,10 @@ sealed class SettingsForm : Form
     readonly Label _syncStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _syncHint = new()
     {
-        Text = "登录后自动同步账号、设置和用量。数据用登录密码在本地加密，服务器看不到 Token。",
+        Text = "登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。",
         AutoSize = true,
         ForeColor = Color.DimGray,
+        MaximumSize = new Size(520, 0),
         Margin = new Padding(0, 4, 0, 8),
     };
     readonly FlowLayoutPanel _cloudAuth = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
@@ -73,6 +74,8 @@ sealed class SettingsForm : Form
     readonly Button _cloudLogin = ActionButton("登录");
     readonly Button _cloudRegister = ActionButton("注册");
     readonly Button _cloudLogout = ActionButton("退出登录");
+    readonly Button _cloudChangePassword = ActionButton("修改密码");
+    readonly Button _cloudDelete = ActionButton("注销账号");
     readonly Button _syncNow = ActionButton("立即同步");
     readonly Button _syncExport = ActionButton("导出…");
     readonly Button _syncImport = ActionButton("导入…");
@@ -144,7 +147,7 @@ sealed class SettingsForm : Form
         _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
         _cloudPasswordRow = FieldRow("密码", _cloudPassword);
         _cloudAuth.Controls.AddRange([_cloudLogin, _cloudRegister]);
-        _cloudActions.Controls.AddRange([_syncNow, _cloudLogout, _syncExport, _syncImport]);
+        _cloudActions.Controls.AddRange([_syncNow, _cloudLogout, _cloudChangePassword, _cloudDelete, _syncExport, _syncImport]);
         _tabs.TabPages.AddRange([
             MakeTab(SettingsLayout.AccountTab,
                 Caption("当前账号"),
@@ -250,6 +253,8 @@ sealed class SettingsForm : Form
         _cloudLogin.Click += async (_, _) => await DoCloudAuth(register: false);
         _cloudRegister.Click += async (_, _) => await DoCloudAuth(register: true);
         _cloudLogout.Click += async (_, _) => await DoCloudLogout();
+        _cloudChangePassword.Click += async (_, _) => await DoChangePassword();
+        _cloudDelete.Click += async (_, _) => await DoDeleteAccount();
         _syncNow.Click += async (_, _) => await DoSync();
         _syncExport.Click += (_, _) => DoExport();
         _syncImport.Click += (_, _) => DoImportFile();
@@ -518,6 +523,8 @@ sealed class SettingsForm : Form
             _cloudPasswordRow.Visible = !cfg.CloudLoggedIn;
             _cloudAuth.Visible = !cfg.CloudLoggedIn;
             _cloudLogout.Visible = cfg.CloudLoggedIn;
+            _cloudChangePassword.Visible = cfg.CloudLoggedIn;
+            _cloudDelete.Visible = cfg.CloudLoggedIn;
             _syncNow.Visible = cfg.CloudLoggedIn;
             _syncStatus.Text = SyncStatusText(cfg);
             WriteKindFrom(cfg.ActiveAccount);
@@ -838,6 +845,7 @@ sealed class SettingsForm : Form
     void Persist(bool _)
     {
         CopyRuntimeFromDisk();
+        var beforeSettings = AccountSync.SnapshotSettings(_cfg);
         if (int.TryParse(_interval.Text, out var n) && n >= 1) _cfg.RefreshIntervalMinutes = n;
         if (TryParseDecimal(_planUsd.Text, out var planUsd))
             _cfg.MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(planUsd);
@@ -854,6 +862,7 @@ sealed class SettingsForm : Form
         ReadKindInto(_cfg.ActiveAccount);
         if (CursorAccountPaste.IsSingleToken(_token.Text))
             try { _cfg.UpsertAccount(_token.Text, activate: true); } catch { }
+        AccountSync.TouchChangedSettings(_cfg, beforeSettings);
         _onSaved(_cfg);
         LoadFrom(_cfg);
     }
@@ -887,6 +896,110 @@ sealed class SettingsForm : Form
             LoadFrom(_cfg);
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
+    }
+
+    async Task DoChangePassword()
+    {
+        if (!PromptPasswords("修改云同步密码", "当前密码", "新密码", "确认新密码", out var oldPass, out var newPass))
+            return;
+        _syncStatus.Text = "正在修改密码…";
+        try
+        {
+            await CloudSync.ChangePasswordAsync(_cfg, oldPass, newPass);
+            NotifySaved();
+            LoadFrom(_cfg);
+            _syncStatus.Text = "密码已更新，云端数据已用新密码重封";
+        }
+        catch (Exception ex) { _syncStatus.Text = ex.Message; }
+    }
+
+    async Task DoDeleteAccount()
+    {
+        if (MessageBox.Show(
+                this,
+                "将删除云端账号和加密数据，本机账号不受影响。忘记密码也不能恢复云端数据。确定注销？",
+                "注销云同步账号",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2) != DialogResult.Yes)
+            return;
+        if (!PromptPassword("确认注销", "请输入登录密码", out var password))
+            return;
+        _syncStatus.Text = "正在注销…";
+        try
+        {
+            await CloudSync.DeleteAccountAsync(_cfg, password);
+            NotifySaved();
+            LoadFrom(_cfg);
+            _syncStatus.Text = "云端账号已删除";
+        }
+        catch (Exception ex) { _syncStatus.Text = ex.Message; }
+    }
+
+    static bool PromptPassword(string title, string label, out string password)
+    {
+        password = "";
+        using var dlg = new Form
+        {
+            Text = title,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(360, 140),
+            MaximizeBox = false,
+            MinimizeBox = false,
+        };
+        var box = new TextBox { Width = 240, UseSystemPasswordChar = true, Left = 90, Top = 24 };
+        dlg.Controls.Add(new Label { Text = label, AutoSize = true, Left = 16, Top = 28 });
+        dlg.Controls.Add(box);
+        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Left = 170, Top = 80 };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Left = 250, Top = 80 };
+        dlg.Controls.AddRange([ok, cancel]);
+        dlg.AcceptButton = ok;
+        dlg.CancelButton = cancel;
+        if (dlg.ShowDialog() != DialogResult.OK) return false;
+        password = box.Text.Trim();
+        return password.Length > 0;
+    }
+
+    static bool PromptPasswords(string title, string oldLabel, string newLabel, string confirmLabel, out string oldPass, out string newPass)
+    {
+        oldPass = "";
+        newPass = "";
+        using var dlg = new Form
+        {
+            Text = title,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(400, 200),
+            MaximizeBox = false,
+            MinimizeBox = false,
+        };
+        var oldBox = new TextBox { Width = 220, UseSystemPasswordChar = true, Left = 140, Top = 16 };
+        var newBox = new TextBox { Width = 220, UseSystemPasswordChar = true, Left = 140, Top = 52 };
+        var confirmBox = new TextBox { Width = 220, UseSystemPasswordChar = true, Left = 140, Top = 88 };
+        dlg.Controls.Add(new Label { Text = oldLabel, AutoSize = true, Left = 16, Top = 20 });
+        dlg.Controls.Add(new Label { Text = newLabel, AutoSize = true, Left = 16, Top = 56 });
+        dlg.Controls.Add(new Label { Text = confirmLabel, AutoSize = true, Left = 16, Top = 92 });
+        dlg.Controls.AddRange([oldBox, newBox, confirmBox]);
+        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Left = 200, Top = 140 };
+        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Left = 280, Top = 140 };
+        dlg.Controls.AddRange([ok, cancel]);
+        dlg.AcceptButton = ok;
+        dlg.CancelButton = cancel;
+        if (dlg.ShowDialog() != DialogResult.OK) return false;
+        oldPass = oldBox.Text.Trim();
+        newPass = newBox.Text.Trim();
+        if (newPass.Length < 8)
+        {
+            MessageBox.Show("密码至少 8 位", title);
+            return false;
+        }
+        if (newPass != confirmBox.Text.Trim())
+        {
+            MessageBox.Show("两次输入的新密码不一致", title);
+            return false;
+        }
+        return oldPass.Length > 0;
     }
 
     async Task DoCloudLogout()
