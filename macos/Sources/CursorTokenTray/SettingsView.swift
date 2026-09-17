@@ -200,7 +200,7 @@ struct SettingsRootView: View {
                 Task { await store.checkForUpdate(manual: true) }
             }
             .disabled(store.updateBusy)
-            Text(store.updateStatus.isEmpty ? "对照 GitHub Releases 的 Latest 构建。打包版会下载替换后重启；开发运行则打开下载页。" : store.updateStatus)
+            Text(store.updateStatus.isEmpty ? "对照 GitHub Releases 的 Latest 构建。打包版会下载替换后重启；开发运行则打开下载页。若弹出钥匙串授权，选一次「始终允许」即可，之后更新不再要登录密码。" : store.updateStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
