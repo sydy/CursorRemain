@@ -108,11 +108,9 @@ public static class AppUpdate
     {
         var path = assemblyPath ?? typeof(object).Assembly.Location;
         if (string.IsNullOrWhiteSpace(path)) return false;
-        var normalized = path.Replace('/', Path.DirectorySeparatorChar);
-        var core = $"{Path.DirectorySeparatorChar}shared{Path.DirectorySeparatorChar}Microsoft.NETCore.App{Path.DirectorySeparatorChar}";
-        var desktop = $"{Path.DirectorySeparatorChar}shared{Path.DirectorySeparatorChar}{WindowsDesktopSharedFramework}{Path.DirectorySeparatorChar}";
-        return normalized.Contains(core, StringComparison.OrdinalIgnoreCase)
-            || normalized.Contains(desktop, StringComparison.OrdinalIgnoreCase);
+        var normalized = path.Replace('\\', '/');
+        return normalized.Contains("/shared/Microsoft.NETCore.App/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains($"/shared/{WindowsDesktopSharedFramework}/", StringComparison.OrdinalIgnoreCase);
     }
 
     public static IEnumerable<string> DesktopRuntimeSearchRoots(
