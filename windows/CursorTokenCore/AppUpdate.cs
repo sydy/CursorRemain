@@ -42,6 +42,7 @@ public static class AppUpdate
     public const string RepoName = "CursorTokenTray";
     public const string LatestTag = "latest";
     public const string WindowsAssetName = "CursorRemain-windows.zip";
+    public const string WindowsLightAssetName = "CursorRemain-windows-light.zip";
     public const string MacosAssetName = "CursorRemain-macos.zip";
     public const string LegacyWindowsAssetName = "CursorTokenTray-windows.zip";
     public const string LegacyMacosAssetName = "CursorTokenTray-macos.zip";
@@ -49,7 +50,9 @@ public static class AppUpdate
     public const string LegacyWindowsExeName = "CursorTokenTray.exe";
     public const string MacAppName = "CursorRemain.app";
     public const string LegacyMacAppName = "CursorTokenTray.app";
+    public const string WindowsDesktopSharedFramework = "Microsoft.WindowsDesktop.App";
     public const long MaxZipBytes = 140L * 1024 * 1024;
+    public const long MaxLightZipBytes = 40L * 1024 * 1024;
     public static readonly TimeSpan AutoCheckInterval = TimeSpan.FromHours(12);
     public static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(20);
 
@@ -91,6 +94,94 @@ public static class AppUpdate
 
     public static string PlatformAssetName =>
         OperatingSystem.IsWindows() ? WindowsAssetName : MacosAssetName;
+
+    public static bool IsWindowsLightAssetName(string? name) =>
+        (name ?? "").Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase);
+
+    public static string PreferredWindowsAssetName(bool preferLight) =>
+        preferLight ? WindowsLightAssetName : WindowsAssetName;
+
+    public static long MaxBytesForAsset(string? name) =>
+        IsWindowsLightAssetName(name) ? MaxLightZipBytes : MaxZipBytes;
+
+    public static bool RunsOnSharedFramework(string? assemblyPath = null)
+    {
+        var path = assemblyPath ?? typeof(object).Assembly.Location;
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var normalized = path.Replace('\\', '/');
+        return normalized.Contains("/shared/Microsoft.NETCore.App/", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains($"/shared/{WindowsDesktopSharedFramework}/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static IEnumerable<string> DesktopRuntimeSearchRoots(
+        IEnumerable<string>? searchRoots = null,
+        string? dotnetRoot = null)
+    {
+        if (searchRoots is not null)
+        {
+            foreach (var root in searchRoots)
+            {
+                if (!string.IsNullOrWhiteSpace(root))
+                    yield return root;
+            }
+            yield break;
+        }
+
+        foreach (var key in new[] { "DOTNET_ROOT_X64", "DOTNET_ROOT" })
+        {
+            var env = dotnetRoot ?? Environment.GetEnvironmentVariable(key);
+            if (!string.IsNullOrWhiteSpace(env))
+                yield return Path.Combine(env, "shared", WindowsDesktopSharedFramework);
+            if (dotnetRoot is not null) break;
+        }
+
+        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        if (!string.IsNullOrWhiteSpace(programFiles))
+            yield return Path.Combine(programFiles, "dotnet", "shared", WindowsDesktopSharedFramework);
+
+        var programW6432 = Environment.GetEnvironmentVariable("ProgramW6432");
+        if (!string.IsNullOrWhiteSpace(programW6432))
+            yield return Path.Combine(programW6432, "dotnet", "shared", WindowsDesktopSharedFramework);
+    }
+
+    public static bool HasWindowsDesktopRuntime(
+        IEnumerable<string>? searchRoots = null,
+        string? dotnetRoot = null)
+    {
+        foreach (var root in DesktopRuntimeSearchRoots(searchRoots, dotnetRoot))
+        {
+            if (ContainsDesktopRuntime8(root)) return true;
+        }
+        return false;
+    }
+
+    public static bool ContainsDesktopRuntime8(string? sharedFrameworkDir)
+    {
+        if (string.IsNullOrWhiteSpace(sharedFrameworkDir) || !Directory.Exists(sharedFrameworkDir))
+            return false;
+        foreach (var dir in Directory.EnumerateDirectories(sharedFrameworkDir))
+        {
+            var name = Path.GetFileName(dir);
+            if (name.StartsWith("8.", StringComparison.Ordinal)
+                && File.Exists(Path.Combine(dir, "System.Windows.Forms.dll")))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Light (framework-dependent) updates are safe when this process already
+    /// runs on the shared Desktop Runtime, or the machine has .NET 8 Desktop.
+    /// Self-contained installs without a system runtime keep the full zip.
+    /// </summary>
+    public static bool CanUseWindowsLightUpdate(
+        bool? hasDesktopRuntime = null,
+        bool? runsOnSharedFramework = null)
+    {
+        if (runsOnSharedFramework ?? RunsOnSharedFramework())
+            return true;
+        return hasDesktopRuntime ?? HasWindowsDesktopRuntime();
+    }
 
     public static string NormalizeSha(string? raw)
     {
@@ -404,9 +495,14 @@ public static class AppUpdate
 
     public static IReadOnlyList<string> AssetNameCandidates(string preferred)
     {
-        if (preferred.Equals(WindowsAssetName, StringComparison.OrdinalIgnoreCase)
+        if (preferred.Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase)
+            || preferred.Equals(WindowsAssetName, StringComparison.OrdinalIgnoreCase)
             || preferred.Equals(LegacyWindowsAssetName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (preferred.Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase))
+                return [WindowsLightAssetName, WindowsAssetName, LegacyWindowsAssetName];
             return [WindowsAssetName, LegacyWindowsAssetName];
+        }
         if (preferred.Equals(MacosAssetName, StringComparison.OrdinalIgnoreCase)
             || preferred.Equals(LegacyMacosAssetName, StringComparison.OrdinalIgnoreCase))
             return [MacosAssetName, LegacyMacosAssetName];
@@ -418,7 +514,10 @@ public static class AppUpdate
         foreach (var name in AssetNameCandidates(preferredName))
         {
             var asset = FindAsset(release, name);
-            if (asset is not null) return asset;
+            if (asset is null) continue;
+            if (!IsAllowedDownloadUrl(asset.Url)) continue;
+            if (asset.Size > MaxBytesForAsset(name)) continue;
+            return asset;
         }
         return null;
     }
@@ -450,7 +549,7 @@ public static class AppUpdate
             return new UpdateDecision { Message = "最新发布没有本平台安装包" };
         if (!IsAllowedDownloadUrl(asset.Url))
             return new UpdateDecision { Message = "更新地址无效" };
-        if (asset.Size > MaxZipBytes)
+        if (asset.Size > MaxBytesForAsset(asset.Name))
             return new UpdateDecision { Message = "安装包过大，已取消更新" };
 
         var remoteVersion = NormalizeProductVersion(release.Version);

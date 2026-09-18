@@ -143,6 +143,110 @@ public class AppUpdateTests
     }
 
     [Fact]
+    public void PrefersLightWindowsAssetThenFallsBackToFull()
+    {
+        var light = new AppReleaseAsset
+        {
+            Name = AppUpdate.WindowsLightAssetName,
+            Url = AppUpdate.AssetDownloadUrl(AppUpdate.WindowsLightAssetName),
+            Id = 9,
+            Size = 3_000_000,
+        };
+        var full = new AppReleaseAsset
+        {
+            Name = AppUpdate.WindowsAssetName,
+            Url = AppUpdate.AssetDownloadUrl(AppUpdate.WindowsAssetName),
+            Id = 8,
+            Size = 60_000_000,
+        };
+        var release = new AppRelease
+        {
+            Tag = "v2.1.0",
+            Version = "2.1.0",
+            CommitSha = "518192b000000000000000000000000000000000",
+            Assets = [light, full],
+        };
+        Assert.Equal(
+            new[] { AppUpdate.WindowsLightAssetName, AppUpdate.WindowsAssetName, AppUpdate.LegacyWindowsAssetName },
+            AppUpdate.AssetNameCandidates(AppUpdate.WindowsLightAssetName));
+        Assert.Equal(
+            new[] { AppUpdate.WindowsAssetName, AppUpdate.LegacyWindowsAssetName },
+            AppUpdate.AssetNameCandidates(AppUpdate.WindowsAssetName));
+        Assert.Equal(AppUpdate.WindowsLightAssetName, AppUpdate.PreferredWindowsAssetName(true));
+        Assert.Equal(AppUpdate.WindowsAssetName, AppUpdate.PreferredWindowsAssetName(false));
+
+        var lightPick = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsLightAssetName);
+        Assert.Equal(9, lightPick?.Id);
+        var fullPick = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName);
+        Assert.Equal(8, fullPick?.Id);
+
+        var missingLight = new AppRelease
+        {
+            Tag = release.Tag,
+            Version = release.Version,
+            CommitSha = release.CommitSha,
+            Assets = [full],
+        };
+        Assert.Equal(8, AppUpdate.FindPreferredAsset(missingLight, AppUpdate.WindowsLightAssetName)?.Id);
+
+        var oversizedLight = new AppRelease
+        {
+            Tag = release.Tag,
+            Version = release.Version,
+            CommitSha = release.CommitSha,
+            Assets =
+            [
+                new()
+                {
+                    Name = AppUpdate.WindowsLightAssetName,
+                    Url = AppUpdate.AssetDownloadUrl(AppUpdate.WindowsLightAssetName),
+                    Id = 11,
+                    Size = AppUpdate.MaxLightZipBytes + 1,
+                },
+                full,
+            ],
+        };
+        Assert.Equal(8, AppUpdate.FindPreferredAsset(oversizedLight, AppUpdate.WindowsLightAssetName)?.Id);
+
+        var decision = AppUpdate.Evaluate(
+            release,
+            AppUpdate.WindowsLightAssetName,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            currentVersion: "2.0.0");
+        Assert.True(decision.Available);
+        Assert.Equal(9, decision.Asset?.Id);
+    }
+
+    [Fact]
+    public void DetectsDesktopRuntimeAndSharedFramework()
+    {
+        Assert.True(AppUpdate.RunsOnSharedFramework(
+            @"C:\Program Files\dotnet\shared\Microsoft.NETCore.App\8.0.20\System.Private.CoreLib.dll"));
+        Assert.True(AppUpdate.RunsOnSharedFramework(
+            "/usr/share/dotnet/shared/Microsoft.WindowsDesktop.App/8.0.20/System.Windows.Forms.dll"));
+        Assert.False(AppUpdate.RunsOnSharedFramework(""));
+        Assert.False(AppUpdate.RunsOnSharedFramework(@"C:\Users\me\AppData\Local\Temp\.net\CursorRemain\coreclr.dll"));
+
+        var root = Path.Combine(Path.GetTempPath(), "ctt-fx-" + Guid.NewGuid().ToString("N"));
+        var runtime = Path.Combine(root, "8.0.20");
+        Directory.CreateDirectory(runtime);
+        try
+        {
+            File.WriteAllText(Path.Combine(runtime, "System.Windows.Forms.dll"), "fx");
+            Assert.True(AppUpdate.ContainsDesktopRuntime8(root));
+            Assert.True(AppUpdate.HasWindowsDesktopRuntime([root]));
+            Assert.False(AppUpdate.HasWindowsDesktopRuntime([Path.Combine(root, "missing")]));
+            Assert.True(AppUpdate.CanUseWindowsLightUpdate(hasDesktopRuntime: true, runsOnSharedFramework: false));
+            Assert.False(AppUpdate.CanUseWindowsLightUpdate(hasDesktopRuntime: false, runsOnSharedFramework: false));
+            Assert.True(AppUpdate.CanUseWindowsLightUpdate(hasDesktopRuntime: false, runsOnSharedFramework: true));
+        }
+        finally
+        {
+            try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void PrefersNewAssetThenFallsBackToLegacy()
     {
         var release = new AppRelease
