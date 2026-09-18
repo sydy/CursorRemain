@@ -79,7 +79,7 @@ public enum AppUpdate {
     public static let legacyWindowsExeName = "CursorTokenTray.exe"
     public static let macAppName = "CursorRemain.app"
     public static let legacyMacAppName = "CursorTokenTray.app"
-    public static let productVersion = "2.1.0"
+    public static let productVersion = "2.1.1"
     public static let maxZipBytes: Int64 = 140 * 1024 * 1024
     public static let maxLightZipBytes: Int64 = 40 * 1024 * 1024
     public static let autoCheckInterval: TimeInterval = 12 * 60 * 60
