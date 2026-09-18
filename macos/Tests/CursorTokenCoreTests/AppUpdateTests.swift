@@ -108,6 +108,72 @@ final class AppUpdateTests: XCTestCase {
         }
     }
 
+    func testPrefersLightWindowsAssetThenFallsBackToFull() {
+        let light = AppReleaseAsset(
+            id: 9,
+            name: AppUpdate.windowsLightAssetName,
+            url: AppUpdate.assetDownloadURL(AppUpdate.windowsLightAssetName),
+            size: 3_000_000
+        )
+        let full = AppReleaseAsset(
+            id: 8,
+            name: AppUpdate.windowsAssetName,
+            url: AppUpdate.assetDownloadURL(AppUpdate.windowsAssetName),
+            size: 60_000_000
+        )
+        let release = AppRelease(
+            tag: "v2.1.0",
+            version: "2.1.0",
+            commitSha: "518192b000000000000000000000000000000000",
+            assets: [light, full]
+        )
+        XCTAssertEqual(
+            AppUpdate.assetNameCandidates(AppUpdate.windowsLightAssetName),
+            [AppUpdate.windowsLightAssetName, AppUpdate.windowsAssetName, AppUpdate.legacyWindowsAssetName]
+        )
+        XCTAssertEqual(
+            AppUpdate.assetNameCandidates(AppUpdate.windowsAssetName),
+            [AppUpdate.windowsAssetName, AppUpdate.legacyWindowsAssetName]
+        )
+        XCTAssertEqual(AppUpdate.preferredWindowsAssetName(preferLight: true), AppUpdate.windowsLightAssetName)
+        XCTAssertEqual(AppUpdate.preferredWindowsAssetName(preferLight: false), AppUpdate.windowsAssetName)
+        XCTAssertEqual(AppUpdate.findPreferredAsset(release, name: AppUpdate.windowsLightAssetName)?.id, 9)
+        XCTAssertEqual(AppUpdate.findPreferredAsset(release, name: AppUpdate.windowsAssetName)?.id, 8)
+
+        let missingLight = AppRelease(
+            tag: release.tag,
+            version: release.version,
+            commitSha: release.commitSha,
+            assets: [full]
+        )
+        XCTAssertEqual(AppUpdate.findPreferredAsset(missingLight, name: AppUpdate.windowsLightAssetName)?.id, 8)
+
+        let oversizedLight = AppRelease(
+            tag: release.tag,
+            version: release.version,
+            commitSha: release.commitSha,
+            assets: [
+                AppReleaseAsset(
+                    id: 11,
+                    name: AppUpdate.windowsLightAssetName,
+                    url: AppUpdate.assetDownloadURL(AppUpdate.windowsLightAssetName),
+                    size: AppUpdate.maxLightZipBytes + 1
+                ),
+                full,
+            ]
+        )
+        XCTAssertEqual(AppUpdate.findPreferredAsset(oversizedLight, name: AppUpdate.windowsLightAssetName)?.id, 8)
+
+        let decision = AppUpdate.evaluate(
+            release: release,
+            assetName: AppUpdate.windowsLightAssetName,
+            currentSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            currentVersion: "2.0.0"
+        )
+        XCTAssertTrue(decision.available)
+        XCTAssertEqual(decision.asset?.id, 9)
+    }
+
     func testPrefersNewAssetThenFallsBackToLegacy() {
         let release = AppRelease(
             tag: "latest",

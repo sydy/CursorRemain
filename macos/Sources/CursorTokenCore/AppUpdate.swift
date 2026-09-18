@@ -72,6 +72,7 @@ public enum AppUpdate {
     public static let repoName = "CursorTokenTray"
     public static let latestTag = "latest"
     public static let windowsAssetName = "CursorRemain-windows.zip"
+    public static let windowsLightAssetName = "CursorRemain-windows-light.zip"
     public static let macosAssetName = "CursorRemain-macos.zip"
     public static let legacyWindowsAssetName = "CursorTokenTray-windows.zip"
     public static let legacyMacosAssetName = "CursorTokenTray-macos.zip"
@@ -81,6 +82,7 @@ public enum AppUpdate {
     public static let legacyMacAppName = "CursorTokenTray.app"
     public static let productVersion = "2.1.0"
     public static let maxZipBytes: Int64 = 140 * 1024 * 1024
+    public static let maxLightZipBytes: Int64 = 40 * 1024 * 1024
     public static let autoCheckInterval: TimeInterval = 12 * 60 * 60
     public static let startupDelay: TimeInterval = 20
 
@@ -124,6 +126,18 @@ public enum AppUpdate {
         #else
         macosAssetName
         #endif
+    }
+
+    public static func isWindowsLightAssetName(_ name: String?) -> Bool {
+        (name ?? "").caseInsensitiveCompare(windowsLightAssetName) == .orderedSame
+    }
+
+    public static func preferredWindowsAssetName(preferLight: Bool) -> String {
+        preferLight ? windowsLightAssetName : windowsAssetName
+    }
+
+    public static func maxBytesForAsset(_ name: String?) -> Int64 {
+        isWindowsLightAssetName(name) ? maxLightZipBytes : maxZipBytes
     }
 
     public static func normalizeSha(_ raw: String?) -> String {
@@ -399,8 +413,12 @@ public enum AppUpdate {
     }
 
     public static func assetNameCandidates(_ preferred: String) -> [String] {
-        if preferred.caseInsensitiveCompare(windowsAssetName) == .orderedSame
+        if preferred.caseInsensitiveCompare(windowsLightAssetName) == .orderedSame
+            || preferred.caseInsensitiveCompare(windowsAssetName) == .orderedSame
             || preferred.caseInsensitiveCompare(legacyWindowsAssetName) == .orderedSame {
+            if preferred.caseInsensitiveCompare(windowsLightAssetName) == .orderedSame {
+                return [windowsLightAssetName, windowsAssetName, legacyWindowsAssetName]
+            }
             return [windowsAssetName, legacyWindowsAssetName]
         }
         if preferred.caseInsensitiveCompare(macosAssetName) == .orderedSame
@@ -412,7 +430,10 @@ public enum AppUpdate {
 
     public static func findPreferredAsset(_ release: AppRelease, name: String) -> AppReleaseAsset? {
         for candidate in assetNameCandidates(name) {
-            if let asset = findAsset(release, name: candidate) { return asset }
+            guard let asset = findAsset(release, name: candidate) else { continue }
+            if !isAllowedDownloadURL(asset.url) { continue }
+            if asset.size > maxBytesForAsset(candidate) { continue }
+            return asset
         }
         return nil
     }
@@ -443,7 +464,7 @@ public enum AppUpdate {
         if !isAllowedDownloadURL(asset.url) {
             return UpdateDecision(message: "更新地址无效")
         }
-        if asset.size > maxZipBytes {
+        if asset.size > maxBytesForAsset(asset.name) {
             return UpdateDecision(message: "安装包过大，已取消更新")
         }
         var remoteVersion = normalizeProductVersion(release.version)

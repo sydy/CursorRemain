@@ -1,4 +1,4 @@
-"""Windows 发布必须是自包含包，并带上 VERSION 里的正式版本号。"""
+"""Windows 首次安装包必须自包含；自动更新另发不含运行时的轻量包。"""
 
 from __future__ import annotations
 
@@ -24,13 +24,16 @@ class SelfContainedPublishTests(unittest.TestCase):
     def test_ci_publish_is_self_contained(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         self.assertIn("--self-contained true", workflow)
-        self.assertNotIn("--self-contained false", workflow)
+        self.assertIn("--self-contained false", workflow)
+        self.assertIn("CursorRemain-windows-light.zip", workflow)
         self.assertIn("EnableCompressionInSingleFile=true", workflow)
         self.assertNotIn("EnableCompressionInSingleFile=false", workflow)
         self.assertIn("20MB", workflow)
         self.assertIn("120MB", workflow)
         self.assertIn("SourceRevisionId", workflow)
         self.assertIn("self-contained exe is unexpectedly small", workflow)
+        self.assertIn("light exe is unexpectedly small", workflow)
+        self.assertIn("light exe must be smaller than the self-contained exe", workflow)
         bat = (ROOT / "build.bat").read_text(encoding="utf-8")
         self.assertIn("--self-contained true", bat)
         self.assertNotIn("--self-contained false", bat)
@@ -46,6 +49,7 @@ class SelfContainedPublishTests(unittest.TestCase):
         self.assertIn("首次运行.txt", workflow)
         self.assertIn("CursorRemain.exe", text)
         self.assertIn("CursorRemain-windows.zip", workflow)
+        self.assertIn("CursorRemain-windows-light.zip", workflow)
         self.assertIn("CursorRemain-windows-setup.exe", workflow)
         self.assertIn("CursorTokenTray-windows.zip", workflow)
 
@@ -80,10 +84,12 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
         self.assertGreaterEqual(workflow.count("CursorRemain-windows-setup.exe"), 3)
         notes = (ROOT / ".github" / "scripts" / "update-latest-release.sh").read_text(encoding="utf-8")
         self.assertIn("CursorRemain-windows-setup.exe", notes)
+        self.assertIn("CursorRemain-windows-light.zip", notes)
         official = (ROOT / ".github" / "scripts" / "publish-official-release.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn("Cursor 余量", official)
+        self.assertIn("CursorRemain-windows-light.zip", official)
 
     def test_installer_ps1_is_ascii(self) -> None:
         raw = (ROOT / "windows" / "packaging" / "build_installer.ps1").read_bytes()

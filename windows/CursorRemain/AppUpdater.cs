@@ -42,9 +42,10 @@ static class AppUpdater
         try
         {
             var release = await FetchLatest(ct);
+            var preferLight = AppUpdate.CanUseWindowsLightUpdate();
             var decision = AppUpdate.Evaluate(
                 release,
-                AppUpdate.WindowsAssetName,
+                AppUpdate.PreferredWindowsAssetName(preferLight),
                 AppUpdate.CurrentCommitSha(),
                 cfg.UpdateInstalledSha,
                 cfg.UpdateInstalledAssetId,
@@ -63,14 +64,31 @@ static class AppUpdater
             if (manual && confirmApply is not null && !confirmApply(decision.Message))
                 return "已取消更新";
 
-            var applied = await DownloadAndStage(decision.Asset, ct);
+            var asset = decision.Asset;
+            string applied;
+            try
+            {
+                applied = await DownloadAndStage(asset, ct);
+            }
+            catch (Exception ex) when (
+                preferLight
+                && AppUpdate.IsWindowsLightAssetName(asset.Name)
+                && ex is not OperationCanceledException)
+            {
+                CrashLog.Write(ex);
+                var fallback = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName);
+                if (fallback is null || string.Equals(fallback.Url, asset.Url, StringComparison.OrdinalIgnoreCase))
+                    throw;
+                applied = await DownloadAndStage(fallback, ct);
+                asset = fallback;
+            }
             if (!LaunchHelper(applied))
             {
                 var fail = "已下载更新，但无法启动安装脚本";
                 RememberCheck(cfg, fail);
                 return fail;
             }
-            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, decision.Asset.Id, true) is { } remembered)
+            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, asset.Id, true) is { } remembered)
                 RememberInstalled(cfg, remembered.Sha, remembered.AssetId);
             restart?.Invoke();
             return decision.Message + "，即将重启";
@@ -224,7 +242,10 @@ static class AppUpdater
             throw new InvalidOperationException("更新地址无效");
         var root = Path.Combine(Path.GetTempPath(), "CursorRemain-update-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        var zip = Path.Combine(root, AppUpdate.WindowsAssetName);
+        var zipName = Path.GetFileName(asset.Name);
+        if (string.IsNullOrWhiteSpace(zipName) || zipName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            zipName = AppUpdate.WindowsAssetName;
+        var zip = Path.Combine(root, zipName);
         using (var req = new HttpRequestMessage(HttpMethod.Get, asset.Url))
         {
             req.Headers.Accept.Clear();

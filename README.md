@@ -24,7 +24,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - **账号对比**：独立窗口，按渠道标签（自费 / 第三方）分组。每个账号一行，First-party / API / Grok Bot 各占一行，数字按列对齐。窗口按各号自己的最新周期或有效期（没有则近 30 天），日均持有 = 折合月费÷30，窗口实付把月费/实际成本按窗口天数折算后再摊，且不超过所填实际成本。表里同时给出 ¥/百万 Token、¥/次。打开先读本地明细，点「同步」再逐号拉取；可导出 CSV。短期号请把买价折成月费（买价÷天数×30）
 - 默认每 10 分钟刷新（可配置）
 - 开机自启（默认开启；Windows 写当前用户注册表 `Run` 项，macOS 用 `SMAppService` / LaunchAgent）
-- **自动更新**（默认开启）：启动后对照 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest)（`v*`），有新版本就下载本平台 zip、替换当前程序并重启。设置里会显示 `主版本号 (提交哈希)`，例如 `2.1.0 (abc1234)`。开发运行不会覆盖本机文件，只会打开下载页
+- **自动更新**（默认开启）：启动后对照 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest)（`v*`），有新版本就下载本平台 zip、替换当前程序并重启。Windows 安装版 / 便携版在本机已有 **.NET 8 Desktop Runtime** 时改下不含运行时的轻量包 `CursorRemain-windows-light.zip`，否则仍下自包含 zip。设置里会显示 `主版本号 (提交哈希)`，例如 `2.1.0 (abc1234)`。开发运行不会覆盖本机文件，只会打开下载页
 
 悬浮框与 macOS 相同为左右分栏：左侧圆环剩余百分比、套餐说明与用量链接；右侧金额 / First-party·API / Grok Bot 进度卡片、Token / 重置 / 近日消耗与能否撑到重置，以及复制 / 刷新 / 报表 / 对比 / 设置。  
 预计可用按本周期已用比例与已过天数估算，并与重置日对比提示「预计能撑到重置」或「可能提前耗尽」。企业 / 团队账号打开 [用量页](https://cursor.com/dashboard/usage)，个人账号仍打开账单页。
@@ -86,7 +86,7 @@ swift test --package-path macos
 
 1. 从 [正式版 Release](https://github.com/sydy/CursorTokenTray/releases/latest) 下载 `CursorRemain-windows-setup.exe`
 2. 双击安装。默认装到当前用户目录（`%LOCALAPPDATA%\Programs\CursorRemain`），不需要管理员；开始菜单会出现「Cursor 余量」
-3. 装完可直接启动，无需另装 .NET。开机自启由程序自己注册，之后会自动对照正式版更新（可在设置里关闭）
+3. 装完可直接启动，无需另装 .NET。开机自启由程序自己注册，之后会自动对照正式版更新（可在设置里关闭）。本机已有 .NET 8 Desktop Runtime 时，自动更新会改下不含运行时的 `CursorRemain-windows-light.zip`；没有运行时则仍下自包含 zip。请勿把轻量包当成首次安装包
 
 **便携版**
 
@@ -123,7 +123,7 @@ open /Applications/CursorRemain.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime；同时保留旧名 zip 供旧版自动更新）
+3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime；同时保留旧名 zip 供旧版自动更新），以及不含运行时的 `CursorRemain-windows-light.zip` 供自动更新
 4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`；同时保留旧名 zip）
 
 版本号写在仓库根目录 `VERSION`。合入 `main` 后：

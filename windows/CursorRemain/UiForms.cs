@@ -49,7 +49,7 @@ sealed class SettingsForm : Form
     readonly Label _updateStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 4) };
     readonly Label _updateHint = new()
     {
-        Text = "对照 GitHub 正式版（v*）。打包版会下载替换后重启；开发运行则打开下载页。",
+        Text = "对照 GitHub 正式版（v*）。打包版会下载替换后重启；本机有 .NET 8 Desktop Runtime 时下不含运行时的轻量包。开发运行则打开下载页。",
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 0, 0, 8),

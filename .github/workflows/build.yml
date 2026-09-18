@@ -157,6 +157,30 @@ jobs:
           Copy-Item -Force dist-win\CursorRemain.exe dist-win\CursorTokenTray.exe
           Compress-Archive -Path dist-win\CursorTokenTray.exe, dist-win\首次运行.txt -DestinationPath CursorTokenTray-windows.zip -Force
           '{0} {1:N2} MB' -f 'CursorRemain-windows.zip', ((Get-Item CursorRemain-windows.zip).Length / 1MB)
+      - name: Publish framework-dependent light exe
+        shell: pwsh
+        run: |
+          dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained false -p:SelfContained=false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:PublishTrimmed=false -p:InvariantGlobalization=true -p:DebugType=none -p:DebugSymbols=false -p:SourceRevisionId=$env:GITHUB_SHA -o dist-win-light
+      - name: Report light exe size
+        shell: pwsh
+        run: |
+          Get-ChildItem dist-win-light | ForEach-Object { '{0} {1:N2} MB' -f $_.Name, ($_.Length / 1MB) }
+          $exe = Get-Item dist-win-light\CursorRemain.exe
+          $full = Get-Item dist-win\CursorRemain.exe
+          if ($exe.Length -lt 200KB) {
+            throw ("light exe is unexpectedly small: {0:N2} MB" -f ($exe.Length/1MB))
+          }
+          if ($exe.Length -gt 25MB) {
+            throw ("light exe is unexpectedly large: {0:N2} MB" -f ($exe.Length/1MB))
+          }
+          if ($exe.Length -ge $full.Length) {
+            throw "light exe must be smaller than the self-contained exe"
+          }
+      - name: Zip light package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist-win-light\CursorRemain.exe -DestinationPath CursorRemain-windows-light.zip -Force
+          '{0} {1:N2} MB' -f 'CursorRemain-windows-light.zip', ((Get-Item CursorRemain-windows-light.zip).Length / 1MB)
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
@@ -171,6 +195,7 @@ jobs:
           name: CursorRemain-windows
           path: |
             CursorRemain-windows.zip
+            CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           if-no-files-found: error
@@ -188,11 +213,12 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: |
             CursorRemain-windows.zip
+            CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           body: |
             滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
-            Windows 安装版与 zip 为自包含包，无需另装 .NET；macOS 为 Swift `.app`。
+            Windows 安装版与 zip 为自包含包，无需另装 .NET；自动更新在本机已有 .NET 8 Desktop Runtime 时会改下不含运行时的轻量包。macOS 为 Swift `.app`。
       - name: Refresh latest release notes and tag
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -204,13 +230,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: bash .github/scripts/publish-official-release.sh CursorRemain-windows.zip CursorRemain-windows-setup.exe CursorTokenTray-windows.zip
+        run: bash .github/scripts/publish-official-release.sh CursorRemain-windows.zip CursorRemain-windows-light.zip CursorRemain-windows-setup.exe CursorTokenTray-windows.zip
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: |
             CursorRemain-windows.zip
+            CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
             CursorTokenTray-windows.zip
           generate_release_notes: true
