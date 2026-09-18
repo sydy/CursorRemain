@@ -27,7 +27,7 @@ class SelfContainedPublishTests(unittest.TestCase):
         self.assertIn("--self-contained false", workflow)
         self.assertIn("CursorRemain-windows-light.zip", workflow)
         self.assertIn("EnableCompressionInSingleFile=true", workflow)
-        self.assertNotIn("EnableCompressionInSingleFile=false", workflow)
+        self.assertIn("EnableCompressionInSingleFile=false", workflow)
         self.assertIn("20MB", workflow)
         self.assertIn("120MB", workflow)
         self.assertIn("SourceRevisionId", workflow)
