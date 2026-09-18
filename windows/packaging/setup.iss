@@ -11,7 +11,7 @@
   #define OutputDir RepoRoot
 #endif
 #ifndef AppVersion
-  #define AppVersion "2.1.0"
+  #define AppVersion "2.1.1"
 #endif
 #ifdef SourceRevisionId
   #define AppVersionText AppVersion + " (" + Copy(SourceRevisionId, 1, 7) + ")"
