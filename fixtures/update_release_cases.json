@@ -68,15 +68,15 @@
   ],
   "allowed_urls": [
     {
-      "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows.zip",
+      "url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
       "ok": true
     },
     {
-      "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows-light.zip",
+      "url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows-light.zip",
       "ok": true
     },
     {
-      "url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows-setup.exe",
+      "url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows-setup.exe",
       "ok": true
     },
     {
@@ -189,21 +189,21 @@
       "name": "latest_with_body_and_assets",
       "json": {
         "tag_name": "latest",
-        "html_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
+        "html_url": "https://github.com/sydy/CursorRemain/releases/tag/latest",
         "published_at": "2026-09-14T03:20:00Z",
         "body": "最新 `main` 构建。\n- **版本**: `2.1.0`\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
         "assets": [
           {
             "id": 101,
             "name": "CursorRemain-windows.zip",
-            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows.zip",
+            "browser_download_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
             "size": 4200000,
             "updated_at": "2026-09-14T03:21:00Z"
           },
           {
             "id": 102,
             "name": "CursorRemain-macos.zip",
-            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-macos.zip",
+            "browser_download_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-macos.zip",
             "size": 5100000,
             "updated_at": "2026-09-14T03:22:00Z"
           }
@@ -213,9 +213,9 @@
         "tag": "latest",
         "version": "2.1.0",
         "sha": "518192b000000000000000000000000000000000",
-        "page_url": "https://github.com/sydy/CursorTokenTray/releases/tag/latest",
-        "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows.zip",
-        "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-macos.zip",
+        "page_url": "https://github.com/sydy/CursorRemain/releases/tag/latest",
+        "windows_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
+        "macos_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-macos.zip",
         "windows_asset_id": 101,
         "macos_asset_id": 102,
         "windows_updated_at": "2026-09-14T03:21:00Z"
@@ -225,7 +225,7 @@
       "name": "official_v2_1_0",
       "json": {
         "tag_name": "v2.1.0",
-        "html_url": "https://github.com/sydy/CursorTokenTray/releases/tag/v2.1.0",
+        "html_url": "https://github.com/sydy/CursorRemain/releases/tag/v2.1.0",
         "target_commitish": "518192b000000000000000000000000000000000",
         "published_at": "2026-09-17T10:00:00Z",
         "body": "Cursor 余量 **2.1.0** 正式版。\n- **版本**: `2.1.0`\n- **提交**: `518192b000000000000000000000000000000000`",
@@ -233,14 +233,14 @@
           {
             "id": 201,
             "name": "CursorRemain-windows.zip",
-            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-windows.zip",
+            "browser_download_url": "https://github.com/sydy/CursorRemain/releases/download/v2.1.0/CursorRemain-windows.zip",
             "size": 62000000,
             "updated_at": "2026-09-17T10:01:00Z"
           },
           {
             "id": 202,
             "name": "CursorRemain-macos.zip",
-            "browser_download_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-macos.zip",
+            "browser_download_url": "https://github.com/sydy/CursorRemain/releases/download/v2.1.0/CursorRemain-macos.zip",
             "size": 5100000,
             "updated_at": "2026-09-17T10:02:00Z"
           }
@@ -250,9 +250,9 @@
         "tag": "v2.1.0",
         "version": "2.1.0",
         "sha": "518192b000000000000000000000000000000000",
-        "page_url": "https://github.com/sydy/CursorTokenTray/releases/tag/v2.1.0",
-        "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-windows.zip",
-        "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/v2.1.0/CursorRemain-macos.zip",
+        "page_url": "https://github.com/sydy/CursorRemain/releases/tag/v2.1.0",
+        "windows_url": "https://github.com/sydy/CursorRemain/releases/download/v2.1.0/CursorRemain-windows.zip",
+        "macos_url": "https://github.com/sydy/CursorRemain/releases/download/v2.1.0/CursorRemain-macos.zip",
         "windows_asset_id": 201,
         "macos_asset_id": 202,
         "windows_updated_at": "2026-09-17T10:01:00Z"
@@ -264,8 +264,8 @@
       "name": "github_html_commit_and_notes",
       "html": "<a href=\"/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000\">commit</a><li><strong>提交</strong>: <code>518192b000000000000000000000000000000000</code></li>",
       "sha": "518192b000000000000000000000000000000000",
-      "windows_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-windows.zip",
-      "macos_url": "https://github.com/sydy/CursorTokenTray/releases/download/latest/CursorRemain-macos.zip"
+      "windows_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
+      "macos_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-macos.zip"
     }
   ],
   "parse_tag_ref": [

@@ -38,8 +38,7 @@ public sealed class UpdateDecision
 public static class AppUpdate
 {
     public const string RepoOwner = "sydy";
-    // GitHub 仓库 slug 仍是 CursorTokenTray；改名需管理员在 GitHub 操作。发布包与 exe 已用 CursorRemain。
-    public const string RepoName = "CursorTokenTray";
+    public const string RepoName = "CursorRemain";
     public const string LatestTag = "latest";
     public const string WindowsAssetName = "CursorRemain-windows.zip";
     public const string WindowsLightAssetName = "CursorRemain-windows-light.zip";
