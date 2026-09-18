@@ -191,7 +191,7 @@
         "tag_name": "latest",
         "html_url": "https://github.com/sydy/CursorRemain/releases/tag/latest",
         "published_at": "2026-09-14T03:20:00Z",
-        "body": "最新 `main` 构建。\n- **版本**: `2.1.0`\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+        "body": "最新 `main` 构建。\n- **版本**: `2.1.1`\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
         "assets": [
           {
             "id": 101,
@@ -211,7 +211,7 @@
       },
       "expected": {
         "tag": "latest",
-        "version": "2.1.0",
+        "version": "2.1.1",
         "sha": "518192b000000000000000000000000000000000",
         "page_url": "https://github.com/sydy/CursorRemain/releases/tag/latest",
         "windows_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
@@ -284,6 +284,7 @@
   "evaluate": [
     {
       "name": "same_full_sha_is_current",
+      "current_version": "2.1.1",
       "current_sha": "518192b000000000000000000000000000000000",
       "installed_sha": "",
       "installed_asset_id": 0,
@@ -293,6 +294,7 @@
     },
     {
       "name": "short_local_sha_matches_remote",
+      "current_version": "2.1.1",
       "current_sha": "518192b",
       "installed_sha": "",
       "installed_asset_id": 0,
@@ -302,6 +304,7 @@
     },
     {
       "name": "different_sha_is_available",
+      "current_version": "2.1.1",
       "current_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "installed_sha": "",
       "installed_asset_id": 0,
@@ -311,6 +314,7 @@
     },
     {
       "name": "empty_current_uses_installed_sha",
+      "current_version": "2.1.1",
       "current_sha": "",
       "installed_sha": "518192b000000000000000000000000000000000",
       "installed_asset_id": 101,
@@ -320,6 +324,7 @@
     },
     {
       "name": "empty_current_and_installed_is_available",
+      "current_version": "2.1.1",
       "current_sha": "",
       "installed_sha": "",
       "installed_asset_id": 0,
@@ -329,6 +334,7 @@
     },
     {
       "name": "installed_asset_id_matches_when_sha_missing",
+      "current_version": "2.1.1",
       "current_sha": "",
       "installed_sha": "",
       "installed_asset_id": 101,
