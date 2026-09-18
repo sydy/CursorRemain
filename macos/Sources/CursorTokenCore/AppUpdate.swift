@@ -68,8 +68,7 @@ public struct UpdateDecision: Equatable, Sendable {
 
 public enum AppUpdate {
     public static let repoOwner = "sydy"
-    // GitHub 仓库 slug 仍是 CursorTokenTray；改名需管理员在 GitHub 操作。发布包与 exe 已用 CursorRemain。
-    public static let repoName = "CursorTokenTray"
+    public static let repoName = "CursorRemain"
     public static let latestTag = "latest"
     public static let windowsAssetName = "CursorRemain-windows.zip"
     public static let windowsLightAssetName = "CursorRemain-windows-light.zip"
