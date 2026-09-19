@@ -127,6 +127,7 @@ class GoldenFixtureTests(unittest.TestCase):
             classify_usage_kind,
             event_date,
             event_hour,
+            format_discount,
             format_event_cost,
             format_event_time,
             parse_filtered_usage_events,
@@ -274,6 +275,11 @@ class GoldenFixtureTests(unittest.TestCase):
                 is_chargeable=False,
             )
             self.assertEqual(format_event_cost(ev), row["output"])
+        for row in data["discount_format"]:
+            self.assertEqual(
+                format_discount(row["cny"], row["cents"], row["rate"], row["kind"]),
+                row["output"],
+            )
         csv_text = usage_events_to_csv(parse_filtered_usage_events(data["parse"][0]["payload"])[0])
         self.assertTrue(csv_text.startswith("\ufeff"))
         self.assertTrue(csv_text.lstrip("\ufeff").startswith(data["csv_header"]))

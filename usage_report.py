@@ -68,7 +68,7 @@ WINDOW_LABELS = {
 # Tests may pin this to UTC+8 so golden fixtures stay portable.
 DISPLAY_TZ = datetime.now().astimezone().tzinfo or timezone.utc
 TZ_LABEL = "本地时间"
-CSV_HEADER = f"日期({TZ_LABEL}),用户,类型,模型,Token,费用,实付,云端Agent"
+CSV_HEADER = f"日期({TZ_LABEL}),用户,类型,模型,Token,费用,实付,折扣,云端Agent"
 DEFAULT_USD_CNY_RATE = 7.50
 _PLAN_USD = {
     "pro": 20.0,
@@ -784,6 +784,37 @@ def format_event_cny(event: UsageEvent, amount: float | None = None) -> str:
     return format_cny(event.allocated_cny if amount is None else amount)
 
 
+def format_discount(cny: float, cents: float, rate: float, kind: str = "") -> str:
+    if (kind or "").strip().lower() == KIND_FREE:
+        return "—"
+    try:
+        paid = float(cny)
+        list_cents = float(cents)
+        fx = float(rate)
+    except (TypeError, ValueError):
+        return "—"
+    if paid != paid or list_cents != list_cents or fx != fx:
+        return "—"
+    if paid in (float("inf"), float("-inf")) or list_cents in (float("inf"), float("-inf")) or fx in (
+        float("inf"),
+        float("-inf"),
+    ):
+        return "—"
+    list_cny = list_cents / 100.0 * fx
+    if list_cny <= 1e-9 or paid <= 0:
+        return "—"
+    zhe = paid / list_cny * 10.0
+    if zhe != zhe or zhe in (float("inf"), float("-inf")):
+        return "—"
+    zhe = min(99.9, max(0.0, zhe))
+    return f"{zhe:.1f}折"
+
+
+def format_event_discount(event: UsageEvent, amount: float | None = None, rate: float = 0.0) -> str:
+    paid = event.allocated_cny if amount is None else amount
+    return format_discount(paid, event_cost_cents(event), rate, event.kind)
+
+
 def allocate_event_cny(
     event: UsageEvent,
     included_cost_sum: float,
@@ -1329,8 +1360,9 @@ def usage_events_to_csv(
     allocation: ReportAllocationWindow | None = None,
 ) -> str:
     cny_by_id: dict[str, float] = {}
+    rate = 0.0
     if spend is not None:
-        cny_by_id, _, _, _, _, _, _, _ = _cny_by_id(
+        cny_by_id, _, _, _, rate, _, _, _ = _cny_by_id(
             allocation_base if allocation_base is not None else events, spend, allocation
         )
     buf = io.StringIO()
@@ -1338,12 +1370,15 @@ def usage_events_to_csv(
     writer.writerow(CSV_HEADER.split(","))
     for i, event in enumerate(events):
         key = event.id or f"#{i}"
+        amount: float | None
         if spend is not None:
-            cny_text = format_event_cny(event, cny_by_id.get(key, 0.0))
+            amount = cny_by_id.get(key, 0.0)
         elif event.allocated_cny:
-            cny_text = format_event_cny(event)
+            amount = event.allocated_cny
         else:
-            cny_text = "—"
+            amount = None
+        cny_text = "—" if amount is None else format_event_cny(event, amount)
+        discount = format_event_discount(event, amount if amount is not None else 0.0, rate)
         writer.writerow(
             [
                 format_event_time(event.timestamp_ms),
@@ -1353,6 +1388,7 @@ def usage_events_to_csv(
                 str(event.tokens),
                 format_event_cost(event),
                 cny_text,
+                discount,
                 "是" if event.is_headless else "否",
             ]
         )

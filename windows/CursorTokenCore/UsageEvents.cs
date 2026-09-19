@@ -213,7 +213,7 @@ public static partial class UsageEvents
     public const string WindowFallback = "fallback";
     static readonly string[] ChannelOrder = [ChannelSelfPay, ChannelThirdParty, ""];
     public const string TzLabel = "本地时间";
-    public const string CsvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,云端Agent";
+    public const string CsvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,折扣,云端Agent";
     public const double DefaultUsdCnyRate = 7.50;
     public const int HourlyChartWindowHours = 48;
     const long MsHour = 3_600_000;
@@ -568,6 +568,23 @@ public static partial class UsageEvents
     {
         if (ev.Kind == KindFree) return "—";
         return FormatCny(amount ?? ev.AllocatedCny);
+    }
+
+    public static string FormatDiscount(double cny, double cents, double rate, string? kind = "")
+    {
+        if ((kind ?? "").Trim().ToLowerInvariant() == KindFree) return "—";
+        if (double.IsNaN(cny) || double.IsNaN(cents) || double.IsNaN(rate)
+            || double.IsInfinity(cny) || double.IsInfinity(cents) || double.IsInfinity(rate))
+            return "—";
+        var list = cents / 100.0 * rate;
+        if (list <= 1e-9 || cny <= 0) return "—";
+        var zhe = Math.Clamp(cny / list * 10.0, 0, 99.9);
+        return zhe.ToString("0.0", CultureInfo.InvariantCulture) + "折";
+    }
+
+    public static string FormatEventDiscount(UsageEvent ev, double? amount, double rate)
+    {
+        return FormatDiscount(amount ?? ev.AllocatedCny, CostCents(ev), rate, ev.Kind);
     }
 
     public static double AllocateEventCny(UsageEvent ev, double includedCostSum, int includedCount, double planCny, double rate, bool usesActual = false)

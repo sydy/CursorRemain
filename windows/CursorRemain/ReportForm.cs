@@ -53,8 +53,8 @@ sealed class ReportForm : Form
         RowCount = 6,
         Padding = new Padding(16),
     };
-    static readonly int[] ModelMinWidths = [160, 72, 72, 72, 56, 48];
-    static readonly int[] DetailMinWidths = [110, 100, 56, 140, 64, 72, 72, 48];
+    static readonly int[] ModelMinWidths = [160, 72, 72, 72, 56, 56, 48];
+    static readonly int[] DetailMinWidths = [110, 100, 56, 140, 64, 72, 72, 56, 48];
     List<UsageEvent> _all = [];
     bool _syncing;
     bool _teamScope;
@@ -91,19 +91,21 @@ sealed class ReportForm : Form
 
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 36 });
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 16 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 14 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 14 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "次数", FillWeight = 12 });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12 });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12 });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "discount", HeaderText = "折扣", FillWeight = 10 });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "次数", FillWeight = 10 });
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "date", HeaderText = "日期 (本地时间)", FillWeight = 16 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "user", HeaderText = "用户", FillWeight = 16 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 9 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 20 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 9 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 6 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "date", HeaderText = "日期 (本地时间)", FillWeight = 15 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "user", HeaderText = "用户", FillWeight = 14 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 8 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 18 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 8 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 10 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 10 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "discount", HeaderText = "折扣", FillWeight = 9 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
         var filters = new FlowLayoutPanel
         {
@@ -437,7 +439,9 @@ sealed class ReportForm : Form
         mix += $"    First-party {report.FirstPartyCount} · API {report.ApiCount} · Grok Bot {report.GrokBotCount}";
         if (report.HeadlessCount > 0) mix += $" · 云端 {report.HeadlessCount}";
         var cost = report.HasCost ? $"    费用 {UsageParser.FormatUsdCents(report.TotalCents)}" : "";
-        _kpi.Text = $"请求 {report.EventCount}    Token {UsageParser.FormatTokenCount(report.TotalTokens)}    {mix}{cost}{QuotaKpi()}{SpendKpi(report)}";
+        var discount = UsageEvents.FormatDiscount(report.TotalCny, report.TotalCents, report.UsdCnyRate);
+        var discountKpi = discount == "—" ? "" : $"    折扣 {discount}";
+        _kpi.Text = $"请求 {report.EventCount}    Token {UsageParser.FormatTokenCount(report.TotalTokens)}    {mix}{cost}{QuotaKpi()}{SpendKpi(report)}{discountKpi}";
         _chart.Bind(report.Events);
         _root.PerformLayout();
 
@@ -450,6 +454,7 @@ sealed class ReportForm : Form
                 UsageParser.FormatTokenCount(row.Tokens),
                 row.Cents > 0 ? UsageParser.FormatUsdCents(row.Cents) : "—",
                 row.Cny > 0 ? UsageEvents.FormatCny(row.Cny) : "—",
+                UsageEvents.FormatDiscount(row.Cny, row.Cents, report.UsdCnyRate),
                 row.Count.ToString(CultureInfo.InvariantCulture),
                 row.HeadlessCount > 0 ? row.HeadlessCount.ToString(CultureInfo.InvariantCulture) : "—");
         }
@@ -467,6 +472,7 @@ sealed class ReportForm : Form
                 UsageParser.FormatTokenCount(ev.Tokens),
                 UsageEvents.FormatCost(ev),
                 UsageEvents.FormatEventCny(ev),
+                UsageEvents.FormatEventDiscount(ev, null, report.UsdCnyRate),
                 ev.IsHeadless ? "是" : "否");
         }
         _grid.ResumeLayout();

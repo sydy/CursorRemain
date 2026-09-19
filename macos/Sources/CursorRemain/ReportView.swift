@@ -229,7 +229,7 @@ struct ReportRootView: View {
             details
         }
         .padding(16)
-        .frame(minWidth: 920, minHeight: 620)
+        .frame(minWidth: 980, minHeight: 620)
         .onChange(of: store.teamScope) { _ in
             Task { await store.sync() }
         }
@@ -328,6 +328,8 @@ struct ReportRootView: View {
             usesActual: report.usesActualCny,
             windowPlanCny: report.windowPlanCny
         )
+        let discount = UsageEvents.formatDiscount(cny: report.totalCny, cents: report.totalCents, rate: report.usdCnyRate)
+        if discount != "—" { text += "    折扣 \(discount)" }
         return text
     }
 
@@ -339,6 +341,9 @@ struct ReportRootView: View {
                 TableColumn("Token") { row in Text(UsageParser.formatTokenCount(Double(row.tokens))) }
                 TableColumn("费用") { row in Text(row.cents > 0 ? UsageParser.formatUSDCents(row.cents) : "—") }
                 TableColumn("实付") { row in Text(row.cny > 0 ? UsageEvents.formatCNY(row.cny) : "—") }
+                TableColumn("折扣") { row in
+                    Text(UsageEvents.formatDiscount(cny: row.cny, cents: row.cents, rate: store.report.usdCnyRate))
+                }
                 TableColumn("次数") { row in Text(String(row.count)) }
                 TableColumn("云端") { row in Text(row.headlessCount > 0 ? String(row.headlessCount) : "—") }
             }
@@ -360,6 +365,9 @@ struct ReportRootView: View {
                 TableColumn("Token") { ev in Text(UsageParser.formatTokenCount(Double(ev.tokens))) }
                 TableColumn("费用") { ev in Text(UsageEvents.formatCost(ev)) }
                 TableColumn("实付") { ev in Text(UsageEvents.formatEventCny(ev)) }
+                TableColumn("折扣") { ev in
+                    Text(UsageEvents.formatEventDiscount(ev, rate: store.report.usdCnyRate))
+                }
                 TableColumn("云端") { ev in Text(ev.isHeadless ? "是" : "否") }
             }
         }
@@ -388,13 +396,13 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
         AppDelegate.ensureStatusItemVisible()
         if window == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+                contentRect: NSRect(x: 0, y: 0, width: 1020, height: 680),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
             win.title = "用量报表"
-            win.minSize = NSSize(width: 880, height: 580)
+            win.minSize = NSSize(width: 940, height: 580)
             win.isReleasedWhenClosed = false
             win.delegate = self
             window = win
