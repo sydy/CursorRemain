@@ -65,6 +65,23 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(report.events.first?.id, "mid")
     }
 
+    func testPrioritizeKeepsRelativeOrder() {
+        let items = ["b", "a", "c", "d"]
+        XCTAssertEqual(RefreshGeneration.prioritize(items) { $0 == "a" }, ["a", "b", "c", "d"])
+        XCTAssertEqual(RefreshGeneration.prioritize(items) { _ in false }, items)
+    }
+
+    func testFlyoutAndReportCopyMatchAuthState() {
+        XCTAssertEqual(StatusText.flyoutSettingsTitle(nil), "设置")
+        XCTAssertEqual(StatusText.flyoutSettingsTitle("HTTP 429 Too Many Requests"), "设置")
+        XCTAssertEqual(StatusText.flyoutSettingsTitle("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "粘贴 Token")
+        XCTAssertEqual(StatusText.flyoutSettingsTitle("未配置 Token，请打开设置粘贴"), "粘贴 Token")
+        XCTAssertEqual(StatusText.formatReportSyncProgress(1), "正在同步本周期明细…")
+        XCTAssertEqual(StatusText.formatReportSyncProgress(4), "正在同步本周期明细…第 4 页")
+        XCTAssertEqual(CursorAccountPaste.tokenValues("aaa.bbb.ccc\nddd.eee.fff"), ["aaa.bbb.ccc", "ddd.eee.fff"])
+        XCTAssertEqual(CursorAccountPaste.tokenValues("name@example.com:secret"), [])
+    }
+
     func testCompareSyncAndTrimStatusCopy() {
         XCTAssertEqual(StatusText.formatCompareSync(ok: 3, failures: [], stamp: "12:00:00"), "已同步 3 个账号  ·  12:00:00")
         let failed = StatusText.formatCompareSync(ok: 2, failures: ["工作号：Token 过期", "临时号：未配置 Token"], stamp: "12:01:00")

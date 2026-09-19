@@ -264,6 +264,22 @@ def format_compare_sync(ok: int, failures: list[str], stamp: str) -> str:
     return f"已同步 {ok} 个账号，{len(failures)} 个失败（{detail}）  ·  {stamp}"
 
 
+def format_report_sync_progress(page: int) -> str:
+    if page <= 1:
+        return "正在同步本周期明细…"
+    return f"正在同步本周期明细…第 {page} 页"
+
+
+def flyout_settings_title(error_message: str | None) -> str:
+    from cursor_api import is_auth_error_message
+
+    return "粘贴 Token" if is_auth_error_message(error_message) else "设置"
+
+
+def prioritize_active(ids: list[str], active_id: str) -> list[str]:
+    return sorted(ids, key=lambda item: 0 if item == active_id else 1)
+
+
 def format_sync_status(last_at: str, last_error: str) -> str:
     from account_sync import format_local, is_trim_note
 

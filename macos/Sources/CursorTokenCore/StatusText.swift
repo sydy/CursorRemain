@@ -257,6 +257,14 @@ public enum StatusText {
         return "已同步 \(ok) 个账号，\(failures.count) 个失败（\(detail)）  ·  \(stamp)"
     }
 
+    public static func formatReportSyncProgress(_ page: Int) -> String {
+        page <= 1 ? "正在同步本周期明细…" : "正在同步本周期明细…第 \(page) 页"
+    }
+
+    public static func flyoutSettingsTitle(_ errorMessage: String?) -> String {
+        Token.isAuthErrorMessage(errorMessage) ? "粘贴 Token" : "设置"
+    }
+
     public static func formatSyncStatus(lastAt: String, lastError: String) -> String {
         let error = lastError.trimmingCharacters(in: .whitespaces)
         let at = lastAt.trimmingCharacters(in: .whitespaces)

@@ -277,7 +277,7 @@ sealed partial class TrayContext : ApplicationContext
                     },
                     RequestRefresh,
                     OpenDashboard,
-                    () => OpenSettings(_error is not null, false),
+                    () => OpenSettings(Token.IsAuthErrorMessage(_error), false),
                     () =>
                     {
                         try
@@ -334,6 +334,7 @@ sealed partial class TrayContext : ApplicationContext
                 }
                 _compare = new CompareForm(_client, () => new CompareForm.CompareState(
                     _config.Accounts.ToList(),
+                    _config.ActiveAccountId,
                     _config.MonthlyPlanUsd,
                     _config.UsdCnyRate,
                     (id, membership, start, end) =>

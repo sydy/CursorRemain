@@ -84,7 +84,8 @@ public struct CursorClient: Sendable {
         stopAtMs: Int64?,
         maxPages: Int = usageEventsMaxPages,
         pageSize: Int = usageEventsPageSize,
-        timeout: TimeInterval? = nil
+        timeout: TimeInterval? = nil,
+        onPage: ((Int) -> Void)? = nil
     ) async throws -> (events: [UsageEvent], totalCount: Int, truncated: Bool) {
         let token = try Token.normalize(sessionToken)
         if token.isEmpty { throw CursorAPIError("未配置 Session Token", statusCode: 401) }
@@ -95,6 +96,7 @@ public struct CursorClient: Sendable {
         let pages = max(1, maxPages)
         let size = min(200, max(1, pageSize))
         for page in 1...pages {
+            onPage?(page)
             var body: [String: Any] = [
                 "startDate": Int(startMs),
                 "endDate": Int(endMs),

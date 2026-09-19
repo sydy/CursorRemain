@@ -406,6 +406,8 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("折合月费", src)
             self.assertIn("自费", src)
             self.assertIn("第三方", src)
+            self.assertIn("按需不再按官网标价另加", src)
+            self.assertNotIn("按需仍按费用×汇率", src)
         win_compare = (root / "windows" / "CursorRemain" / "CompareForm.cs").read_text(encoding="utf-8")
         mac_compare = (root / "macos" / "Sources" / "CursorRemain" / "CompareView.swift").read_text(encoding="utf-8")
         for src in (win_compare, mac_compare):
@@ -418,10 +420,28 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("buildAccountCompareReport", mac_compare)
         self.assertIn("public void Reload()", win_compare)
         self.assertIn("_compare.Reload()", win_prog)
+        self.assertIn("BoundedWork.Prioritize", win_compare)
+        self.assertIn("RefreshGeneration.prioritize", mac_compare)
         self.assertIn("BoundedWork.MapAsync", win_compare)
         self.assertIn("RefreshGeneration.mapBounded", mac_compare)
         self.assertIn("FormatCompareSync", win_compare)
         self.assertIn("formatCompareSync", mac_compare)
+        self.assertIn("ActiveAccountId", win_compare)
+        self.assertIn("FormatReportSyncProgress", win_report)
+        self.assertIn("formatReportSyncProgress", mac_report)
+        self.assertIn("reloadForCurrentAccount", mac_report)
+        self.assertIn("if store == nil", mac_report)
+        self.assertNotIn(".task { await store.sync() }", mac_report)
+        win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
+        mac_flyout = (root / "macos" / "Sources" / "CursorRemain" / "FlyoutView.swift").read_text(encoding="utf-8")
+        self.assertIn("FlyoutSettingsTitle", win_flyout)
+        self.assertIn("flyoutSettingsTitle", mac_flyout)
+        self.assertIn("IsAuthErrorMessage(_error)", win_prog)
+        self.assertIn("Token.isAuthErrorMessage", mac_flyout)
+        self.assertIn("TokenValues", (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8"))
+        self.assertIn("tokenValues", mac_settings)
+        self.assertIn("allowedContentTypes", mac_settings)
+        self.assertNotIn("allowedFileTypes", mac_settings)
         win_refresh = (root / "windows" / "CursorRemain" / "TrayRefresh.cs").read_text(encoding="utf-8")
         mac_store = (root / "macos" / "Sources" / "CursorRemain" / "AppStore.swift").read_text(encoding="utf-8")
         self.assertIn("BoundedWork.MapAsync", win_refresh)
@@ -431,6 +451,11 @@ class SourceGuardTests(unittest.TestCase):
         mac_core_refresh = (root / "macos" / "Sources" / "CursorTokenCore" / "RefreshGeneration.swift").read_text(encoding="utf-8")
         self.assertIn("AccountRefreshLimit = 2", win_core_refresh)
         self.assertIn("accountRefreshLimit = 2", mac_core_refresh)
+        self.assertIn("public static List<T> Prioritize", win_core_refresh)
+        self.assertIn("public static func prioritize", mac_core_refresh)
+        self.assertIn("TokenValues", (root / "windows" / "CursorTokenCore" / "CursorAccountPaste.cs").read_text(encoding="utf-8"))
+        self.assertIn("func tokenValues", (root / "macos" / "Sources" / "CursorTokenCore" / "CursorAccountPaste.swift").read_text(encoding="utf-8"))
+        self.assertIn("def token_values", (root / "cursor_login.py").read_text(encoding="utf-8"))
         self.assertIn("NormalizeReportRange", (root / "windows" / "CursorTokenCore" / "UsageEvents.cs").read_text(encoding="utf-8"))
         self.assertIn("normalizeReportRange", (root / "macos" / "Sources" / "CursorTokenCore" / "UsageEvents.swift").read_text(encoding="utf-8"))
         self.assertIn("TrimNote", (root / "windows" / "CursorTokenCore" / "AccountSync.cs").read_text(encoding="utf-8"))
@@ -545,8 +570,24 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn(f"{reset.month}月{reset.day}日", lines["Grok Bot"])
 
     def test_compare_sync_and_trim_status_copy(self) -> None:
-        from status_text import format_compare_sync, format_sync_status
+        from cursor_login import token_values
+        from status_text import (
+            flyout_settings_title,
+            format_compare_sync,
+            format_report_sync_progress,
+            format_sync_status,
+            prioritize_active,
+        )
 
+        self.assertEqual(format_report_sync_progress(1), "正在同步本周期明细…")
+        self.assertEqual(format_report_sync_progress(3), "正在同步本周期明细…第 3 页")
+        self.assertEqual(flyout_settings_title(None), "设置")
+        self.assertEqual(flyout_settings_title("HTTP 429"), "设置")
+        self.assertEqual(flyout_settings_title("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "粘贴 Token")
+        self.assertEqual(flyout_settings_title("未配置 Token，请打开设置粘贴"), "粘贴 Token")
+        self.assertEqual(prioritize_active(["b", "a", "c"], "a"), ["a", "b", "c"])
+        self.assertEqual(token_values("aaa.bbb.ccc\nddd.eee.fff"), ["aaa.bbb.ccc", "ddd.eee.fff"])
+        self.assertEqual(token_values("name@example.com:secret"), [])
         self.assertEqual(format_compare_sync(3, [], "12:00:00"), "已同步 3 个账号  ·  12:00:00")
         self.assertIn(
             "工作号：Token 过期",

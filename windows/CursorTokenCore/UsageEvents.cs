@@ -761,6 +761,7 @@ public static partial class UsageEvents
         UsageSnapshot? usage,
         bool teamScope,
         string? directory = null,
+        Action<int>? onPage = null,
         CancellationToken ct = default)
     {
         var existing = Load(accountId, teamScope, directory);
@@ -799,7 +800,7 @@ public static partial class UsageEvents
                 return new UsageEventsSyncResult(existing, 0, existing.Count, false);
             }
         }
-        var fetched = await client.FetchUsageEvents(token, startMs, cycleEnd, team, teamScope ? null : userId, stopAt, ct: ct);
+        var fetched = await client.FetchUsageEvents(token, startMs, cycleEnd, team, teamScope ? null : userId, stopAt, onPage: onPage, ct: ct);
         var merged = Merge(existing, fetched.events);
         if (!teamScope && userId is > 0)
         {

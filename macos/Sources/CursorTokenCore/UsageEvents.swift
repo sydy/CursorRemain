@@ -1255,7 +1255,8 @@ public enum UsageEvents {
         accountId: String,
         usage: UsageSnapshot?,
         teamScope: Bool,
-        directory: URL? = nil
+        directory: URL? = nil,
+        onPage: ((Int) -> Void)? = nil
     ) async throws -> UsageEventsSyncResult {
         let existing = load(accountId: accountId, teamScope: teamScope, directory: directory)
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
@@ -1293,7 +1294,8 @@ public enum UsageEvents {
             endMs: cycleEnd,
             teamId: teamId,
             userId: teamScope ? nil : userId,
-            stopAtMs: stopAt
+            stopAtMs: stopAt,
+            onPage: onPage
         )
         var merged = merge(existing, incoming: fetched.events)
         if !teamScope, let userId {

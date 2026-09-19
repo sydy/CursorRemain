@@ -414,7 +414,7 @@ sealed class FlyoutForm : Form
             ("refresh", "\uE72C", "刷新"),
             ("report", "\uE9D9", "报表"),
             ("compare", "\uE9F9", "对比"),
-            ("settings", "\uE713", "设置"),
+            ("settings", "\uE713", StatusText.FlyoutSettingsTitle(_error)),
         };
         using var font = UiFont(8f);
         using var iconFont = IconFont(8f);

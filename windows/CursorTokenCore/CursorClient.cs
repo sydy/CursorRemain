@@ -82,6 +82,7 @@ public sealed class CursorClient
         int maxPages = UsageParser.UsageEventsMaxPages,
         int pageSize = UsageParser.UsageEventsPageSize,
         double timeout = 30,
+        Action<int>? onPage = null,
         CancellationToken ct = default)
     {
         var token = Token.Normalize(sessionToken);
@@ -93,6 +94,7 @@ public sealed class CursorClient
         var size = Math.Clamp(pageSize, 1, 200);
         for (var page = 1; page <= pages; page++)
         {
+            onPage?.Invoke(page);
             var fields = new Dictionary<string, object?>
             {
                 ["startDate"] = startMs,

@@ -34,7 +34,8 @@ final class CompareStore: ObservableObject {
         status = "正在同步各账号最新周期…"
         let client = app.client
         let directory = app.settingsDirectory
-        let accounts = app.config.accounts
+        let activeId = app.config.activeAccountId
+        let accounts = RefreshGeneration.prioritize(app.config.accounts) { $0.id == activeId }
         let outcomes = await RefreshGeneration.mapBounded(accounts) { acc in
             await compareSyncOne(client: client, account: acc, directory: directory)
         }

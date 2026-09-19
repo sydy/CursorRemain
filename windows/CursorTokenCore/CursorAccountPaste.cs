@@ -44,6 +44,13 @@ public static class CursorAccountPaste
         return items.Count == 1 && items[0].Kind == "token";
     }
 
+    public static List<string> TokenValues(string? text)
+    {
+        var items = Parse(text);
+        if (items.Count == 0 || items.Any(i => i.Kind != "token")) return [];
+        return items.Select(i => i.Token).Where(t => t.Length > 0).ToList();
+    }
+
     public static List<AccountPasteItem> Parse(string? text)
     {
         var raw = (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n');

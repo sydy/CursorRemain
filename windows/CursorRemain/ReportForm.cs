@@ -297,10 +297,17 @@ sealed class ReportForm : Form
             FillModels();
             Render();
         }
-        _status.Text = "正在同步本周期明细…";
+        _status.Text = StatusText.FormatReportSyncProgress(1);
         try
         {
-            var result = await UsageEvents.SyncAsync(_client, st.Token, st.AccountId, st.Usage, _teamScope);
+            var result = await UsageEvents.SyncAsync(_client, st.Token, st.AccountId, st.Usage, _teamScope, onPage: page =>
+            {
+                var text = StatusText.FormatReportSyncProgress(page);
+                void Apply() { if (!IsDisposed) _status.Text = text; }
+                if (IsDisposed) return;
+                if (InvokeRequired) BeginInvoke(Apply);
+                else Apply();
+            });
             _all = result.Events;
             FillModels();
             Render();

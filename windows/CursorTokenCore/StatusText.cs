@@ -188,6 +188,12 @@ public static class StatusText
         return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
     }
 
+    public static string FormatReportSyncProgress(int page) =>
+        page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
+
+    public static string FlyoutSettingsTitle(string? error) =>
+        Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";
+
     public static string FormatSyncStatus(string lastAt, string lastError)
     {
         var error = (lastError ?? "").Trim();
