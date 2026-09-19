@@ -246,6 +246,24 @@ public static class StatusText
     public static string FormatReportSyncProgress(int page) =>
         page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
 
+    public static string FormatReportFilterEmpty(int total) =>
+        total <= 0 ? "" : $"当前筛选无结果（本地共 {total} 条，可清空筛选）";
+
+    public static string FormatCompareSyncProgress(int index, int total, string? name, int page = 0)
+    {
+        var label = string.IsNullOrWhiteSpace(name) ? "账号" : name.Trim();
+        var text = $"正在同步 {label}（{Math.Max(1, index)}/{Math.Max(1, total)}）…";
+        return page > 1 ? text + $"第 {page} 页" : text;
+    }
+
+    public static string FormatCloudSyncNotify(bool ok, string? message)
+    {
+        if (ok) return "";
+        var text = (message ?? "").Trim();
+        if (text.Length == 0 || AccountSync.IsTrimNote(text)) return "";
+        return text;
+    }
+
     public static string FormatReportCacheStatus(int count, string? accountLabel = null)
     {
         var prefix = string.IsNullOrWhiteSpace(accountLabel) ? "" : "当前：" + accountLabel.Trim() + " · ";

@@ -45,6 +45,7 @@ sealed class ReportForm : Form
     readonly Button _syncBtn = new() { Text = "同步", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
     readonly Button _exportBtn = new() { Text = "导出 CSV", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
     readonly Label _scopeLabel = new() { Text = "范围", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 6, 0) };
+    readonly Label _detailsLabel = new() { Text = "明细", AutoSize = true, Margin = new Padding(0, 8, 0, 4) };
     readonly TableLayoutPanel _root = new()
     {
         Dock = DockStyle.Fill,
@@ -141,20 +142,20 @@ sealed class ReportForm : Form
         modelWrap.Controls.Add(new Label { Text = "按模型", AutoSize = true, Margin = new Padding(0, 8, 0, 4) }, 0, 0);
         modelWrap.Controls.Add(_models, 0, 1);
         _root.Controls.Add(modelWrap, 0, 3);
-        _root.Controls.Add(new Label { Text = "明细", AutoSize = true, Margin = new Padding(0, 8, 0, 4) }, 0, 4);
+        _root.Controls.Add(_detailsLabel, 0, 4);
         _root.Controls.Add(_grid, 0, 5);
         Controls.Add(_root);
 
         _scope.SelectedIndexChanged += (_, _) =>
         {
-            if (!_ready) return;
+            if (!_ready || _loadingDates) return;
             _teamScope = _scope.SelectedIndex == 1;
             _ = SyncAsync(false);
         };
-        _kind.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
-        _category.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
-        _model.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
-        _cloud.SelectedIndexChanged += (_, _) => { if (_ready) Render(); };
+        _kind.SelectedIndexChanged += (_, _) => { if (_ready && !_loadingDates) Render(); };
+        _category.SelectedIndexChanged += (_, _) => { if (_ready && !_loadingDates) Render(); };
+        _model.SelectedIndexChanged += (_, _) => { if (_ready && !_loadingDates) Render(); };
+        _cloud.SelectedIndexChanged += (_, _) => { if (_ready && !_loadingDates) Render(); };
         _startDate.ValueChanged += (_, _) => OnDateChanged();
         _endDate.ValueChanged += (_, _) => OnDateChanged();
         _syncBtn.Click += (_, _) => _ = SyncAsync(true);
@@ -361,10 +362,21 @@ sealed class ReportForm : Form
     {
         if (st.AccountId == _loadedAccountId) return;
         _loadingDates = true;
+        ResetFilters();
         ApplyDatePicker(_startDate, st.ReportStartDate);
         ApplyDatePicker(_endDate, st.ReportEndDate);
         _loadedAccountId = st.AccountId;
         _loadingDates = false;
+    }
+
+    void ResetFilters()
+    {
+        _kind.SelectedIndex = 0;
+        _category.SelectedIndex = 0;
+        if (_model.Items.Count > 0) _model.SelectedIndex = 0;
+        _cloud.SelectedIndex = 0;
+        _teamScope = false;
+        if (_scope.SelectedIndex != 0) _scope.SelectedIndex = 0;
     }
 
     static void ApplyDatePicker(DateTimePicker picker, string raw)
@@ -459,6 +471,10 @@ sealed class ReportForm : Form
         }
         _grid.ResumeLayout();
         _exportBtn.Enabled = report.Events.Count > 0;
+        var empty = StatusText.FormatReportFilterEmpty(_all.Count);
+        _detailsLabel.Text = _all.Count == 0 || report.Events.Count > 0 || empty.Length == 0
+            ? "明细"
+            : "明细 · " + empty;
         ApplyGridMetrics(_models, UiLayout.ScalePx(DesignHeaderH, DeviceDpi), UiLayout.ScalePx(DesignRowH, DeviceDpi), ModelMinWidths, DeviceDpi);
         ApplyGridMetrics(_grid, UiLayout.ScalePx(DesignHeaderH, DeviceDpi), UiLayout.ScalePx(DesignRowH, DeviceDpi), DetailMinWidths, DeviceDpi);
     }

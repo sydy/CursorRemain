@@ -30,6 +30,7 @@ final class AppStore: ObservableObject {
     private var refreshGeneration = 0
     private var reconcileRunning = false
     private var reconcileAgain = false
+    private var lastCloudNotify = ""
 
     init(directory: URL? = nil) {
         settingsDirectory = directory
@@ -122,6 +123,7 @@ final class AppStore: ObservableObject {
             requestRefresh()
         }
         enqueueReconcile(refresh: false)
+        CompareWindowController.shared.reloadIfVisible()
         objectWillChange.send()
     }
 
@@ -292,8 +294,20 @@ final class AppStore: ObservableObject {
         } else {
             config.syncLastError = status.message
         }
+        notifyCloudSync(status)
         objectWillChange.send()
         return status.changed
+    }
+
+    func notifyCloudSync(_ status: SyncStatus) {
+        let body = StatusText.formatCloudSyncNotify(ok: status.ok, message: status.message)
+        if body.isEmpty {
+            lastCloudNotify = ""
+            return
+        }
+        if body == lastCloudNotify { return }
+        lastCloudNotify = body
+        notify("云同步失败", body)
     }
 
     func refreshAll() async {

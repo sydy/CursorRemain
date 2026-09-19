@@ -99,6 +99,7 @@ public class NativeClientReliabilityTests
         Assert.Equal("未填成本", UsageEvents.CompareRowNote(unpaid));
         Assert.Equal("未配置 Token", UsageEvents.CompareRowNote(paid, hasToken: false));
         Assert.Equal("登录已过期", UsageEvents.CompareRowNote(paid, lastError: "Token 已过期或无效"));
+        Assert.Equal("Token 解不开", UsageEvents.CompareRowNote(paid, hasToken: false, lastError: "Token 解密失败，请重新导入"));
         Assert.Equal(30, UsageEvents.CompareBestPerMillion([unpaid, paid, other]));
         Assert.True(UsageEvents.CompareWindowsMixed([paid, other]));
         Assert.False(UsageEvents.CompareWindowsMixed([paid, unpaid]));
@@ -113,6 +114,13 @@ public class NativeClientReliabilityTests
         Assert.Equal("粘贴 Token", StatusText.FlyoutSettingsTitle("未配置 Token，请打开设置粘贴"));
         Assert.Equal("正在同步本周期明细…", StatusText.FormatReportSyncProgress(1));
         Assert.Equal("正在同步本周期明细…第 4 页", StatusText.FormatReportSyncProgress(4));
+        Assert.Equal("", StatusText.FormatReportFilterEmpty(0));
+        Assert.Equal("当前筛选无结果（本地共 12 条，可清空筛选）", StatusText.FormatReportFilterEmpty(12));
+        Assert.Equal("正在同步 工作号（2/5）…", StatusText.FormatCompareSyncProgress(2, 5, "工作号"));
+        Assert.Equal("正在同步 工作号（2/5）…第 3 页", StatusText.FormatCompareSyncProgress(2, 5, "工作号", 3));
+        Assert.Equal("", StatusText.FormatCloudSyncNotify(true, "登录已过期，请重新登录"));
+        Assert.Equal("登录已过期，请重新登录", StatusText.FormatCloudSyncNotify(false, "登录已过期，请重新登录"));
+        Assert.Equal("", StatusText.FormatCloudSyncNotify(false, "用量明细因体积限制裁掉了 3 条最旧记录"));
         Assert.Equal(["aaa.bbb.ccc", "ddd.eee.fff"], CursorAccountPaste.TokenValues("aaa.bbb.ccc\nddd.eee.fff"));
         Assert.Empty(CursorAccountPaste.TokenValues("name@example.com:secret"));
     }

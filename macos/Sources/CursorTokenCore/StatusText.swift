@@ -314,6 +314,23 @@ public enum StatusText {
         page <= 1 ? "正在同步本周期明细…" : "正在同步本周期明细…第 \(page) 页"
     }
 
+    public static func formatReportFilterEmpty(_ total: Int) -> String {
+        total <= 0 ? "" : "当前筛选无结果（本地共 \(total) 条，可清空筛选）"
+    }
+
+    public static func formatCompareSyncProgress(index: Int, total: Int, name: String, page: Int = 0) -> String {
+        let label = name.trimmingCharacters(in: .whitespaces)
+        let text = "正在同步 \(label.isEmpty ? "账号" : label)（\(max(1, index))/\(max(1, total))）…"
+        return page > 1 ? text + "第 \(page) 页" : text
+    }
+
+    public static func formatCloudSyncNotify(ok: Bool, message: String) -> String {
+        if ok { return "" }
+        let text = message.trimmingCharacters(in: .whitespaces)
+        if text.isEmpty || AccountSync.isTrimNote(text) { return "" }
+        return text
+    }
+
     public static func formatReportCacheStatus(count: Int, accountLabel: String? = nil) -> String {
         let trimmed = (accountLabel ?? "").trimmingCharacters(in: .whitespaces)
         let prefix = trimmed.isEmpty ? "" : "当前：\(trimmed) · "

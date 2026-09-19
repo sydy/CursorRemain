@@ -21,9 +21,11 @@ final class ReportStore: ObservableObject {
     @Published var endEnabled = false
     @Published var startDate = Date()
     @Published var endDate = Date()
+    private var loadedAccountId = ""
 
     init(app: AppStore) {
         self.app = app
+        loadedAccountId = app.config.activeAccountId
         let acc = app.config.activeAccount
         let start = UsageEvents.sanitizeReportDate(acc?.reportStartDate)
         let end = UsageEvents.sanitizeReportDate(acc?.reportEndDate)
@@ -98,6 +100,11 @@ final class ReportStore: ObservableObject {
     }
 
     func reloadForCurrentAccount() {
+        let accountId = app.config.activeAccountId
+        if accountId != loadedAccountId {
+            resetFilters()
+            loadedAccountId = accountId
+        }
         let acc = app.config.activeAccount
         let start = UsageEvents.sanitizeReportDate(acc?.reportStartDate)
         let end = UsageEvents.sanitizeReportDate(acc?.reportEndDate)
@@ -106,6 +113,15 @@ final class ReportStore: ObservableObject {
         if let value = UsageEvents.reportDateValue(start) { startDate = value }
         if let value = UsageEvents.reportDateValue(end) { endDate = value }
         loadCache()
+    }
+
+    func resetFilters() {
+        kind = ""
+        category = ""
+        model = ""
+        cloud = ""
+        teamScope = false
+        hiddenChartModels = []
     }
 
     func sync() async {
@@ -332,7 +348,10 @@ struct ReportRootView: View {
 
     var details: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("明细").font(.caption).foregroundStyle(.secondary)
+            let empty = StatusText.formatReportFilterEmpty(store.events.count)
+            Text(store.events.isEmpty || !store.report.events.isEmpty || empty.isEmpty ? "明细" : "明细 · \(empty)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Table(store.report.events) {
                 TableColumn("日期 (本地时间)") { ev in Text(UsageEvents.formatTime(ev.timestampMs)) }
                 TableColumn("用户") { ev in Text(ev.userEmail) }

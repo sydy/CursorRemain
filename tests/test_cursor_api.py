@@ -445,6 +445,18 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("formatCloudDecryptNote", mac_status)
         self.assertIn("FormatReportCacheStatus", win_status)
         self.assertIn("formatReportCacheStatus", mac_status)
+        self.assertIn("FormatReportFilterEmpty", win_status)
+        self.assertIn("formatReportFilterEmpty", mac_status)
+        self.assertIn("FormatCompareSyncProgress", win_status)
+        self.assertIn("formatCompareSyncProgress", mac_status)
+        self.assertIn("FormatCloudSyncNotify", win_status)
+        self.assertIn("formatCloudSyncNotify", mac_status)
+        py_status = (root / "status_text.py").read_text(encoding="utf-8")
+        self.assertIn("def format_report_filter_empty", py_status)
+        self.assertIn("def format_compare_sync_progress", py_status)
+        self.assertIn("def format_cloud_sync_notify", py_status)
+        self.assertIn("Token 解不开", win_events)
+        self.assertIn("Token 解不开", mac_events)
         self.assertIn("BuildAccountCompareReport", win_compare)
         self.assertIn("buildAccountCompareReport", mac_compare)
         self.assertIn("public void Reload()", win_compare)
@@ -459,7 +471,19 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("FormatReportSyncProgress", win_report)
         self.assertIn("formatReportSyncProgress", mac_report)
         self.assertIn("reloadForCurrentAccount", mac_report)
+        self.assertIn("resetFilters", mac_report)
+        self.assertIn("loadedAccountId", mac_report)
+        self.assertIn("ResetFilters", win_report)
+        self.assertIn("FormatReportFilterEmpty", win_report)
+        self.assertIn("formatReportFilterEmpty", mac_report)
         self.assertIn("activeAccountId", mac_report)
+        self.assertIn("FormatCompareSyncProgress", win_compare)
+        self.assertIn("formatCompareSyncProgress", mac_compare)
+        self.assertIn("TokenDecryptFailed", win_compare)
+        self.assertIn("tokenDecryptFailed", mac_compare)
+        self.assertIn("if store == nil", mac_compare)
+        self.assertIn("reloadIfVisible", mac_compare)
+        self.assertIn("reloadFromConfig", mac_compare)
         self.assertIn("FormatReportSyncError", win_report)
         self.assertIn("formatReportSyncError", mac_report)
         self.assertIn("FormatReportCacheStatus", win_report)
@@ -471,8 +495,13 @@ class SourceGuardTests(unittest.TestCase):
         self.assertNotIn(".task { await store.sync() }", mac_report)
         win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
         mac_flyout = (root / "macos" / "Sources" / "CursorRemain" / "FlyoutView.swift").read_text(encoding="utf-8")
+        mac_store = (root / "macos" / "Sources" / "CursorRemain" / "AppStore.swift").read_text(encoding="utf-8")
         self.assertIn("FlyoutSettingsTitle", win_flyout)
         self.assertIn("flyoutSettingsTitle", mac_flyout)
+        self.assertIn("NSEvent.mouseLocation", mac_flyout)
+        self.assertIn("CompareWindowController.shared.reloadIfVisible", mac_store)
+        self.assertIn("FormatCloudSyncNotify", win_prog)
+        self.assertIn("formatCloudSyncNotify", mac_store)
         self.assertIn("IsAuthErrorMessage(_error)", win_prog)
         self.assertIn("Token.isAuthErrorMessage", mac_flyout)
         self.assertIn("TokenValues", (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8"))
@@ -622,7 +651,10 @@ class SourceGuardTests(unittest.TestCase):
             format_compare_hint,
             format_compare_sync,
             format_flyout_error,
+            format_cloud_sync_notify,
+            format_compare_sync_progress,
             format_report_cache_status,
+            format_report_filter_empty,
             format_report_spend_kpi,
             format_report_sync_error,
             format_report_sync_progress,
@@ -633,6 +665,13 @@ class SourceGuardTests(unittest.TestCase):
 
         self.assertEqual(format_report_sync_progress(1), "正在同步本周期明细…")
         self.assertEqual(format_report_sync_progress(3), "正在同步本周期明细…第 3 页")
+        self.assertEqual(format_report_filter_empty(0), "")
+        self.assertEqual(format_report_filter_empty(12), "当前筛选无结果（本地共 12 条，可清空筛选）")
+        self.assertEqual(format_compare_sync_progress(2, 5, "工作号"), "正在同步 工作号（2/5）…")
+        self.assertEqual(format_compare_sync_progress(2, 5, "工作号", 3), "正在同步 工作号（2/5）…第 3 页")
+        self.assertEqual(format_cloud_sync_notify(True, "登录已过期，请重新登录"), "")
+        self.assertEqual(format_cloud_sync_notify(False, "登录已过期，请重新登录"), "登录已过期，请重新登录")
+        self.assertEqual(format_cloud_sync_notify(False, "用量明细因体积限制裁掉了 3 条最旧记录"), "")
         kpi = format_report_spend_kpi(75, 150, 37.5, 7.5, True, 75)
         self.assertIn("已分摊", kpi)
         self.assertIn("本窗口折算", kpi)
@@ -758,6 +797,7 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(compare_row_note(unpaid), "未填成本")
         self.assertEqual(compare_row_note(paid, has_token=False), "未配置 Token")
         self.assertEqual(compare_row_note(paid, last_error="Token 已过期或无效"), "登录已过期")
+        self.assertEqual(compare_row_note(paid, has_token=False, last_error="Token 解密失败，请重新导入"), "Token 解不开")
         self.assertEqual(compare_best_per_million([unpaid, paid, other]), 30)
         self.assertTrue(compare_windows_mixed([paid, other]))
         self.assertFalse(compare_windows_mixed([paid, unpaid]))

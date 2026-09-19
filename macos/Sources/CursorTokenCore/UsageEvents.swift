@@ -580,8 +580,9 @@ public enum UsageEvents {
     }
 
     public static func compareRowNote(_ row: AccountCompareRow, hasToken: Bool = true, lastError: String = "") -> String {
-        if !hasToken { return "未配置 Token" }
         let error = lastError.trimmingCharacters(in: .whitespaces)
+        if error.contains("解密") { return "Token 解不开" }
+        if !hasToken { return "未配置 Token" }
         if !error.isEmpty && (error.contains("过期") || error.contains("无效") || error.contains("未配置")) {
             return error.contains("未配置") ? "未配置 Token" : "登录已过期"
         }

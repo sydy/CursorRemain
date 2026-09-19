@@ -23,6 +23,11 @@ final class CompareStore: ObservableObject {
         }
     }
 
+    func reloadFromConfig() {
+        if syncing { return }
+        loadCache()
+    }
+
     func sync() async {
         if syncing { return }
         if app.config.accounts.isEmpty {
@@ -36,8 +41,18 @@ final class CompareStore: ObservableObject {
         let directory = app.settingsDirectory
         let activeId = app.config.activeAccountId
         let accounts = RefreshGeneration.prioritize(app.config.accounts) { $0.id == activeId }
-        let outcomes = await RefreshGeneration.mapBounded(accounts) { acc in
-            await compareSyncOne(client: client, account: acc, directory: directory)
+        let total = accounts.count
+        let sink = CompareStatusSink { [weak self] text in
+            self?.status = text
+        }
+        let outcomes = await RefreshGeneration.mapBounded(Array(accounts.enumerated())) { item in
+            let (offset, acc) = item
+            let name = acc.displayLabel.trimmingCharacters(in: .whitespaces).isEmpty ? acc.id : acc.displayLabel
+            let index = offset + 1
+            sink.set(StatusText.formatCompareSyncProgress(index: index, total: total, name: name))
+            return await compareSyncOne(client: client, account: acc, directory: directory) { page in
+                sink.set(StatusText.formatCompareSyncProgress(index: index, total: total, name: name, page: page))
+            }
         }
         var ok = 0
         var failures: [String] = []
@@ -94,6 +109,22 @@ final class CompareStore: ObservableObject {
     }
 }
 
+final class CompareStatusSink: @unchecked Sendable {
+    let apply: (String) -> Void
+
+    init(_ apply: @escaping (String) -> Void) {
+        self.apply = apply
+    }
+
+    func set(_ text: String) {
+        if Thread.isMainThread {
+            apply(text)
+        } else {
+            DispatchQueue.main.async { self.apply(text) }
+        }
+    }
+}
+
 struct CompareSyncOutcome: Sendable {
     var accountId: String
     var membership: String?
@@ -102,8 +133,11 @@ struct CompareSyncOutcome: Sendable {
     var error: String?
 }
 
-func compareSyncOne(client: CursorClient, account: Account, directory: URL?) async -> CompareSyncOutcome {
+func compareSyncOne(client: CursorClient, account: Account, directory: URL?, onPage: ((Int) -> Void)? = nil) async -> CompareSyncOutcome {
     let name = account.displayLabel.trimmingCharacters(in: .whitespaces).isEmpty ? account.id : account.displayLabel
+    if account.tokenDecryptFailed {
+        return CompareSyncOutcome(accountId: account.id, error: "\(name)：Token 解不开")
+    }
     let token = account.token.trimmingCharacters(in: .whitespaces)
     if token.isEmpty {
         return CompareSyncOutcome(accountId: account.id, error: "\(name)：未配置 Token")
@@ -117,7 +151,8 @@ func compareSyncOne(client: CursorClient, account: Account, directory: URL?) asy
             accountId: account.id,
             usage: snap,
             teamScope: false,
-            directory: directory
+            directory: directory,
+            onPage: onPage
         )
         return CompareSyncOutcome(
             accountId: account.id,
@@ -176,6 +211,10 @@ struct CompareRootView: View {
         .padding(16)
         .frame(minWidth: 900, minHeight: 520)
         .onAppear { store.loadCache() }
+        .onChange(of: store.app.config.activeAccountId) { _ in store.reloadFromConfig() }
+        .onChange(of: store.app.config.monthlyPlanUsd) { _ in store.reloadFromConfig() }
+        .onChange(of: store.app.config.usdCnyRate) { _ in store.reloadFromConfig() }
+        .onChange(of: store.app.config.accounts.count) { _ in store.reloadFromConfig() }
     }
 
     var table: some View {
@@ -449,11 +488,20 @@ final class CompareWindowController: NSObject, NSWindowDelegate {
             win.delegate = self
             window = win
         }
-        let compareStore = CompareStore(app: app)
-        store = compareStore
-        window?.contentView = NSHostingView(rootView: CompareRootView(store: compareStore))
-        window?.center()
+        if store == nil {
+            let compareStore = CompareStore(app: app)
+            store = compareStore
+            window?.contentView = NSHostingView(rootView: CompareRootView(store: compareStore))
+            window?.center()
+        } else {
+            store?.reloadFromConfig()
+        }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func reloadIfVisible() {
+        guard window?.isVisible == true else { return }
+        store?.reloadFromConfig()
     }
 
     func close() {
