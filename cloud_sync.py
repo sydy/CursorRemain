@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Callable
 
 from account_sync import (
+    append_trim_note,
     apply_snapshot_to_config,
     decrypt_envelope,
     encrypt_envelope,
@@ -18,6 +19,7 @@ from account_sync import (
     snapshot_from_config,
     snapshot_identity,
     sync_ready,
+    trim_note,
 )
 
 API_BASE = "https://sync.harker.cn"
@@ -306,7 +308,6 @@ def reconcile(
         else:
             cfg["cloud_revision"] = revision
         cfg["sync_last_at"] = stamp
-        cfg["sync_last_error"] = ""
         status["ok"] = True
         status["changed"] = changed
         if changed and status["pushed"]:
@@ -317,6 +318,9 @@ def reconcile(
             status["message"] = "已上传到云端"
         else:
             status["message"] = "账号、设置和用量已与云端一致"
+        note = trim_note(merged) if status["pushed"] else ""
+        status["message"] = append_trim_note(status["message"], note)
+        cfg["sync_last_error"] = note
         return cfg, status
     except CloudSyncError as exc:
         if exc.status == 401:

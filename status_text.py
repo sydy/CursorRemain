@@ -246,3 +246,33 @@ def build_status_lines(
 
     rows.append(("更新", updated_at or datetime.now().strftime("%H:%M:%S")))
     return rows
+
+
+def short_error(text: str | None, max_len: int = 40) -> str:
+    value = (text or "同步失败").strip() or "同步失败"
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 1] + "…"
+
+
+def format_compare_sync(ok: int, failures: list[str], stamp: str) -> str:
+    if not failures:
+        return f"已同步 {ok} 个账号  ·  {stamp}"
+    detail = "；".join(failures[:3])
+    if len(failures) > 3:
+        detail += f" 等{len(failures)}个"
+    return f"已同步 {ok} 个账号，{len(failures)} 个失败（{detail}）  ·  {stamp}"
+
+
+def format_sync_status(last_at: str, last_error: str) -> str:
+    from account_sync import format_local, is_trim_note
+
+    error = (last_error or "").strip()
+    at = (last_at or "").strip()
+    if error and is_trim_note(error) and at:
+        return "上次同步 " + format_local(at) + "；" + error
+    if error:
+        return error
+    if at:
+        return "上次同步 " + format_local(at)
+    return ""

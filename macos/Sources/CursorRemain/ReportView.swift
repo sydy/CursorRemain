@@ -36,24 +36,34 @@ final class ReportStore: ObservableObject {
     var isTeam: Bool { app.usage?.isTeamAccount == true }
 
     var filter: UsageReportFilter {
-        UsageReportFilter(
+        let rawStart = startEnabled ? UsageEvents.reportDateString(from: startDate) : ""
+        let rawEnd = endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
+        let normalized = UsageEvents.normalizeReportRange(rawStart, rawEnd)
+        return UsageReportFilter(
             kind: kind,
             category: category,
             model: model,
             headless: cloud == "local" ? false : cloud == "cloud" ? true : nil,
             owningUser: "",
-            startDate: startEnabled ? UsageEvents.reportDateString(from: startDate) : "",
-            endDate: endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
+            startDate: normalized.start,
+            endDate: normalized.end
         )
     }
 
     func persistDates() {
         let accountId = app.config.activeAccountId
         guard !accountId.isEmpty else { return }
+        let rawStart = startEnabled ? UsageEvents.reportDateString(from: startDate) : ""
+        let rawEnd = endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
+        let normalized = UsageEvents.normalizeReportRange(rawStart, rawEnd)
+        if normalized.swapped {
+            if let value = UsageEvents.reportDateValue(normalized.start) { startDate = value }
+            if let value = UsageEvents.reportDateValue(normalized.end) { endDate = value }
+        }
         app.persistReportRange(
             accountId: accountId,
-            start: startEnabled ? UsageEvents.reportDateString(from: startDate) : "",
-            end: endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
+            start: normalized.start,
+            end: normalized.end
         )
     }
 

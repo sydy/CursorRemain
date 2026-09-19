@@ -327,6 +327,7 @@ sealed partial class TrayContext : ApplicationContext
                 _flyout?.Hide();
                 if (_compare is { IsDisposed: false })
                 {
+                    _compare.Reload();
                     _compare.Show();
                     _compare.Activate();
                     return;

@@ -105,6 +105,12 @@ sealed class CompareForm : Form
         ResumeLayout();
     }
 
+    public void Reload()
+    {
+        if (_syncing) return;
+        LoadCache();
+    }
+
     static (string Name, string Header, float Fill, DataGridViewContentAlignment Align)[] Columns() =>
     [
         ("name", "账号 / 分类", 22, DataGridViewContentAlignment.MiddleLeft),
@@ -157,42 +163,40 @@ sealed class CompareForm : Form
         _syncing = true;
         _syncBtn.Enabled = false;
         _status.Text = "正在同步各账号最新周期…";
-        var ok = 0;
-        var fail = 0;
         try
         {
-            foreach (var acc in accounts)
-            {
-                if (string.IsNullOrWhiteSpace(acc.Token))
-                {
-                    fail++;
-                    continue;
-                }
-                try
-                {
-                    var snap = await _client.FetchUsageSummary(acc.Token, 20);
-                    AccountValidity.ApplyEndOverride(snap, acc);
-                    _state().PersistCycle(acc.Id, snap.MembershipType, snap.BillingCycleStart, snap.BillingCycleEnd);
-                    await UsageEvents.SyncAsync(_client, acc.Token, acc.Id, snap, false);
-                    ok++;
-                }
-                catch (Exception ex)
-                {
-                    fail++;
-                    CrashLog.Write(ex);
-                }
-            }
+            var results = await BoundedWork.MapAsync(accounts, SyncOneAsync);
+            var ok = results.Count(r => r is null);
+            var failures = results.Where(r => r is not null).Cast<string>().ToList();
             _report = BuildReport();
             Render();
             var stamp = DateTimeOffset.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-            _status.Text = fail == 0
-                ? $"已同步 {ok} 个账号  ·  {stamp}"
-                : $"已同步 {ok} 个账号，{fail} 个失败  ·  {stamp}";
+            _status.Text = StatusText.FormatCompareSync(ok, failures, stamp);
         }
         finally
         {
             _syncing = false;
             _syncBtn.Enabled = true;
+        }
+    }
+
+    async Task<string?> SyncOneAsync(Account acc)
+    {
+        var name = string.IsNullOrWhiteSpace(acc.DisplayLabel) ? acc.Id : acc.DisplayLabel;
+        if (string.IsNullOrWhiteSpace(acc.Token))
+            return $"{name}：未配置 Token";
+        try
+        {
+            var snap = await _client.FetchUsageSummary(acc.Token, 20);
+            AccountValidity.ApplyEndOverride(snap, acc);
+            _state().PersistCycle(acc.Id, snap.MembershipType, snap.BillingCycleStart, snap.BillingCycleEnd);
+            await UsageEvents.SyncAsync(_client, acc.Token, acc.Id, snap, false);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex);
+            return $"{name}：{StatusText.ShortError(ex is CursorApiException api ? api.Message : ex.Message)}";
         }
     }
 

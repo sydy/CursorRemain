@@ -12,8 +12,9 @@ public static partial class UsageEvents
         var category = (filter.Category ?? "").Trim().ToLowerInvariant();
         var model = (filter.Model ?? "").Trim();
         var owning = (filter.OwningUser ?? "").Trim();
-        var startMs = ReportDateStartMs(filter.StartDate);
-        var endMs = ReportDateEndMs(filter.EndDate);
+        var (startDate, endDate, _) = NormalizeReportRange(filter.StartDate, filter.EndDate);
+        var startMs = ReportDateStartMs(startDate);
+        var endMs = ReportDateEndMs(endDate);
         var source = events as IList<UsageEvent> ?? events.ToList();
         var (cnyById, planCny, onDemandCny, monthly, rate, actual, usesActual) = CnyById(source, spend);
         var selected = new List<UsageEvent>();

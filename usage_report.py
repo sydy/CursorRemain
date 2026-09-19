@@ -798,6 +798,14 @@ def sanitize_report_date(raw: Any) -> str:
         return ""
 
 
+def normalize_report_range(start: Any = "", end: Any = "") -> tuple[str, str, bool]:
+    start_date = sanitize_report_date(start)
+    end_date = sanitize_report_date(end)
+    if not start_date or not end_date or start_date <= end_date:
+        return start_date, end_date, False
+    return end_date, start_date, True
+
+
 def report_date_start_ms(raw: Any) -> int | None:
     date = sanitize_report_date(raw)
     if not date:
@@ -1107,8 +1115,9 @@ def build_usage_report(
     category = (filt.category or "").strip().lower()
     model = (filt.model or "").strip()
     owning = (filt.owning_user or "").strip()
-    start_ms = report_date_start_ms(filt.start_date)
-    end_ms = report_date_end_ms(filt.end_date)
+    start_date, end_date, _ = normalize_report_range(filt.start_date, filt.end_date)
+    start_ms = report_date_start_ms(start_date)
+    end_ms = report_date_end_ms(end_date)
     source = list(events)
     cny_by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual = _cny_by_id(source, spend)
     selected: list[UsageEvent] = []

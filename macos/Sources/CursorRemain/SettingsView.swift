@@ -50,9 +50,11 @@ struct SettingsRootView: View {
             thresholdText = store.config.alertThresholds.map(String.init).joined(separator: ",")
             cloudEmail = store.config.cloudEmail
             cloudPassword = ""
-            syncStatus = store.config.syncLastError.isEmpty
-                ? (store.config.syncLastAt.isEmpty ? "" : "上次同步 " + AccountSync.formatLocal(store.config.syncLastAt))
-                : store.config.syncLastError
+            syncStatus = {
+                let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
+                if !text.isEmpty { return text }
+                return store.config.cloudLoggedIn ? "尚未同步" : ""
+            }()
             if focusToken || store.focusToken {
                 tokenFocused = true
             }

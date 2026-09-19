@@ -156,8 +156,9 @@ public sealed class AppConfig
     {
         var acc = Accounts.FirstOrDefault(a => a.Id == id);
         if (acc is null) return false;
-        acc.ReportStartDate = UsageEvents.SanitizeReportDate(start);
-        acc.ReportEndDate = UsageEvents.SanitizeReportDate(end);
+        var (normStart, normEnd, _) = UsageEvents.NormalizeReportRange(start, end);
+        acc.ReportStartDate = normStart;
+        acc.ReportEndDate = normEnd;
         return true;
     }
 

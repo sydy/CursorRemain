@@ -168,13 +168,15 @@ public static class CloudSync
             }
             else cfg.CloudRevision = revision;
             cfg.SyncLastAt = stamp;
-            cfg.SyncLastError = "";
             status.Ok = true;
             status.Changed = changed;
             status.Message = changed && status.Pushed ? "已合并并对齐云端"
                 : changed ? "已从云端导入账号、设置和用量"
                 : status.Pushed ? "已上传到云端"
                 : "账号、设置和用量已与云端一致";
+            var note = status.Pushed ? AccountSync.TrimNote(merged) : "";
+            status.Message = AccountSync.AppendTrimNote(status.Message, note);
+            cfg.SyncLastError = note;
             return status;
         }
         catch (CursorApiException ex) when (ex.StatusCode == 401)

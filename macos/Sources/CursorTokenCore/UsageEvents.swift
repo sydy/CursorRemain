@@ -775,6 +775,15 @@ public enum UsageEvents {
         return f.date(from: text) == nil ? "" : text
     }
 
+    public static func normalizeReportRange(_ start: Any?, _ end: Any?) -> (start: String, end: String, swapped: Bool) {
+        let startDate = sanitizeReportDate(start)
+        let endDate = sanitizeReportDate(end)
+        if startDate.isEmpty || endDate.isEmpty || startDate <= endDate {
+            return (startDate, endDate, false)
+        }
+        return (endDate, startDate, true)
+    }
+
     public static func reportDateStartMs(_ raw: Any?) -> Int64? {
         let date = sanitizeReportDate(raw)
         guard !date.isEmpty else { return nil }
@@ -1058,8 +1067,9 @@ public enum UsageEvents {
         let category = filter.category.trimmingCharacters(in: .whitespaces).lowercased()
         let model = filter.model.trimmingCharacters(in: .whitespaces)
         let owning = filter.owningUser.trimmingCharacters(in: .whitespaces)
-        let startMs = reportDateStartMs(filter.startDate)
-        let endMs = reportDateEndMs(filter.endDate)
+        let normalized = normalizeReportRange(filter.startDate, filter.endDate)
+        let startMs = reportDateStartMs(normalized.start)
+        let endMs = reportDateEndMs(normalized.end)
         let allocated = cnyById(events, spend: spend)
         var selected: [UsageEvent] = []
         for (i, ev) in events.enumerated() {

@@ -402,10 +402,11 @@ def set_account_report_range(cfg: dict[str, Any], account_id: str, start_date: s
     acc = find_account(cfg, account_id)
     if acc is None:
         return False
-    from usage_report import sanitize_report_date
+    from usage_report import normalize_report_range
 
-    acc["report_start_date"] = sanitize_report_date(start_date)
-    acc["report_end_date"] = sanitize_report_date(end_date)
+    start, end, _ = normalize_report_range(start_date, end_date)
+    acc["report_start_date"] = start
+    acc["report_end_date"] = end
     return True
 
 
