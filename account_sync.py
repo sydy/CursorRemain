@@ -380,6 +380,44 @@ def _drop_oldest_usage(usage: list[dict[str, Any]]) -> bool:
     return False
 
 
+def usage_record_count(snap: dict[str, Any] | None) -> int:
+    if not isinstance(snap, dict) or not isinstance(snap.get("usage"), list):
+        return 0
+    total = 0
+    for row in snap["usage"]:
+        if not isinstance(row, dict):
+            continue
+        total += len(row.get("history") or [])
+        total += len(row.get("events") or [])
+        total += len(row.get("team_events") or [])
+    return total
+
+
+def format_trim_note(dropped: int) -> str:
+    if dropped <= 0:
+        return ""
+    return f"用量明细因体积限制裁掉了 {dropped} 条最旧记录"
+
+
+def is_trim_note(text: Any) -> bool:
+    return "用量明细因体积限制" in str(text or "")
+
+
+def trim_note(original: dict[str, Any], budget: int = SYNC_PLAINTEXT_BUDGET) -> str:
+    trimmed = trim_snapshot_for_upload(original, budget=budget)
+    return format_trim_note(max(0, usage_record_count(original) - usage_record_count(trimmed)))
+
+
+def append_trim_note(message: str, note: str) -> str:
+    text = (message or "").strip()
+    extra = (note or "").strip()
+    if not extra:
+        return text
+    if not text:
+        return extra
+    return text + "；" + extra
+
+
 def trim_snapshot_for_upload(snap: dict[str, Any], budget: int = SYNC_PLAINTEXT_BUDGET) -> dict[str, Any]:
     out = dict(snap)
     if not isinstance(out.get("usage"), list):

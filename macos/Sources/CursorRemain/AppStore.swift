@@ -313,17 +313,11 @@ final class AppStore: ObservableObject {
             (a.id == activeId ? 0 : 1) < (b.id == activeId ? 0 : 1)
         }
         let client = self.client
-        var outcomes: [Outcome] = []
-        await withTaskGroup(of: Outcome.self) { group in
-            for acc in ordered {
-                group.addTask {
-                    await Self.fetchOne(client: client, account: acc)
-                }
-            }
-            for await o in group {
-                outcomes.append(o)
-                applyActiveOutcome(o, generation: generation)
-            }
+        var outcomes: [Outcome] = await RefreshGeneration.mapBounded(ordered) { acc in
+            await Self.fetchOne(client: client, account: acc)
+        }
+        for o in outcomes {
+            applyActiveOutcome(o, generation: generation)
         }
         for o in outcomes {
             if let snap = o.snap {

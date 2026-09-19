@@ -234,6 +234,47 @@ class AccountStateTests(unittest.TestCase):
         self.assertIsNotNone(parsed)
         self.assertEqual(parsed["report_start_date"], "")
         self.assertEqual(parsed["report_end_date"], "2026-09-01")
+        self.assertTrue(set_account_report_range(cfg, a["id"], "2026-09-20", "2026-09-10"))
+        self.assertEqual(a["report_start_date"], "2026-09-10")
+        self.assertEqual(a["report_end_date"], "2026-09-20")
+
+    def test_inverted_report_dates_are_swapped(self) -> None:
+        from usage_report import (
+            UsageEvent,
+            UsageReportFilter,
+            build_usage_report,
+            normalize_report_range,
+            report_date_start_ms,
+        )
+
+        self.assertEqual(normalize_report_range("2026-09-15", "2026-09-01"), ("2026-09-01", "2026-09-15", True))
+        self.assertEqual(normalize_report_range("2026-09-01", "2026-09-15"), ("2026-09-01", "2026-09-15", False))
+        self.assertEqual(normalize_report_range("2026-09-08", ""), ("2026-09-08", "", False))
+        mid = report_date_start_ms("2026-09-08")
+        self.assertIsNotNone(mid)
+        ev = UsageEvent(
+            id="mid",
+            timestamp_ms=mid + 12 * 3600 * 1000,
+            model="opus",
+            kind="included",
+            user_email="",
+            owning_user="",
+            tokens=10,
+            input_tokens=0,
+            output_tokens=0,
+            cache_write_tokens=0,
+            cache_read_tokens=0,
+            charged_cents=None,
+            total_cents=None,
+            is_headless=False,
+            is_chargeable=False,
+        )
+        empty = build_usage_report(
+            [ev],
+            UsageReportFilter(start_date="2026-09-15", end_date="2026-09-01"),
+        )
+        self.assertEqual(empty.event_count, 1)
+        self.assertEqual(empty.events[0].id, "mid")
 
     def test_actual_cny_is_per_account(self) -> None:
         from accounts import (

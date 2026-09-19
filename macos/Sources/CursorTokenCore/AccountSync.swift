@@ -806,6 +806,32 @@ public enum AccountSync {
         return "{\"cache_read_tokens\":\(ev.cacheReadTokens),\"cache_write_tokens\":\(ev.cacheWriteTokens),\"charged_cents\":\(charged),\"id\":\(q(ev.id)),\"input_tokens\":\(ev.inputTokens),\"is_chargeable\":\(ev.isChargeable),\"is_headless\":\(ev.isHeadless),\"kind\":\(q(ev.kind)),\"model\":\(q(ev.model)),\"output_tokens\":\(ev.outputTokens),\"owning_user\":\(q(ev.owningUser)),\"timestamp_ms\":\(ev.timestampMs),\"tokens\":\(ev.tokens),\"total_cents\":\(total),\"user_email\":\(q(ev.userEmail))}"
     }
 
+    public static func usageRecordCount(_ snap: SyncSnapshot) -> Int {
+        guard let usage = snap.usage else { return 0 }
+        return usage.reduce(0) { $0 + $1.history.count + $1.events.count + $1.teamEvents.count }
+    }
+
+    public static func formatTrimNote(_ dropped: Int) -> String {
+        dropped <= 0 ? "" : "用量明细因体积限制裁掉了 \(dropped) 条最旧记录"
+    }
+
+    public static func isTrimNote(_ text: String) -> Bool {
+        text.contains("用量明细因体积限制")
+    }
+
+    public static func trimNote(_ original: SyncSnapshot, budget: Int = syncPlaintextBudget) -> String {
+        let trimmed = trimSnapshotForUpload(original, budget: budget)
+        return formatTrimNote(max(0, usageRecordCount(original) - usageRecordCount(trimmed)))
+    }
+
+    public static func appendTrimNote(_ message: String, _ note: String) -> String {
+        let text = message.trimmingCharacters(in: .whitespaces)
+        let extra = note.trimmingCharacters(in: .whitespaces)
+        if extra.isEmpty { return text }
+        if text.isEmpty { return extra }
+        return text + "；" + extra
+    }
+
     public static func trimSnapshotForUpload(_ snap: SyncSnapshot, budget: Int = syncPlaintextBudget) -> SyncSnapshot {
         guard var usage = snap.usage else { return snap }
         var clone = snap

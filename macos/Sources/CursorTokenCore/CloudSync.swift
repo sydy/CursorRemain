@@ -129,13 +129,15 @@ public enum CloudSync {
                 cfg.cloudRevision = revision
             }
             cfg.syncLastAt = stamp
-            cfg.syncLastError = ""
             status.ok = true
             status.changed = changed
             if changed && status.pushed { status.message = "已合并并对齐云端" }
             else if changed { status.message = "已从云端导入账号、设置和用量" }
             else if status.pushed { status.message = "已上传到云端" }
             else { status.message = "账号、设置和用量已与云端一致" }
+            let note = status.pushed ? AccountSync.trimNote(merged) : ""
+            status.message = AccountSync.appendTrimNote(status.message, note)
+            cfg.syncLastError = note
             return status
         } catch let err as CursorAPIError where err.statusCode == 401 {
             clearSession(&cfg)

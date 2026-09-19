@@ -397,8 +397,8 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("按需已计入", win_report)
         win_settings = (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8")
         mac_settings = (root / "macos" / "Sources" / "CursorRemain" / "SettingsView.swift").read_text(encoding="utf-8")
-        self.assertIn("FormatLocal", win_settings)
-        self.assertIn("formatLocal", mac_settings)
+        self.assertIn("FormatSyncStatus", win_settings)
+        self.assertIn("formatSyncStatus", mac_settings)
         for src in (win_settings, mac_settings):
             self.assertIn("实际成本（人民币）", src)
             self.assertIn("额度不是真实支出", src)
@@ -416,6 +416,25 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("Grok Bot", src)
         self.assertIn("BuildAccountCompareReport", win_compare)
         self.assertIn("buildAccountCompareReport", mac_compare)
+        self.assertIn("public void Reload()", win_compare)
+        self.assertIn("_compare.Reload()", win_prog)
+        self.assertIn("BoundedWork.MapAsync", win_compare)
+        self.assertIn("RefreshGeneration.mapBounded", mac_compare)
+        self.assertIn("FormatCompareSync", win_compare)
+        self.assertIn("formatCompareSync", mac_compare)
+        win_refresh = (root / "windows" / "CursorRemain" / "TrayRefresh.cs").read_text(encoding="utf-8")
+        mac_store = (root / "macos" / "Sources" / "CursorRemain" / "AppStore.swift").read_text(encoding="utf-8")
+        self.assertIn("BoundedWork.MapAsync", win_refresh)
+        self.assertIn("RefreshGeneration.mapBounded", mac_store)
+        self.assertNotIn("Task.WhenAll(remaining)", win_refresh)
+        win_core_refresh = (root / "windows" / "CursorTokenCore" / "BoundedWork.cs").read_text(encoding="utf-8")
+        mac_core_refresh = (root / "macos" / "Sources" / "CursorTokenCore" / "RefreshGeneration.swift").read_text(encoding="utf-8")
+        self.assertIn("AccountRefreshLimit = 2", win_core_refresh)
+        self.assertIn("accountRefreshLimit = 2", mac_core_refresh)
+        self.assertIn("NormalizeReportRange", (root / "windows" / "CursorTokenCore" / "UsageEvents.cs").read_text(encoding="utf-8"))
+        self.assertIn("normalizeReportRange", (root / "macos" / "Sources" / "CursorTokenCore" / "UsageEvents.swift").read_text(encoding="utf-8"))
+        self.assertIn("TrimNote", (root / "windows" / "CursorTokenCore" / "AccountSync.cs").read_text(encoding="utf-8"))
+        self.assertIn("func trimNote", (root / "macos" / "Sources" / "CursorTokenCore" / "AccountSync.swift").read_text(encoding="utf-8"))
         self.assertIn("全部额度", mac_report)
         self.assertIn("First-party", mac_report)
         self.assertIn("Grok Bot", mac_report)
@@ -524,3 +543,21 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("本周已用 58.3%", lines["Grok Bot"])
         reset = datetime.fromisoformat("2026-08-24T07:57:50.647+00:00").astimezone()
         self.assertIn(f"{reset.month}月{reset.day}日", lines["Grok Bot"])
+
+    def test_compare_sync_and_trim_status_copy(self) -> None:
+        from status_text import format_compare_sync, format_sync_status
+
+        self.assertEqual(format_compare_sync(3, [], "12:00:00"), "已同步 3 个账号  ·  12:00:00")
+        self.assertIn(
+            "工作号：Token 过期",
+            format_compare_sync(2, ["工作号：Token 过期", "临时号：未配置 Token"], "12:01:00"),
+        )
+        long = format_compare_sync(1, ["a：1", "b：2", "c：3", "d：4"], "12:02:00")
+        self.assertIn("等4个", long)
+        self.assertNotIn("d：4", long)
+        self.assertEqual(format_sync_status("", ""), "")
+        self.assertIn("上次同步", format_sync_status("2026-09-19T04:00:00.000Z", ""))
+        self.assertEqual(format_sync_status("", "登录已过期，请重新登录"), "登录已过期，请重新登录")
+        mixed = format_sync_status("2026-09-19T04:00:00.000Z", "用量明细因体积限制裁掉了 12 条最旧记录")
+        self.assertIn("上次同步", mixed)
+        self.assertIn("体积限制", mixed)

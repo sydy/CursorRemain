@@ -15,6 +15,59 @@ public class NativeClientReliabilityTests
     }
 
     [Fact]
+    public async Task BoundedWorkCapsConcurrency()
+    {
+        var current = 0;
+        var max = 0;
+        var gate = new object();
+        var items = Enumerable.Range(0, 8).ToList();
+        var results = await BoundedWork.MapAsync(items, async i =>
+        {
+            var now = Interlocked.Increment(ref current);
+            lock (gate) { if (now > max) max = now; }
+            await Task.Delay(30);
+            Interlocked.Decrement(ref current);
+            return i;
+        }, maxConcurrent: 2);
+        Assert.Equal(items, results);
+        Assert.InRange(max, 1, 2);
+        Assert.Equal(2, BoundedWork.AccountRefreshLimit);
+    }
+
+    [Fact]
+    public void NormalizeReportRangeSwapsInvertedDates()
+    {
+        var swapped = UsageEvents.NormalizeReportRange("2026-09-15", "2026-09-01");
+        Assert.Equal("2026-09-01", swapped.Start);
+        Assert.Equal("2026-09-15", swapped.End);
+        Assert.True(swapped.Swapped);
+        var ordered = UsageEvents.NormalizeReportRange("2026-09-01", "2026-09-15");
+        Assert.False(ordered.Swapped);
+        Assert.Equal(("2026-09-08", "", false), UsageEvents.NormalizeReportRange("2026-09-08", ""));
+        var mid = UsageEvents.ReportDateStartMs("2026-09-08")!.Value + 12L * 3600 * 1000;
+        var ev = new UsageEvent { Id = "mid", TimestampMs = mid, Model = "opus", Kind = UsageEvents.KindIncluded, Tokens = 10 };
+        var report = UsageEvents.BuildReport([ev], new UsageReportFilter { StartDate = "2026-09-15", EndDate = "2026-09-01" });
+        Assert.Equal(1, report.EventCount);
+        Assert.Equal("mid", report.Events[0].Id);
+    }
+
+    [Fact]
+    public void CompareSyncAndTrimStatusCopy()
+    {
+        Assert.Equal("已同步 3 个账号  ·  12:00:00", StatusText.FormatCompareSync(3, [], "12:00:00"));
+        var failed = StatusText.FormatCompareSync(2, ["工作号：Token 过期", "临时号：未配置 Token"], "12:01:00");
+        Assert.Contains("工作号：Token 过期", failed);
+        Assert.Contains("等4个", StatusText.FormatCompareSync(1, ["a：1", "b：2", "c：3", "d：4"], "12:02:00"));
+        Assert.Equal("登录已过期，请重新登录", StatusText.FormatSyncStatus("", "登录已过期，请重新登录"));
+        var mixed = StatusText.FormatSyncStatus("2026-09-19T04:00:00.000Z", "用量明细因体积限制裁掉了 12 条最旧记录");
+        Assert.Contains("上次同步", mixed);
+        Assert.Contains("体积限制", mixed);
+        Assert.True(AccountSync.IsTrimNote("用量明细因体积限制裁掉了 3 条最旧记录"));
+        Assert.Equal("", AccountSync.FormatTrimNote(0));
+        Assert.Equal("已上传到云端；用量明细因体积限制裁掉了 2 条最旧记录", AccountSync.AppendTrimNote("已上传到云端", "用量明细因体积限制裁掉了 2 条最旧记录"));
+    }
+
+    [Fact]
     public void AppendWithAccountIdDoesNotLoadConfig()
     {
         var dir = Path.Combine(Path.GetTempPath(), "ctt-hist-" + Guid.NewGuid().ToString("N"));

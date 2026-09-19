@@ -195,6 +195,14 @@ class CryptoFixtureTests(unittest.TestCase):
         trimmed = trim_snapshot_for_upload(snap, budget=80)
         self.assertLessEqual(len((trimmed.get("usage") or [{}])[0].get("history") or []) if trimmed.get("usage") else 0, 2)
         self.assertIn("usage", trimmed)
+        from account_sync import append_trim_note, format_trim_note, is_trim_note, trim_note, usage_record_count
+
+        self.assertGreater(usage_record_count(snap), usage_record_count(trimmed))
+        note = trim_note(snap, budget=80)
+        self.assertTrue(is_trim_note(note))
+        self.assertIn("条最旧记录", note)
+        self.assertEqual(append_trim_note("已上传到云端", note), "已上传到云端；" + note)
+        self.assertEqual(format_trim_note(0), "")
 
 
 class ExportImportTests(unittest.TestCase):

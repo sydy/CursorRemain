@@ -51,14 +51,12 @@ sealed partial class TrayContext
         }
         var activeId = _config.ActiveAccountId;
         var ordered = targets.OrderBy(a => a.Id == activeId ? 0 : 1).ToList();
-        var outcomes = new List<RefreshOutcome>(ordered.Count);
-        var remaining = ordered.Select(async acc =>
+        var outcomes = (await BoundedWork.MapAsync(ordered, async acc =>
         {
             var o = await FetchOne(acc);
             ApplyActiveOutcome(o, generation);
             return o;
-        });
-        outcomes.AddRange(await Task.WhenAll(remaining));
+        })).ToList();
 
         var notices = new List<(string Title, string Body, bool Warn)>();
         AppConfig cfg;

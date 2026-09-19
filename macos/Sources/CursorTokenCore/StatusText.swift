@@ -240,4 +240,31 @@ public enum StatusText {
         if pct >= 99.5 { return "100" }
         return String(Int(pct.rounded()))
     }
+
+    public static func shortError(_ text: String?, maxLen: Int = 40) -> String {
+        var value = (text ?? "同步失败").trimmingCharacters(in: .whitespaces)
+        if value.isEmpty { value = "同步失败" }
+        if value.count <= maxLen { return value }
+        return String(value.prefix(maxLen - 1)) + "…"
+    }
+
+    public static func formatCompareSync(ok: Int, failures: [String], stamp: String) -> String {
+        if failures.isEmpty {
+            return "已同步 \(ok) 个账号  ·  \(stamp)"
+        }
+        var detail = failures.prefix(3).joined(separator: "；")
+        if failures.count > 3 { detail += " 等\(failures.count)个" }
+        return "已同步 \(ok) 个账号，\(failures.count) 个失败（\(detail)）  ·  \(stamp)"
+    }
+
+    public static func formatSyncStatus(lastAt: String, lastError: String) -> String {
+        let error = lastError.trimmingCharacters(in: .whitespaces)
+        let at = lastAt.trimmingCharacters(in: .whitespaces)
+        if !error.isEmpty && AccountSync.isTrimNote(error) && !at.isEmpty {
+            return "上次同步 " + AccountSync.formatLocal(at) + "；" + error
+        }
+        if !error.isEmpty { return error }
+        if !at.isEmpty { return "上次同步 " + AccountSync.formatLocal(at) }
+        return ""
+    }
 }

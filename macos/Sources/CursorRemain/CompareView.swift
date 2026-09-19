@@ -32,39 +32,21 @@ final class CompareStore: ObservableObject {
         syncing = true
         defer { syncing = false }
         status = "正在同步各账号最新周期…"
+        let client = app.client
+        let directory = app.settingsDirectory
+        let accounts = app.config.accounts
+        let outcomes = await RefreshGeneration.mapBounded(accounts) { acc in
+            await compareSyncOne(client: client, account: acc, directory: directory)
+        }
         var ok = 0
-        var fail = 0
-        for acc in app.config.accounts {
-            let token = acc.token.trimmingCharacters(in: .whitespaces)
-            if token.isEmpty {
-                fail += 1
+        var failures: [String] = []
+        for o in outcomes {
+            if let error = o.error {
+                failures.append(error)
                 continue
             }
-            do {
-                var snap = try await app.client.fetchUsageSummary(sessionToken: token, timeout: 20)
-                AccountValidity.applyEndOverride(&snap, account: acc)
-                app.persistCompareCycle(
-                    accountId: acc.id,
-                    membership: snap.membershipType,
-                    start: snap.billingCycleStart,
-                    end: snap.billingCycleEnd
-                )
-                _ = try await UsageEvents.sync(
-                    client: app.client,
-                    token: token,
-                    accountId: acc.id,
-                    usage: snap,
-                    teamScope: false,
-                    directory: app.settingsDirectory
-                )
-                ok += 1
-            } catch let err as CursorAPIError {
-                fail += 1
-                AppLog.log("compare sync \(acc.id): \(err.message)")
-            } catch {
-                fail += 1
-                AppLog.log("compare sync \(acc.id): \(error.localizedDescription)")
-            }
+            ok += 1
+            app.persistCompareCycle(accountId: o.accountId, membership: o.membership, start: o.start, end: o.end)
         }
         report = buildReport()
         let stamp: String = {
@@ -74,11 +56,7 @@ final class CompareStore: ObservableObject {
             f.dateFormat = "HH:mm:ss"
             return f.string(from: Date())
         }()
-        if fail == 0 {
-            status = "已同步 \(ok) 个账号  ·  \(stamp)"
-        } else {
-            status = "已同步 \(ok) 个账号，\(fail) 个失败  ·  \(stamp)"
-        }
+        status = StatusText.formatCompareSync(ok: ok, failures: failures, stamp: stamp)
     }
 
     func exportCSV() {
@@ -112,6 +90,46 @@ final class CompareStore: ObservableObject {
             )
         }
         return UsageEvents.buildAccountCompareReport(items)
+    }
+}
+
+struct CompareSyncOutcome: Sendable {
+    var accountId: String
+    var membership: String?
+    var start: String?
+    var end: String?
+    var error: String?
+}
+
+func compareSyncOne(client: CursorClient, account: Account, directory: URL?) async -> CompareSyncOutcome {
+    let name = account.displayLabel.trimmingCharacters(in: .whitespaces).isEmpty ? account.id : account.displayLabel
+    let token = account.token.trimmingCharacters(in: .whitespaces)
+    if token.isEmpty {
+        return CompareSyncOutcome(accountId: account.id, error: "\(name)：未配置 Token")
+    }
+    do {
+        var snap = try await client.fetchUsageSummary(sessionToken: token, timeout: 20)
+        AccountValidity.applyEndOverride(&snap, account: account)
+        _ = try await UsageEvents.sync(
+            client: client,
+            token: token,
+            accountId: account.id,
+            usage: snap,
+            teamScope: false,
+            directory: directory
+        )
+        return CompareSyncOutcome(
+            accountId: account.id,
+            membership: snap.membershipType,
+            start: snap.billingCycleStart,
+            end: snap.billingCycleEnd
+        )
+    } catch let err as CursorAPIError {
+        AppLog.log("compare sync \(account.id): \(err.message)")
+        return CompareSyncOutcome(accountId: account.id, error: "\(name)：\(StatusText.shortError(err.message))")
+    } catch {
+        AppLog.log("compare sync \(account.id): \(error.localizedDescription)")
+        return CompareSyncOutcome(accountId: account.id, error: "\(name)：\(StatusText.shortError(error.localizedDescription))")
     }
 }
 

@@ -339,14 +339,17 @@ sealed class ReportForm : Form
         };
         var model = _model.SelectedIndex > 0 ? _model.SelectedItem?.ToString() ?? "" : "";
         bool? cloud = _cloud.SelectedIndex switch { 1 => false, 2 => true, _ => null };
+        var rawStart = _startDate.Checked ? _startDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+        var rawEnd = _endDate.Checked ? _endDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
+        var (start, end, _) = UsageEvents.NormalizeReportRange(rawStart, rawEnd);
         return new UsageReportFilter
         {
             Kind = kind,
             Category = category,
             Model = model,
             Headless = cloud,
-            StartDate = _startDate.Checked ? _startDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "",
-            EndDate = _endDate.Checked ? _endDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "",
+            StartDate = start,
+            EndDate = end,
         };
     }
 
@@ -384,7 +387,15 @@ sealed class ReportForm : Form
         var st = _state();
         var start = _startDate.Checked ? _startDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
         var end = _endDate.Checked ? _endDate.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : "";
-        _persistDates?.Invoke(st.AccountId, start, end);
+        var (normStart, normEnd, swapped) = UsageEvents.NormalizeReportRange(start, end);
+        if (swapped)
+        {
+            _loadingDates = true;
+            ApplyDatePicker(_startDate, normStart);
+            ApplyDatePicker(_endDate, normEnd);
+            _loadingDates = false;
+        }
+        _persistDates?.Invoke(st.AccountId, normStart, normEnd);
         Render();
     }
 

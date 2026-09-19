@@ -782,6 +782,39 @@ public static class AccountSync
         return envelope;
     }
 
+    public static int UsageRecordCount(SyncSnapshot? snap)
+    {
+        if (snap?.Usage is null) return 0;
+        var n = 0;
+        foreach (var row in snap.Usage)
+            n += row.History.Count + row.Events.Count + row.TeamEvents.Count;
+        return n;
+    }
+
+    public static string FormatTrimNote(int dropped)
+    {
+        if (dropped <= 0) return "";
+        return $"用量明细因体积限制裁掉了 {dropped} 条最旧记录";
+    }
+
+    public static bool IsTrimNote(string? text) =>
+        !string.IsNullOrWhiteSpace(text) && text.Contains("用量明细因体积限制", StringComparison.Ordinal);
+
+    public static string TrimNote(SyncSnapshot original, int budget = SyncPlaintextBudget)
+    {
+        var trimmed = TrimSnapshotForUpload(original, budget);
+        return FormatTrimNote(Math.Max(0, UsageRecordCount(original) - UsageRecordCount(trimmed)));
+    }
+
+    public static string AppendTrimNote(string message, string? note)
+    {
+        var text = (message ?? "").Trim();
+        var extra = (note ?? "").Trim();
+        if (extra.Length == 0) return text;
+        if (text.Length == 0) return extra;
+        return text + "；" + extra;
+    }
+
     public static SyncSnapshot TrimSnapshotForUpload(SyncSnapshot snap, int budget = SyncPlaintextBudget)
     {
         if (snap.Usage is null) return snap;

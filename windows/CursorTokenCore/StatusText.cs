@@ -170,4 +170,32 @@ public static class StatusText
         rows.Add(("更新", updatedAt ?? DateTime.Now.ToString("HH:mm:ss")));
         return rows;
     }
+
+    public static string ShortError(string? text, int maxLen = 40)
+    {
+        var value = (text ?? "同步失败").Trim();
+        if (value.Length == 0) value = "同步失败";
+        return value.Length <= maxLen ? value : value[..(maxLen - 1)] + "…";
+    }
+
+    public static string FormatCompareSync(int ok, IReadOnlyList<string> failures, string stamp)
+    {
+        if (failures.Count == 0)
+            return $"已同步 {ok} 个账号  ·  {stamp}";
+        var shown = failures.Take(3).ToList();
+        var detail = string.Join("；", shown);
+        if (failures.Count > 3) detail += $" 等{failures.Count}个";
+        return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
+    }
+
+    public static string FormatSyncStatus(string lastAt, string lastError)
+    {
+        var error = (lastError ?? "").Trim();
+        var at = (lastAt ?? "").Trim();
+        if (error.Length > 0 && AccountSync.IsTrimNote(error) && at.Length > 0)
+            return "上次同步 " + AccountSync.FormatLocal(at) + "；" + error;
+        if (error.Length > 0) return error;
+        if (at.Length > 0) return "上次同步 " + AccountSync.FormatLocal(at);
+        return "";
+    }
 }

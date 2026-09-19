@@ -387,8 +387,9 @@ public struct AppConfig: Equatable, Sendable {
 
     public mutating func setReportRange(_ accountId: String, start: String, end: String) -> Bool {
         guard let idx = accounts.firstIndex(where: { $0.id == accountId }) else { return false }
-        accounts[idx].reportStartDate = UsageEvents.sanitizeReportDate(start)
-        accounts[idx].reportEndDate = UsageEvents.sanitizeReportDate(end)
+        let normalized = UsageEvents.normalizeReportRange(start, end)
+        accounts[idx].reportStartDate = normalized.start
+        accounts[idx].reportEndDate = normalized.end
         return true
     }
 

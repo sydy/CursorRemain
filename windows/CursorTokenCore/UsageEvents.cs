@@ -563,6 +563,15 @@ public static partial class UsageEvents
             : "";
     }
 
+    public static (string Start, string End, bool Swapped) NormalizeReportRange(string? start, string? end)
+    {
+        var s = SanitizeReportDate(start);
+        var e = SanitizeReportDate(end);
+        if (s.Length == 0 || e.Length == 0 || string.CompareOrdinal(s, e) <= 0)
+            return (s, e, false);
+        return (e, s, true);
+    }
+
     public static long? ReportDateStartMs(string? raw)
     {
         var date = SanitizeReportDate(raw);
