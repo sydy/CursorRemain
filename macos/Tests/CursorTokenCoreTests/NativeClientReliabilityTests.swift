@@ -135,6 +135,9 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 1, fail: 0), "")
         XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 2, fail: 0), "已保存 2 个账号")
         XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 1, fail: 1), "成功 1 / 失败 1")
+        XCTAssertEqual(StatusText.formatExportEmpty(), "当前没有可导出的明细")
+        XCTAssertEqual(StatusText.formatAccountMenuTitle("工作号", remaining: 42.4), "工作号  42%")
+        XCTAssertEqual(StatusText.formatAccountMenuTitle("", remaining: nil), "未命名账号")
         XCTAssertEqual(CursorAccountPaste.tokenValues("aaa.bbb.ccc\nddd.eee.fff"), ["aaa.bbb.ccc", "ddd.eee.fff"])
         XCTAssertEqual(CursorAccountPaste.tokenValues("name@example.com:secret"), [])
     }

@@ -128,6 +128,9 @@ public class NativeClientReliabilityTests
         Assert.Equal("", StatusText.FormatTokenSaveResult(1, 0));
         Assert.Equal("已保存 2 个账号", StatusText.FormatTokenSaveResult(2, 0));
         Assert.Equal("成功 1 / 失败 1", StatusText.FormatTokenSaveResult(1, 1));
+        Assert.Equal("当前没有可导出的明细", StatusText.FormatExportEmpty());
+        Assert.Equal("工作号  42%", StatusText.FormatAccountMenuTitle("工作号", 42.4));
+        Assert.Equal("未命名账号", StatusText.FormatAccountMenuTitle("", null));
         Assert.Equal(["aaa.bbb.ccc", "ddd.eee.fff"], CursorAccountPaste.TokenValues("aaa.bbb.ccc\nddd.eee.fff"));
         Assert.Empty(CursorAccountPaste.TokenValues("name@example.com:secret"));
     }

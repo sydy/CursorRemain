@@ -178,7 +178,10 @@ final class ReportStore: ObservableObject {
 
     func exportCSV() {
         let rows = report.events
-        guard !rows.isEmpty else { return }
+        guard !rows.isEmpty else {
+            status = StatusText.formatExportEmpty()
+            return
+        }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = StatusText.formatExportFilename(
@@ -406,6 +409,11 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
         }
         window?.makeKeyAndOrderFront(nil)
         Task { await store?.sync() }
+    }
+
+    func reloadIfVisible() {
+        guard window?.isVisible == true else { return }
+        store?.objectWillChange.send()
     }
 
     func close() {

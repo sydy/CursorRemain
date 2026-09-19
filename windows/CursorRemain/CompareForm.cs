@@ -340,7 +340,11 @@ sealed class CompareForm : Form
 
     void ExportCsv()
     {
-        if (_report.Rows.Count == 0) return;
+        if (_report.Rows.Count == 0)
+        {
+            _status.Text = StatusText.FormatExportEmpty();
+            return;
+        }
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",

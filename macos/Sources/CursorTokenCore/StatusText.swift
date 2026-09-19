@@ -369,6 +369,15 @@ public enum StatusText {
         return "成功 \(ok) / 失败 \(fail)"
     }
 
+    public static func formatExportEmpty() -> String { "当前没有可导出的明细" }
+
+    public static func formatAccountMenuTitle(_ label: String?, remaining: Double?) -> String {
+        let name = (label ?? "").trimmingCharacters(in: .whitespaces)
+        let title = name.isEmpty ? "未命名账号" : name
+        guard let remaining else { return title }
+        return title + String(format: "  %.0f%%", remaining)
+    }
+
     public static func formatReportCacheStatus(count: Int, accountLabel: String? = nil) -> String {
         let trimmed = (accountLabel ?? "").trimmingCharacters(in: .whitespaces)
         let prefix = trimmed.isEmpty ? "" : "当前：\(trimmed) · "

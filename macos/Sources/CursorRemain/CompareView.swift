@@ -76,7 +76,10 @@ final class CompareStore: ObservableObject {
     }
 
     func exportCSV() {
-        guard !report.rows.isEmpty else { return }
+        guard !report.rows.isEmpty else {
+            status = StatusText.formatExportEmpty()
+            return
+        }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = StatusText.formatExportFilename("cursor-account-compare")
