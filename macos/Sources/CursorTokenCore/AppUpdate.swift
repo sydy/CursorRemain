@@ -413,16 +413,14 @@ public enum AppUpdate {
 
     public static func assetNameCandidates(_ preferred: String) -> [String] {
         if preferred.caseInsensitiveCompare(windowsLightAssetName) == .orderedSame
-            || preferred.caseInsensitiveCompare(windowsAssetName) == .orderedSame
-            || preferred.caseInsensitiveCompare(legacyWindowsAssetName) == .orderedSame {
+            || preferred.caseInsensitiveCompare(windowsAssetName) == .orderedSame {
             if preferred.caseInsensitiveCompare(windowsLightAssetName) == .orderedSame {
-                return [windowsLightAssetName, windowsAssetName, legacyWindowsAssetName]
+                return [windowsLightAssetName, windowsAssetName]
             }
-            return [windowsAssetName, legacyWindowsAssetName]
+            return [windowsAssetName]
         }
-        if preferred.caseInsensitiveCompare(macosAssetName) == .orderedSame
-            || preferred.caseInsensitiveCompare(legacyMacosAssetName) == .orderedSame {
-            return [macosAssetName, legacyMacosAssetName]
+        if preferred.caseInsensitiveCompare(macosAssetName) == .orderedSame {
+            return [macosAssetName]
         }
         return [preferred]
     }

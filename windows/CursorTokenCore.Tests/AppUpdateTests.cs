@@ -167,10 +167,10 @@ public class AppUpdateTests
             Assets = [light, full],
         };
         Assert.Equal(
-            new[] { AppUpdate.WindowsLightAssetName, AppUpdate.WindowsAssetName, AppUpdate.LegacyWindowsAssetName },
+            new[] { AppUpdate.WindowsLightAssetName, AppUpdate.WindowsAssetName },
             AppUpdate.AssetNameCandidates(AppUpdate.WindowsLightAssetName));
         Assert.Equal(
-            new[] { AppUpdate.WindowsAssetName, AppUpdate.LegacyWindowsAssetName },
+            new[] { AppUpdate.WindowsAssetName },
             AppUpdate.AssetNameCandidates(AppUpdate.WindowsAssetName));
         Assert.Equal(AppUpdate.WindowsLightAssetName, AppUpdate.PreferredWindowsAssetName(true));
         Assert.Equal(AppUpdate.WindowsAssetName, AppUpdate.PreferredWindowsAssetName(false));
@@ -247,7 +247,7 @@ public class AppUpdateTests
     }
 
     [Fact]
-    public void PrefersNewAssetThenFallsBackToLegacy()
+    public void IgnoresLegacyZipWhenCurrentAssetMissing()
     {
         var release = new AppRelease
         {
@@ -263,12 +263,10 @@ public class AppUpdateTests
                 },
             ],
         };
-        var asset = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName);
-        Assert.NotNull(asset);
-        Assert.Equal(AppUpdate.LegacyWindowsAssetName, asset!.Name);
+        Assert.Null(AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName));
         var decision = AppUpdate.Evaluate(release, AppUpdate.WindowsAssetName, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-        Assert.True(decision.Available);
-        Assert.Equal(7, decision.Asset?.Id);
+        Assert.False(decision.Available);
+        Assert.Equal("最新发布没有本平台安装包", decision.Message);
     }
 
     [Fact]

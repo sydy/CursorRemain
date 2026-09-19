@@ -51,7 +51,8 @@ class SelfContainedPublishTests(unittest.TestCase):
         self.assertIn("CursorRemain-windows.zip", workflow)
         self.assertIn("CursorRemain-windows-light.zip", workflow)
         self.assertIn("CursorRemain-windows-setup.exe", workflow)
-        self.assertIn("CursorTokenTray-windows.zip", workflow)
+        self.assertNotIn("CursorTokenTray-windows.zip", workflow)
+        self.assertNotIn("CursorTokenTray-macos.zip", workflow)
 
 
 class WindowsInstallerPackagingTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
         self.assertNotIn("windowsdesktop-runtime-win-x64.exe", iss)
         self.assertNotIn("Microsoft.WindowsDesktop.App", iss)
         self.assertIn("releases/latest", iss)
-        self.assertIn("Local\\CursorTokenTray_SingleInstance_v2", iss)
+        self.assertIn("Local\\CursorRemain_SingleInstance_v2", iss)
         self.assertIn("ChineseSimplified.isl", iss)
         self.assertIn("CursorRemain", iss)
         self.assertIn("Software\\Microsoft\\Windows\\CurrentVersion\\Run", iss)
@@ -90,6 +91,10 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
         )
         self.assertIn("Cursor 余量", official)
         self.assertIn("CursorRemain-windows-light.zip", official)
+        self.assertNotIn("CursorTokenTray-windows.zip", official)
+        self.assertNotIn("程序已更名为", official)
+        self.assertNotIn("程序已更名为", notes)
+        self.assertIn("gh release delete-asset latest", notes)
 
     def test_installer_ps1_is_ascii(self) -> None:
         raw = (ROOT / "windows" / "packaging" / "build_installer.ps1").read_bytes()
@@ -100,8 +105,8 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
     def test_program_mutex_matches_installer(self) -> None:
         program = (ROOT / "windows" / "CursorRemain" / "Program.cs").read_text(encoding="utf-8")
         iss = (ROOT / "windows" / "packaging" / "setup.iss").read_text(encoding="utf-8")
-        self.assertIn('@"Local\\CursorTokenTray_SingleInstance_v2"', program)
-        self.assertIn("Local\\CursorTokenTray_SingleInstance_v2", iss)
+        self.assertIn('@"Local\\CursorRemain_SingleInstance_v2"', program)
+        self.assertIn("Local\\CursorRemain_SingleInstance_v2", iss)
 
 
 class ConfigDirMigrationTests(unittest.TestCase):
