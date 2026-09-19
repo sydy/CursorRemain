@@ -101,7 +101,7 @@ final class NativeClientReliabilityTests: XCTestCase {
     }
 
     func testCompareBestSkipsZeroCostRows() {
-        let unpaid = AccountCompareRow(totalCny: 0, totalTokens: 2_000_000, windowSource: "fallback")
+        let unpaid = AccountCompareRow(windowSource: "fallback", totalCny: 0, totalTokens: 2_000_000)
         let paid = AccountCompareRow(windowSource: "cycle", planCny: 150, windowPlanCny: 75, totalCny: 75, totalTokens: 1_000_000)
         let other = AccountCompareRow(windowSource: "validity", planCny: 150, windowPlanCny: 150, totalCny: 30, totalTokens: 1_000_000)
         XCTAssertFalse(UsageEvents.compareBestEligible(unpaid))
