@@ -181,13 +181,10 @@ final class ReportStore: ObservableObject {
         guard !rows.isEmpty else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = .current
-            f.dateFormat = "yyyyMMdd"
-            return "cursor-usage-\(f.string(from: Date())).csv"
-        }()
+        panel.nameFieldStringValue = StatusText.formatExportFilename(
+            "cursor-usage",
+            label: app.config.activeAccount?.displayLabel
+        )
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {

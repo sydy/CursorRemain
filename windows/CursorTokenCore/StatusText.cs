@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 
 namespace CursorTokenCore;
 
@@ -262,6 +263,39 @@ public static class StatusText
         var text = (message ?? "").Trim();
         if (text.Length == 0 || AccountSync.IsTrimNote(text)) return "";
         return text;
+    }
+
+    public static string ExportFileSlug(string? label)
+    {
+        var text = (label ?? "").Trim();
+        if (text.Length == 0) return "";
+        var chars = text.Select(ch =>
+            char.IsLetterOrDigit(ch) || (ch >= '\u4e00' && ch <= '\u9fff') || ch is '-' or '_'
+                ? ch
+                : '-').ToArray();
+        return new string(chars).Trim('-') is { Length: > 0 } slug
+            ? slug.Length > 24 ? slug[..24] : slug
+            : "";
+    }
+
+    public static string FormatExportFilename(string prefix, string? label = null, string? day = null)
+    {
+        var stamp = string.IsNullOrWhiteSpace(day) ? DateTimeOffset.Now.ToString("yyyyMMdd") : day.Trim();
+        var slug = ExportFileSlug(label);
+        return string.IsNullOrEmpty(slug) ? $"{prefix}-{stamp}.csv" : $"{prefix}-{slug}-{stamp}.csv";
+    }
+
+    public static string FormatCompareAccountName(string? name, bool isActive)
+    {
+        var text = string.IsNullOrWhiteSpace(name) ? "未命名账号" : name.Trim();
+        return isActive ? text + "  · 当前" : text;
+    }
+
+    public static string FormatTokenSaveResult(int ok, int fail)
+    {
+        if (ok <= 0 && fail <= 0) return "";
+        if (fail <= 0) return ok > 1 ? $"已保存 {ok} 个账号" : "";
+        return $"成功 {ok} / 失败 {fail}";
     }
 
     public static string FormatReportCacheStatus(int count, string? accountLabel = null)

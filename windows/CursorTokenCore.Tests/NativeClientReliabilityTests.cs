@@ -121,6 +121,13 @@ public class NativeClientReliabilityTests
         Assert.Equal("", StatusText.FormatCloudSyncNotify(true, "登录已过期，请重新登录"));
         Assert.Equal("登录已过期，请重新登录", StatusText.FormatCloudSyncNotify(false, "登录已过期，请重新登录"));
         Assert.Equal("", StatusText.FormatCloudSyncNotify(false, "用量明细因体积限制裁掉了 3 条最旧记录"));
+        Assert.Equal("cursor-usage-工作号-20260919.csv", StatusText.FormatExportFilename("cursor-usage", "工作号", "20260919"));
+        Assert.Equal("cursor-account-compare-20260919.csv", StatusText.FormatExportFilename("cursor-account-compare", "", "20260919"));
+        Assert.Equal("工作号  · 当前", StatusText.FormatCompareAccountName("工作号", true));
+        Assert.Equal("工作号", StatusText.FormatCompareAccountName("工作号", false));
+        Assert.Equal("", StatusText.FormatTokenSaveResult(1, 0));
+        Assert.Equal("已保存 2 个账号", StatusText.FormatTokenSaveResult(2, 0));
+        Assert.Equal("成功 1 / 失败 1", StatusText.FormatTokenSaveResult(1, 1));
         Assert.Equal(["aaa.bbb.ccc", "ddd.eee.fff"], CursorAccountPaste.TokenValues("aaa.bbb.ccc\nddd.eee.fff"));
         Assert.Empty(CursorAccountPaste.TokenValues("name@example.com:secret"));
     }

@@ -228,7 +228,9 @@ sealed class CompareForm : Form
             StyleRow(_grid.Rows[_grid.Rows.Add(Line(group.ChannelLabel, "", "", "", "", "", "", ""))], RowKind.Header);
             foreach (var row in group.Rows)
             {
-                var name = AccountName(accounts, row);
+                var name = StatusText.FormatCompareAccountName(
+                    AccountName(accounts, row),
+                    row.AccountId == _state().ActiveAccountId);
                 var memb = UsageParser.FormatMembershipType(row.MembershipType);
                 if (!string.IsNullOrEmpty(memb) && !memb.Equals(name, StringComparison.OrdinalIgnoreCase))
                     name += "  " + memb;
@@ -342,7 +344,7 @@ sealed class CompareForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",
-            FileName = $"cursor-account-compare-{DateTimeOffset.Now:yyyyMMdd}.csv",
+            FileName = StatusText.FormatExportFilename("cursor-account-compare"),
             OverwritePrompt = true,
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;

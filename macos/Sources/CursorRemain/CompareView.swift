@@ -79,13 +79,7 @@ final class CompareStore: ObservableObject {
         guard !report.rows.isEmpty else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
-        panel.nameFieldStringValue = {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.timeZone = .current
-            f.dateFormat = "yyyyMMdd"
-            return "cursor-account-compare-\(f.string(from: Date())).csv"
-        }()
+        panel.nameFieldStringValue = StatusText.formatExportFilename("cursor-account-compare")
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
@@ -285,7 +279,7 @@ struct CompareRootView: View {
                 out.append(line(
                     id: "acc-\(row.accountId)",
                     kind: .account,
-                    name: name,
+                    name: StatusText.formatCompareAccountName(name, isActive: row.accountId == store.app.config.activeAccountId),
                     membership: UsageParser.formatMembershipType(row.membershipType),
                     window: window,
                     dailyHolding: UsageEvents.formatCNY(row.dailyHoldingCny),

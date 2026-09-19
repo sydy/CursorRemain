@@ -498,7 +498,7 @@ sealed class ReportForm : Form
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",
-            FileName = $"cursor-usage-{DateTimeOffset.Now:yyyyMMdd}.csv",
+            FileName = StatusText.FormatExportFilename("cursor-usage", _state().AccountLabel),
             OverwritePrompt = true,
         };
         if (dlg.ShowDialog(this) != DialogResult.OK) return;

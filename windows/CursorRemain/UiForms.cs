@@ -863,11 +863,18 @@ sealed class SettingsForm : Form
         _cfg.AutostartEnabled = _auto.Checked;
         _cfg.AutoUpdateEnabled = _autoUpdate.Checked;
         ReadKindInto(_cfg.ActiveAccount);
+        var added = 0;
+        var failed = 0;
         foreach (var token in CursorAccountPaste.TokenValues(_token.Text))
-            try { _cfg.UpsertAccount(token, activate: true); } catch { }
+        {
+            try { _cfg.UpsertAccount(token, activate: true); added++; }
+            catch { failed++; }
+        }
         AccountSync.TouchChangedSettings(_cfg, beforeSettings);
         _onSaved(_cfg);
         LoadFrom(_cfg);
+        var saved = StatusText.FormatTokenSaveResult(added, failed);
+        if (saved.Length > 0) _status.Text = saved;
     }
 
     string ExportPassphrase()
