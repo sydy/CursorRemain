@@ -428,6 +428,17 @@ def format_token_save_result(ok: int, fail: int) -> str:
     return f"成功 {ok} / 失败 {fail}"
 
 
+def format_export_empty() -> str:
+    return "当前没有可导出的明细"
+
+
+def format_account_menu_title(label: str | None, remaining: float | None) -> str:
+    name = (label or "").strip() or "未命名账号"
+    if remaining is None:
+        return name
+    return f"{name}  {remaining:.0f}%"
+
+
 def flyout_settings_title(error_message: str | None) -> str:
     from cursor_api import is_auth_error_message
 

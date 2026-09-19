@@ -206,8 +206,8 @@ sealed partial class TrayContext : ApplicationContext
         {
             foreach (var acc in _config.Accounts)
             {
-                var title = acc.DisplayLabel;
-                if (acc.LastRemaining is { } r) title += $"  {r:0}%";
+                var live = acc.Id == _config.ActiveAccountId ? _usage?.RemainingPercent : null;
+                var title = StatusText.FormatAccountMenuTitle(acc.DisplayLabel, live ?? acc.LastRemaining);
                 var item = new ToolStripMenuItem(title) { Checked = acc.Id == _config.ActiveAccountId, Tag = acc.Id };
                 item.Click += (_, _) =>
                 {

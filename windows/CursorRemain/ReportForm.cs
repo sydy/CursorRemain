@@ -494,7 +494,11 @@ sealed class ReportForm : Form
         var spend = _state().Spend;
         var allocation = _state().Allocation;
         var report = UsageEvents.BuildReport(_all, CurrentFilter(), spend, allocation);
-        if (report.Events.Count == 0) return;
+        if (report.Events.Count == 0)
+        {
+            _status.Text = StatusText.FormatExportEmpty();
+            return;
+        }
         using var dlg = new SaveFileDialog
         {
             Filter = "CSV 文件 (*.csv)|*.csv",

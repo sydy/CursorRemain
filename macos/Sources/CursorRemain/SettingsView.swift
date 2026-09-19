@@ -38,31 +38,7 @@ struct SettingsRootView: View {
         .padding(20)
         .frame(width: 540, height: 680)
         .onAppear {
-            tokenText = ""
-            intervalText = String(store.config.refreshIntervalMinutes)
-            let membership = store.config.activeAccount?.membershipType ?? ""
-            let plan = store.config.monthlyPlanUsd > 0
-                ? store.config.monthlyPlanUsd
-                : UsageEvents.defaultMonthlyPlanUsd(membership)
-            planUsdText = formatDecimal(plan)
-            actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
-            channel = store.config.activeAccount?.channel ?? ""
-            cnyRateText = formatDecimal(store.config.usdCnyRate)
-            thresholdText = store.config.alertThresholds.map(String.init).joined(separator: ",")
-            cloudEmail = store.config.cloudEmail
-            cloudPassword = ""
-            syncStatus = {
-                let decrypt = StatusText.formatCloudDecryptNote(
-                    decryptError: store.config.decryptError,
-                    syncSecretFailed: store.config.syncSecretDecryptFailed,
-                    cloudAccessFailed: store.config.cloudAccessDecryptFailed
-                )
-                let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
-                if !decrypt.isEmpty && !text.isEmpty { return decrypt + " " + text }
-                if !decrypt.isEmpty { return decrypt }
-                if !text.isEmpty { return text }
-                return store.config.cloudLoggedIn ? "尚未同步" : ""
-            }()
+            reloadFields()
             if focusToken || store.focusToken {
                 tokenFocused = true
             }
@@ -70,6 +46,9 @@ struct SettingsRootView: View {
                 store.pendingCursorImport = false
                 Task { await importFrom(prefer: "cursor-app") }
             }
+        }
+        .onChange(of: store.settingsReloadTick) { _ in
+            reloadFields()
         }
         .onChange(of: store.focusToken) { focused in
             if focused { tokenFocused = true }
@@ -569,6 +548,34 @@ struct SettingsRootView: View {
         }
     }
 
+    func reloadFields() {
+        tokenText = ""
+        intervalText = String(store.config.refreshIntervalMinutes)
+        let membership = store.config.activeAccount?.membershipType ?? ""
+        let plan = store.config.monthlyPlanUsd > 0
+            ? store.config.monthlyPlanUsd
+            : UsageEvents.defaultMonthlyPlanUsd(membership)
+        planUsdText = formatDecimal(plan)
+        actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
+        channel = store.config.activeAccount?.channel ?? ""
+        cnyRateText = formatDecimal(store.config.usdCnyRate)
+        thresholdText = store.config.alertThresholds.map(String.init).joined(separator: ",")
+        cloudEmail = store.config.cloudEmail
+        cloudPassword = ""
+        syncStatus = {
+            let decrypt = StatusText.formatCloudDecryptNote(
+                decryptError: store.config.decryptError,
+                syncSecretFailed: store.config.syncSecretDecryptFailed,
+                cloudAccessFailed: store.config.cloudAccessDecryptFailed
+            )
+            let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
+            if !decrypt.isEmpty && !text.isEmpty { return decrypt + " " + text }
+            if !decrypt.isEmpty { return decrypt }
+            if !text.isEmpty { return text }
+            return store.config.cloudLoggedIn ? "尚未同步" : ""
+        }()
+    }
+
     func persistAccountFields() {
         guard let acc = store.config.activeAccount else { return }
         var cfg = store.config
@@ -852,9 +859,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             win.delegate = self
             window = win
         }
+        let wasHidden = window?.isVisible != true
         if window?.contentView == nil {
             window?.contentView = NSHostingView(rootView: SettingsRootView(store: store, startImport: startImport, focusToken: focusToken))
             window?.center()
+        } else if wasHidden {
+            store.settingsReloadTick += 1
         }
         window?.makeKeyAndOrderFront(nil)
         if focusToken {

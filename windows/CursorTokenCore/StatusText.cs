@@ -298,6 +298,14 @@ public static class StatusText
         return $"成功 {ok} / 失败 {fail}";
     }
 
+    public static string FormatExportEmpty() => "当前没有可导出的明细";
+
+    public static string FormatAccountMenuTitle(string? label, double? remaining)
+    {
+        var name = string.IsNullOrWhiteSpace(label) ? "未命名账号" : label.Trim();
+        return remaining is { } pct ? $"{name}  {pct:0}%" : name;
+    }
+
     public static string FormatReportCacheStatus(int count, string? accountLabel = null)
     {
         var prefix = string.IsNullOrWhiteSpace(accountLabel) ? "" : "当前：" + accountLabel.Trim() + " · ";

@@ -18,6 +18,7 @@ final class AppStore: ObservableObject {
     @Published var updateBusy = false
     @Published var focusToken = false
     @Published var pendingCursorImport = false
+    @Published var settingsReloadTick = 0
     @Published var historyPoints: [HistoryPoint] = []
     @Published var dailyAvgBurn: Double?
 
@@ -126,6 +127,7 @@ final class AppStore: ObservableObject {
         }
         enqueueReconcile(refresh: false)
         CompareWindowController.shared.reloadIfVisible()
+        ReportWindowController.shared.reloadIfVisible()
         objectWillChange.send()
     }
 

@@ -157,8 +157,8 @@ final class StatusItemController: NSObject {
             sub.addItem(empty)
         } else {
             for acc in accounts {
-                var title = acc.displayLabel
-                if let r = acc.lastRemaining { title += String(format: "  %.0f%%", r) }
+                let live = acc.id == store.config.activeAccountId ? store.usage?.remainingPercent : nil
+                let title = StatusText.formatAccountMenuTitle(acc.displayLabel, remaining: live ?? acc.lastRemaining)
                 let item = NSMenuItem(title: title, action: #selector(switchAccount(_:)), keyEquivalent: "")
                 item.target = self
                 item.representedObject = acc.id

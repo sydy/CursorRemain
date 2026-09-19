@@ -372,6 +372,8 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("openReport", mac_menu)
         self.assertIn("账号对比", mac_menu)
         self.assertIn("openCompare", mac_menu)
+        self.assertIn("formatAccountMenuTitle", mac_menu)
+        self.assertIn("FormatAccountMenuTitle", win_prog)
         self.assertIn("get-filtered-usage-events", mac_parser)
         self.assertIn("get-sand-usage-status", mac_parser)
         self.assertIn("parseSandUsageStatus", mac_parser)
@@ -464,6 +466,12 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("def format_export_filename", py_status)
         self.assertIn("def format_compare_account_name", py_status)
         self.assertIn("def format_token_save_result", py_status)
+        self.assertIn("def format_export_empty", py_status)
+        self.assertIn("def format_account_menu_title", py_status)
+        self.assertIn("FormatExportEmpty", win_status)
+        self.assertIn("formatExportEmpty", mac_status)
+        self.assertIn("FormatAccountMenuTitle", win_status)
+        self.assertIn("formatAccountMenuTitle", mac_status)
         self.assertIn("Token 解不开", win_events)
         self.assertIn("Token 解不开", mac_events)
         self.assertIn("BuildAccountCompareReport", win_compare)
@@ -510,6 +518,13 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("formatTokenSaveResult", mac_settings)
         self.assertIn("if window?.contentView == nil", mac_settings)
         self.assertIn("pendingCursorImport", mac_settings)
+        self.assertIn("reloadFields", mac_settings)
+        self.assertIn("settingsReloadTick", mac_settings)
+        self.assertIn("formatExportEmpty", mac_report)
+        self.assertIn("FormatExportEmpty", win_report)
+        self.assertIn("formatExportEmpty", mac_compare)
+        self.assertIn("FormatExportEmpty", win_compare)
+        self.assertIn("reloadIfVisible", mac_report)
         win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
         mac_flyout = (root / "macos" / "Sources" / "CursorRemain" / "FlyoutView.swift").read_text(encoding="utf-8")
         mac_store = (root / "macos" / "Sources" / "CursorRemain" / "AppStore.swift").read_text(encoding="utf-8")
@@ -517,6 +532,8 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("flyoutSettingsTitle", mac_flyout)
         self.assertIn("NSEvent.mouseLocation", mac_flyout)
         self.assertIn("CompareWindowController.shared.reloadIfVisible", mac_store)
+        self.assertIn("ReportWindowController.shared.reloadIfVisible", mac_store)
+        self.assertIn("settingsReloadTick", mac_store)
         self.assertIn("FormatCloudSyncNotify", win_prog)
         self.assertIn("formatCloudSyncNotify", mac_store)
         self.assertIn("pendingCursorImport", mac_store)
@@ -676,6 +693,8 @@ class SourceGuardTests(unittest.TestCase):
             format_compare_account_name,
             format_compare_sync_progress,
             format_export_filename,
+            format_account_menu_title,
+            format_export_empty,
             format_token_save_result,
             format_report_cache_status,
             format_report_filter_empty,
@@ -703,6 +722,9 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(format_token_save_result(1, 0), "")
         self.assertEqual(format_token_save_result(2, 0), "已保存 2 个账号")
         self.assertEqual(format_token_save_result(1, 1), "成功 1 / 失败 1")
+        self.assertEqual(format_export_empty(), "当前没有可导出的明细")
+        self.assertEqual(format_account_menu_title("工作号", 42.4), "工作号  42%")
+        self.assertEqual(format_account_menu_title("", None), "未命名账号")
         kpi = format_report_spend_kpi(75, 150, 37.5, 7.5, True, 75)
         self.assertIn("已分摊", kpi)
         self.assertIn("本窗口折算", kpi)
