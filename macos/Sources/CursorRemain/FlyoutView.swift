@@ -64,7 +64,7 @@ struct FlyoutView: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             } else {
-                Text(store.errorMessage ?? "等待刷新…")
+                Text(StatusText.formatFlyoutError(store.errorMessage))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

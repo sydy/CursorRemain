@@ -267,6 +267,18 @@ public class FixtureTests
                 .ToList();
             var filtEl = cse.GetProperty("filter");
             var spendEl = cse.GetProperty("spend");
+            ReportAllocationWindow? allocation = null;
+            if (cse.TryGetProperty("allocation", out var allocEl) && allocEl.ValueKind == JsonValueKind.Object)
+            {
+                allocation = new ReportAllocationWindow(
+                    NullStr(allocEl, "account_kind") ?? "",
+                    NullStr(allocEl, "temp_start_at") ?? "",
+                    allocEl.TryGetProperty("temp_valid_days", out var days) ? days.GetInt32() : 0,
+                    allocEl.TryGetProperty("temp_valid_hours", out var hours) ? hours.GetInt32() : 0,
+                    NullStr(allocEl, "billing_cycle_start") ?? "",
+                    NullStr(allocEl, "billing_cycle_end") ?? "",
+                    allocEl.TryGetProperty("now_ms", out var now) ? now.GetInt64() : null);
+            }
             var report = UsageEvents.BuildReport(events, new UsageReportFilter
             {
                 Kind = filtEl.GetProperty("kind").GetString() ?? "",
@@ -280,13 +292,15 @@ public class FixtureTests
                 spendEl.GetProperty("monthly_plan_usd").GetDouble(),
                 spendEl.GetProperty("usd_cny_rate").GetDouble(),
                 NullStr(spendEl, "membership_type") ?? "",
-                spendEl.TryGetProperty("actual_cny", out var actualIn) ? actualIn.GetDouble() : 0));
+                spendEl.TryGetProperty("actual_cny", out var actualIn) ? actualIn.GetDouble() : 0), allocation);
             var exp = cse.GetProperty("expected");
             Assert.Equal(exp.GetProperty("monthly_plan_usd").GetDouble(), report.MonthlyPlanUsd, 3);
             Assert.Equal(exp.GetProperty("usd_cny_rate").GetDouble(), report.UsdCnyRate, 3);
             Assert.Equal(exp.GetProperty("plan_cny").GetDouble(), report.PlanCny, 3);
             Assert.Equal(exp.GetProperty("on_demand_cny").GetDouble(), report.OnDemandCny, 3);
             Assert.Equal(exp.GetProperty("total_cny").GetDouble(), report.TotalCny, 3);
+            if (exp.TryGetProperty("window_plan_cny", out var windowPlan))
+                Assert.Equal(windowPlan.GetDouble(), report.WindowPlanCny, 3);
             if (exp.TryGetProperty("actual_cny", out var actualExp))
                 Assert.Equal(actualExp.GetDouble(), report.ActualCny, 3);
             if (exp.TryGetProperty("uses_actual_cny", out var usesActual))

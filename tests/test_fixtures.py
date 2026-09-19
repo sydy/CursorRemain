@@ -195,7 +195,7 @@ class GoldenFixtureTests(unittest.TestCase):
                 [(m.name, m.tokens, m.cents, m.count, m.headless_count) for m in report.models],
                 [(m["name"], m["tokens"], m["cents"], m["count"], m["headless_count"]) for m in exp["models"]],
             )
-        from usage_report import CnySpendSettings, default_monthly_plan_usd, format_cny
+        from usage_report import CnySpendSettings, ReportAllocationWindow, default_monthly_plan_usd, format_cny
 
         for row in data["cny_spend"]["defaults"]:
             self.assertEqual(default_monthly_plan_usd(row["membership"]), row["output"])
@@ -205,6 +205,18 @@ class GoldenFixtureTests(unittest.TestCase):
             events = [e for e in (usage_event_from_dict(row) for row in cse["events"]) if e is not None]
             filt = cse["filter"]
             spend_raw = cse["spend"]
+            alloc_raw = cse.get("allocation") or {}
+            allocation = None
+            if alloc_raw:
+                allocation = ReportAllocationWindow(
+                    account_kind=str(alloc_raw.get("account_kind") or ""),
+                    temp_start_at=str(alloc_raw.get("temp_start_at") or ""),
+                    temp_valid_days=int(alloc_raw.get("temp_valid_days") or 0),
+                    temp_valid_hours=int(alloc_raw.get("temp_valid_hours") or 0),
+                    billing_cycle_start=str(alloc_raw.get("billing_cycle_start") or ""),
+                    billing_cycle_end=str(alloc_raw.get("billing_cycle_end") or ""),
+                    now_ms=alloc_raw.get("now_ms"),
+                )
             report = build_usage_report(
                 events,
                 UsageReportFilter(
@@ -222,6 +234,7 @@ class GoldenFixtureTests(unittest.TestCase):
                     membership_type=spend_raw.get("membership_type", ""),
                     actual_cny=spend_raw.get("actual_cny", 0),
                 ),
+                allocation,
             )
             exp = cse["expected"]
             self.assertAlmostEqual(report.monthly_plan_usd, exp["monthly_plan_usd"], places=3)
@@ -229,6 +242,8 @@ class GoldenFixtureTests(unittest.TestCase):
             self.assertAlmostEqual(report.plan_cny, exp["plan_cny"], places=3)
             self.assertAlmostEqual(report.on_demand_cny, exp["on_demand_cny"], places=3)
             self.assertAlmostEqual(report.total_cny, exp["total_cny"], places=3)
+            if "window_plan_cny" in exp:
+                self.assertAlmostEqual(report.window_plan_cny, exp["window_plan_cny"], places=3)
             if "actual_cny" in exp:
                 self.assertAlmostEqual(report.actual_cny, exp["actual_cny"], places=3)
             if "uses_actual_cny" in exp:

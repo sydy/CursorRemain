@@ -156,6 +156,7 @@ public struct UsageReport: Equatable, Sendable {
     public var monthlyPlanUsd: Double = 0
     public var actualCny: Double = 0
     public var usesActualCny: Bool = false
+    public var windowPlanCny: Double = 0
 }
 
 public struct CnySpendSettings: Equatable, Sendable {
@@ -169,6 +170,62 @@ public struct CnySpendSettings: Equatable, Sendable {
         self.usdCnyRate = usdCnyRate
         self.membershipType = membershipType
         self.actualCny = actualCny
+    }
+}
+
+public struct ReportAllocationWindow: Equatable, Sendable {
+    public var accountKind: String
+    public var tempStartAt: String
+    public var tempValidDays: Int
+    public var tempValidHours: Int
+    public var billingCycleStart: String
+    public var billingCycleEnd: String
+    public var nowMs: Int64?
+
+    public init(
+        accountKind: String = "",
+        tempStartAt: String = "",
+        tempValidDays: Int = 0,
+        tempValidHours: Int = 0,
+        billingCycleStart: String = "",
+        billingCycleEnd: String = "",
+        nowMs: Int64? = nil
+    ) {
+        self.accountKind = accountKind
+        self.tempStartAt = tempStartAt
+        self.tempValidDays = tempValidDays
+        self.tempValidHours = tempValidHours
+        self.billingCycleStart = billingCycleStart
+        self.billingCycleEnd = billingCycleEnd
+        self.nowMs = nowMs
+    }
+
+    public var hasWindow: Bool {
+        if !billingCycleStart.trimmingCharacters(in: .whitespaces).isEmpty
+            || !billingCycleEnd.trimmingCharacters(in: .whitespaces).isEmpty
+        {
+            return true
+        }
+        return AccountValidity.sanitizeKind(accountKind) == AccountValidity.temporary
+            && (!tempStartAt.trimmingCharacters(in: .whitespaces).isEmpty || tempValidDays > 0 || tempValidHours > 0)
+    }
+
+    public static func from(account: Account?, usage: UsageSnapshot?, nowMs: Int64? = nil) -> ReportAllocationWindow {
+        ReportAllocationWindow(
+            accountKind: account?.accountKind ?? "",
+            tempStartAt: account?.tempStartAt ?? "",
+            tempValidDays: account?.tempValidDays ?? 0,
+            tempValidHours: account?.tempValidHours ?? 0,
+            billingCycleStart: firstNonEmpty(usage?.billingCycleStart, account?.billingCycleStart),
+            billingCycleEnd: firstNonEmpty(usage?.billingCycleEnd, account?.billingCycleEnd),
+            nowMs: nowMs
+        )
+    }
+
+    static func firstNonEmpty(_ left: String?, _ right: String?) -> String {
+        let a = (left ?? "").trimmingCharacters(in: .whitespaces)
+        if !a.isEmpty { return a }
+        return (right ?? "").trimmingCharacters(in: .whitespaces)
     }
 }
 
@@ -296,9 +353,19 @@ public struct UsageEventsSyncResult: Sendable {
     public var fetched: Int
     public var totalAvailable: Int
     public var truncated: Bool
+    public var note: String
+
+    public init(events: [UsageEvent], fetched: Int, totalAvailable: Int, truncated: Bool, note: String = "") {
+        self.events = events
+        self.fetched = fetched
+        self.totalAvailable = totalAvailable
+        self.truncated = truncated
+        self.note = note
+    }
 }
 
 public enum UsageEvents {
+    public static let noteTeamPersonal = "team_personal"
     public static let kindIncluded = "included"
     public static let kindFree = "free"
     public static let kindOnDemand = "on_demand"
@@ -729,21 +796,49 @@ public enum UsageEvents {
         return 0
     }
 
-    static func cnyById(_ events: [UsageEvent], spend: CnySpendSettings?) -> (byId: [String: Double], planCny: Double, onDemandCny: Double, monthly: Double, rate: Double, actual: Double, usesActual: Bool) {
-        guard let spend else { return ([:], 0, 0, 0, 0, 0, false) }
+    static func cnyById(_ events: [UsageEvent], spend: CnySpendSettings?, allocation: ReportAllocationWindow? = nil) -> (byId: [String: Double], planCny: Double, onDemandCny: Double, monthly: Double, rate: Double, actual: Double, usesActual: Bool, windowPlan: Double) {
+        guard let spend else { return ([:], 0, 0, 0, 0, 0, false, 0) }
         let resolved = resolvePlanCny(spend)
-        let pool = events.filter { isCostPoolKind($0.kind, usesActual: resolved.usesActual) }
+        var windowPlan = resolved.planCny
+        var startMs: Int64?
+        var endMs: Int64?
+        if let allocation, allocation.hasWindow {
+            let window = resolveCompareWindow(
+                accountKind: allocation.accountKind,
+                tempStartAt: allocation.tempStartAt,
+                tempValidDays: allocation.tempValidDays,
+                tempValidHours: allocation.tempValidHours,
+                billingCycleStart: allocation.billingCycleStart,
+                billingCycleEnd: allocation.billingCycleEnd,
+                nowMs: allocation.nowMs
+            )
+            startMs = window.startMs
+            endMs = window.endMs
+            let daily = resolved.planCny > 0 ? resolved.planCny / holdingDays : 0
+            windowPlan = daily * compareWindowDays(window.startMs, window.endMs)
+            if resolved.usesActual && resolved.actual > 0 {
+                windowPlan = min(windowPlan, resolved.actual)
+            }
+        }
+        let allocEvents = events.filter { ev in
+            guard let startMs, let endMs else { return true }
+            return ev.timestampMs >= startMs && ev.timestampMs <= endMs
+        }
+        let pool = allocEvents.filter { isCostPoolKind($0.kind, usesActual: resolved.usesActual) }
         let includedCostSum = pool.reduce(0.0) { $0 + costCents($1) }
         let includedCount = pool.count
         var byId: [String: Double] = [:]
         var onDemandCny = 0.0
         for (i, ev) in events.enumerated() {
-            let amount = allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: resolved.planCny, rate: resolved.rate, usesActual: resolved.usesActual)
+            let inWindow = startMs == nil || endMs == nil || (ev.timestampMs >= startMs! && ev.timestampMs <= endMs!)
+            let amount = inWindow
+                ? allocateEventCny(ev, includedCostSum: includedCostSum, includedCount: includedCount, planCny: windowPlan, rate: resolved.rate, usesActual: resolved.usesActual)
+                : 0
             let key = ev.id.isEmpty ? "#\(i)" : ev.id
             byId[key] = amount
             if ev.kind == kindOnDemand { onDemandCny += amount }
         }
-        return (byId, resolved.planCny, onDemandCny, resolved.monthly, resolved.rate, resolved.actual, resolved.usesActual)
+        return (byId, resolved.planCny, onDemandCny, resolved.monthly, resolved.rate, resolved.actual, resolved.usesActual, windowPlan)
     }
 
     public static func formatTime(_ timestampMs: Int64) -> String {
@@ -1062,7 +1157,7 @@ public enum UsageEvents {
         return dollars * 100.0
     }
 
-    public static func buildReport(_ events: [UsageEvent], filter: UsageReportFilter = UsageReportFilter(), spend: CnySpendSettings? = nil) -> UsageReport {
+    public static func buildReport(_ events: [UsageEvent], filter: UsageReportFilter = UsageReportFilter(), spend: CnySpendSettings? = nil, allocation: ReportAllocationWindow? = nil) -> UsageReport {
         let kind = filter.kind.trimmingCharacters(in: .whitespaces).lowercased()
         let category = filter.category.trimmingCharacters(in: .whitespaces).lowercased()
         let model = filter.model.trimmingCharacters(in: .whitespaces)
@@ -1070,7 +1165,7 @@ public enum UsageEvents {
         let normalized = normalizeReportRange(filter.startDate, filter.endDate)
         let startMs = reportDateStartMs(normalized.start)
         let endMs = reportDateEndMs(normalized.end)
-        let allocated = cnyById(events, spend: spend)
+        let allocated = cnyById(events, spend: spend, allocation: allocation)
         var selected: [UsageEvent] = []
         for (i, ev) in events.enumerated() {
             if !kind.isEmpty && ev.kind != kind { continue }
@@ -1153,12 +1248,15 @@ public enum UsageEvents {
             usdCnyRate: allocated.rate,
             monthlyPlanUsd: allocated.monthly,
             actualCny: allocated.actual,
-            usesActualCny: allocated.usesActual
+            usesActualCny: allocated.usesActual,
+            windowPlanCny: allocated.windowPlan
         )
     }
 
-    public static func toCSV(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil) -> String {
-        let allocated = spend == nil ? (byId: [String: Double](), planCny: 0.0, onDemandCny: 0.0, monthly: 0.0, rate: 0.0, actual: 0.0, usesActual: false) : cnyById(allocationBase ?? events, spend: spend)
+    public static func toCSV(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
+        let allocated = spend == nil
+            ? (byId: [String: Double](), planCny: 0.0, onDemandCny: 0.0, monthly: 0.0, rate: 0.0, actual: 0.0, usesActual: false, windowPlan: 0.0)
+            : cnyById(allocationBase ?? events, spend: spend, allocation: allocation)
         var lines = ["\u{FEFF}\(csvHeader)"]
         for (i, ev) in events.enumerated() {
             let cnyText: String
@@ -1285,7 +1383,7 @@ public enum UsageEvents {
             if uid > 0 { userId = uid }
             else if rawTeam > 0 {
                 // Team feed without userId is the whole org; do not pollute the personal cache.
-                return UsageEventsSyncResult(events: existing, fetched: 0, totalAvailable: existing.count, truncated: false)
+                return UsageEventsSyncResult(events: existing, fetched: 0, totalAvailable: existing.count, truncated: false, note: noteTeamPersonal)
             }
         }
         let fetched = try await client.fetchUsageEvents(

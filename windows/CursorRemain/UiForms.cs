@@ -908,7 +908,7 @@ sealed class SettingsForm : Form
             await CloudSync.ChangePasswordAsync(_cfg, oldPass, newPass);
             NotifySaved();
             LoadFrom(_cfg);
-            _syncStatus.Text = "密码已更新，云端数据已用新密码重封";
+            _syncStatus.Text = "密码已更新，云端数据已用新密码重封。请在其他设备用新密码重新登录云同步。";
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
     }

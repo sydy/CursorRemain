@@ -50,14 +50,14 @@ public static partial class UsageEvents
         return string.Join(",", cols);
     }
 
-    public static string ToCsv(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null)
+    public static string ToCsv(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null, ReportAllocationWindow? allocation = null)
     {
         var rows = events as IList<UsageEvent> ?? events.ToList();
         Dictionary<string, double> cnyById = [];
         if (spend is not null)
         {
             var baseEvents = allocationBase as IList<UsageEvent> ?? allocationBase?.ToList() ?? rows;
-            cnyById = CnyById(baseEvents, spend).byId;
+            cnyById = CnyById(baseEvents, spend, allocation).byId;
         }
         var sb = new StringBuilder();
         sb.Append('\uFEFF');

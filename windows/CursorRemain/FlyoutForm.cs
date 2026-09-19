@@ -214,7 +214,7 @@ sealed class FlyoutForm : Form
         DrawGauge(g, gauge, remaining, error, unlimited, tone, pal, s);
 
         var caption = error || _usage is null
-            ? (_error ?? "等待刷新…")
+            ? StatusText.FormatFlyoutError(_error)
             : StatusText.FormatPlanCaption(_usage.MembershipType, _accountLabel);
         using var planFont = UiFont(9f);
         var planTop = gauge.Bottom + 10 * s;

@@ -264,6 +264,72 @@ def format_compare_sync(ok: int, failures: list[str], stamp: str) -> str:
     return f"已同步 {ok} 个账号，{len(failures)} 个失败（{detail}）  ·  {stamp}"
 
 
+def format_report_spend_kpi(
+    total_cny: float,
+    plan_cny: float,
+    on_demand_cny: float,
+    usd_cny_rate: float,
+    uses_actual: bool,
+    window_plan_cny: float = 0.0,
+) -> str:
+    from usage_report import format_cny
+
+    if plan_cny <= 0 and on_demand_cny <= 0 and total_cny <= 0:
+        return ""
+    rate = f"{usd_cny_rate:.2f}"
+    if uses_actual:
+        text = f"    已分摊 {format_cny(total_cny)}（月成本 {format_cny(plan_cny)}"
+        if window_plan_cny > 0 and abs(window_plan_cny - plan_cny) > 0.005:
+            text += f"，本窗口折算 {format_cny(window_plan_cny)}"
+        return text + f"，按需已计入）· 汇率 {rate}"
+    return (
+        f"    已分摊 {format_cny(total_cny)}（月费 {format_cny(plan_cny)} + 按需 {format_cny(on_demand_cny)}）· 汇率 {rate}"
+    )
+
+
+def format_report_sync_result(
+    count: int,
+    fetched: int,
+    stamp: str,
+    *,
+    truncated: bool = False,
+    total_available: int = 0,
+    note: str = "",
+    has_token: bool = True,
+) -> str:
+    if not has_token:
+        return "未配置 Token，请先在设置里导入账号"
+    if note == "team_personal":
+        return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。"
+    extra = f"（服务端约 {total_available} 条，已截到最近 {count} 条）" if truncated else ""
+    if fetched > 0:
+        return f"已同步 {count} 条（新增 {fetched}）{extra}  ·  {stamp}"
+    if count > 0:
+        return f"已是最新  ·  {count} 条{extra}  ·  {stamp}"
+    return f"还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  {stamp}"
+
+
+def format_flyout_error(error_message: str | None) -> str:
+    from cursor_api import is_auth_error_message
+
+    text = (error_message or "").strip()
+    if not text:
+        return "等待刷新…"
+    if is_auth_error_message(text):
+        if "未配置" in text:
+            return "未配置 Token，点下方「粘贴 Token」导入"
+        return "登录已过期，点下方「粘贴 Token」更新"
+    return text
+
+
+def compare_hint() -> str:
+    return (
+        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。"
+        "填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。"
+        "绿色数字是当前表里最低的 ¥/百万 Token。"
+    )
+
+
 def format_report_sync_progress(page: int) -> str:
     if page <= 1:
         return "正在同步本周期明细…"

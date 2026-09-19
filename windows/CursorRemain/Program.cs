@@ -375,7 +375,8 @@ sealed partial class TrayContext : ApplicationContext
                         usage?.IsTeamAccount == true,
                         _config.SpendSettings(usage?.MembershipType),
                         _config.ActiveAccount?.ReportStartDate ?? "",
-                        _config.ActiveAccount?.ReportEndDate ?? "");
+                        _config.ActiveAccount?.ReportEndDate ?? "",
+                        ReportAllocationWindow.FromAccount(_config.ActiveAccount, usage));
                 }, (id, start, end) =>
                 {
                     _config = ConfigStore.Update(live => live.SetReportRange(id, start, end));

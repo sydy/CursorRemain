@@ -168,7 +168,7 @@ struct CompareRootView: View {
             Text(store.status)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。")
+            Text(StatusText.compareHint)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             table

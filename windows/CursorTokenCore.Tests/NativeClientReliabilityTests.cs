@@ -60,6 +60,25 @@ public class NativeClientReliabilityTests
     }
 
     [Fact]
+    public void ReportSpendKpiAndTeamSkipCopy()
+    {
+        Assert.Contains("已分摊", StatusText.FormatReportSpendKpi(75, 150, 37.5, 7.5, true, 75));
+        Assert.Contains("本窗口折算", StatusText.FormatReportSpendKpi(75, 150, 37.5, 7.5, true, 75));
+        Assert.Contains("月费", StatusText.FormatReportSpendKpi(12.5, 120, 12.5, 7.5, false));
+        Assert.DoesNotContain("预计实付", StatusText.FormatReportSpendKpi(75, 150, 0, 7.5, true, 75));
+        Assert.Equal(
+            "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。",
+            StatusText.FormatReportSyncResult(3, 0, "12:00:00", note: UsageEvents.NoteTeamPersonal));
+        Assert.Contains("已是最新", StatusText.FormatReportSyncResult(12, 0, "12:00:00"));
+        Assert.Contains("新增 4", StatusText.FormatReportSyncResult(16, 4, "12:00:00"));
+        Assert.Contains("还没有本周期明细", StatusText.FormatReportSyncResult(0, 0, "12:00:00"));
+        Assert.Equal("登录已过期，点下方「粘贴 Token」更新", StatusText.FormatFlyoutError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("未配置 Token，点下方「粘贴 Token」导入", StatusText.FormatFlyoutError("未配置 Token，请打开设置粘贴"));
+        Assert.Equal("HTTP 429", StatusText.FormatFlyoutError("HTTP 429"));
+        Assert.Contains("绿色数字", StatusText.CompareHint);
+    }
+
+    [Fact]
     public void FlyoutAndReportCopyMatchAuthState()
     {
         Assert.Equal("设置", StatusText.FlyoutSettingsTitle(null));

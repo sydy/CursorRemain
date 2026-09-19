@@ -68,11 +68,15 @@ final class ReportStore: ObservableObject {
     }
 
     var report: UsageReport {
-        UsageEvents.buildReport(events, filter: filter, spend: spend)
+        UsageEvents.buildReport(events, filter: filter, spend: spend, allocation: allocation)
     }
 
     var spend: CnySpendSettings {
         app.config.spendSettings(membership: app.usage?.membershipType)
+    }
+
+    var allocation: ReportAllocationWindow {
+        ReportAllocationWindow.from(account: app.config.activeAccount, usage: app.usage)
     }
 
     var chartSeries: UsageChartSeries {
@@ -109,7 +113,7 @@ final class ReportStore: ObservableObject {
         let token = app.config.activeAccount?.token ?? app.config.sessionToken
         let accountId = app.config.activeAccountId
         if token.trimmingCharacters(in: .whitespaces).isEmpty {
-            status = "未配置 Token，请先在设置里导入账号"
+            status = StatusText.formatReportSyncResult(count: 0, fetched: 0, stamp: "", hasToken: false)
             return
         }
         syncing = true
@@ -132,10 +136,6 @@ final class ReportStore: ObservableObject {
             )
             events = result.events
             refreshModelNames()
-            var extra = ""
-            if result.truncated {
-                extra = "（服务端约 \(result.totalAvailable) 条，已截到最近 \(result.events.count) 条）"
-            }
             let stamp: String = {
                 let f = DateFormatter()
                 f.locale = Locale(identifier: "en_US_POSIX")
@@ -143,7 +143,14 @@ final class ReportStore: ObservableObject {
                 f.dateFormat = "HH:mm:ss"
                 return f.string(from: Date())
             }()
-            status = "已同步 \(events.count) 条\(extra)  ·  \(stamp)"
+            status = StatusText.formatReportSyncResult(
+                count: events.count,
+                fetched: result.fetched,
+                stamp: stamp,
+                truncated: result.truncated,
+                totalAvailable: result.totalAvailable,
+                note: result.note
+            )
         } catch let err as CursorAPIError {
             refreshModelNames()
             status = "同步失败：\(err.message)"
@@ -168,7 +175,7 @@ final class ReportStore: ObservableObject {
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try UsageEvents.toCSV(rows, spend: spend, allocationBase: events).write(to: url, atomically: true, encoding: .utf8)
+            try UsageEvents.toCSV(rows, spend: spend, allocationBase: events, allocation: allocation).write(to: url, atomically: true, encoding: .utf8)
             status = "已导出 \(url.path)"
         } catch {
             status = "导出失败：\(error.localizedDescription)"
@@ -291,17 +298,16 @@ struct ReportRootView: View {
         let cost = report.hasCost ? "    费用 \(UsageParser.formatUSDCents(report.totalCents))" : ""
         var text = "请求 \(report.eventCount)    Token \(UsageParser.formatTokenCount(Double(report.totalTokens)))    \(mix)\(cost)"
         if let usage = store.app.usage, usage.showsAmount {
-            text += "    企业额度 \(UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents))"
+            text += "    企业额度（展示） \(UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents))"
         }
-        if report.planCny > 0 || report.onDemandCny > 0 {
-            let rate = String(format: "%.2f", report.usdCnyRate)
-            if report.usesActualCny {
-                text += "    预计实付 \(UsageEvents.formatCNY(report.planCny))（成本 \(UsageEvents.formatCNY(report.planCny))，按需已计入）· 汇率 \(rate)"
-            } else {
-                let expected = report.planCny + report.onDemandCny
-                text += "    预计实付 \(UsageEvents.formatCNY(expected))（月费 \(UsageEvents.formatCNY(report.planCny)) + 按需 \(UsageEvents.formatCNY(report.onDemandCny))）· 汇率 \(rate)"
-            }
-        }
+        text += StatusText.formatReportSpendKpi(
+            totalCny: report.totalCny,
+            planCny: report.planCny,
+            onDemandCny: report.onDemandCny,
+            usdCnyRate: report.usdCnyRate,
+            usesActual: report.usesActualCny,
+            windowPlanCny: report.windowPlanCny
+        )
         return text
     }
 

@@ -392,9 +392,10 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("ReportStartDate", win_report)
         self.assertIn("SetReportRange", win_prog)
         self.assertIn("CategoryFirstParty", win_report)
-        self.assertIn("企业额度", win_report)
+        self.assertIn("企业额度（展示）", win_report)
         self.assertIn("UsesActualCny", win_report)
-        self.assertIn("按需已计入", win_report)
+        self.assertIn("FormatReportSpendKpi", win_report)
+        self.assertNotIn("预计实付", win_report)
         win_settings = (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8")
         mac_settings = (root / "macos" / "Sources" / "CursorRemain" / "SettingsView.swift").read_text(encoding="utf-8")
         self.assertIn("FormatSyncStatus", win_settings)
@@ -408,14 +409,25 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("第三方", src)
             self.assertIn("按需不再按官网标价另加", src)
             self.assertNotIn("按需仍按费用×汇率", src)
+            self.assertIn("其他设备用新密码重新登录", src)
         win_compare = (root / "windows" / "CursorRemain" / "CompareForm.cs").read_text(encoding="utf-8")
         mac_compare = (root / "macos" / "Sources" / "CursorRemain" / "CompareView.swift").read_text(encoding="utf-8")
         for src in (win_compare, mac_compare):
             self.assertIn("账号对比", src)
             self.assertIn("日均持有", src)
-            self.assertIn("按需不再按官网标价另加", src)
             self.assertIn("First-party", src)
             self.assertIn("Grok Bot", src)
+        self.assertIn("CompareHint", win_compare)
+        self.assertIn("compareHint", mac_compare)
+        win_status = (root / "windows" / "CursorTokenCore" / "StatusText.cs").read_text(encoding="utf-8")
+        mac_status = (root / "macos" / "Sources" / "CursorTokenCore" / "StatusText.swift").read_text(encoding="utf-8")
+        for src in (win_status, mac_status):
+            self.assertIn("按需不再按官网标价另加", src)
+            self.assertIn("绿色数字", src)
+            self.assertIn("已分摊", src)
+            self.assertIn("本窗口折算", src)
+            self.assertIn("未能拉取个人明细", src)
+            self.assertIn("登录已过期，点下方", src)
         self.assertIn("BuildAccountCompareReport", win_compare)
         self.assertIn("buildAccountCompareReport", mac_compare)
         self.assertIn("public void Reload()", win_compare)
@@ -468,8 +480,15 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("persistReportRange", mac_report)
         self.assertIn("setReportRange", (root / "macos" / "Sources" / "CursorTokenCore" / "AppConfig.swift").read_text(encoding="utf-8"))
         self.assertIn("categoryFirstParty", mac_report)
-        self.assertIn("企业额度", mac_report)
-        self.assertIn("按需已计入", mac_report)
+        self.assertIn("企业额度（展示）", mac_report)
+        self.assertIn("formatReportSpendKpi", mac_report)
+        self.assertNotIn("预计实付", mac_report)
+        self.assertIn("ReportAllocationWindow", (root / "windows" / "CursorTokenCore" / "UsageEvents.cs").read_text(encoding="utf-8"))
+        self.assertIn("struct ReportAllocationWindow", (root / "macos" / "Sources" / "CursorTokenCore" / "UsageEvents.swift").read_text(encoding="utf-8"))
+        self.assertIn("NoteTeamPersonal", (root / "windows" / "CursorTokenCore" / "UsageEvents.cs").read_text(encoding="utf-8"))
+        self.assertIn("noteTeamPersonal", (root / "macos" / "Sources" / "CursorTokenCore" / "UsageEvents.swift").read_text(encoding="utf-8"))
+        self.assertIn("FormatFlyoutError", win_flyout)
+        self.assertIn("formatFlyoutError", mac_flyout)
         self.assertIn("按小时", mac_chart)
         self.assertIn("buildChart", mac_report)
         self.assertNotIn("dailyChart", mac_report)
@@ -572,15 +591,33 @@ class SourceGuardTests(unittest.TestCase):
     def test_compare_sync_and_trim_status_copy(self) -> None:
         from cursor_login import token_values
         from status_text import (
+            compare_hint,
             flyout_settings_title,
             format_compare_sync,
+            format_flyout_error,
+            format_report_spend_kpi,
             format_report_sync_progress,
+            format_report_sync_result,
             format_sync_status,
             prioritize_active,
         )
 
         self.assertEqual(format_report_sync_progress(1), "正在同步本周期明细…")
         self.assertEqual(format_report_sync_progress(3), "正在同步本周期明细…第 3 页")
+        kpi = format_report_spend_kpi(75, 150, 37.5, 7.5, True, 75)
+        self.assertIn("已分摊", kpi)
+        self.assertIn("本窗口折算", kpi)
+        self.assertNotIn("预计实付", kpi)
+        self.assertEqual(
+            format_report_sync_result(3, 0, "12:00:00", note="team_personal"),
+            "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。",
+        )
+        self.assertIn("已是最新", format_report_sync_result(12, 0, "12:00:00"))
+        self.assertIn("新增 4", format_report_sync_result(16, 4, "12:00:00"))
+        self.assertEqual(format_flyout_error("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "登录已过期，点下方「粘贴 Token」更新")
+        self.assertEqual(format_flyout_error("未配置 Token，请打开设置粘贴"), "未配置 Token，点下方「粘贴 Token」导入")
+        self.assertEqual(format_flyout_error("HTTP 429"), "HTTP 429")
+        self.assertIn("绿色数字", compare_hint())
         self.assertEqual(flyout_settings_title(None), "设置")
         self.assertEqual(flyout_settings_title("HTTP 429"), "设置")
         self.assertEqual(flyout_settings_title("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "粘贴 Token")

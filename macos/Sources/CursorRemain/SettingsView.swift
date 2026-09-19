@@ -602,7 +602,7 @@ struct SettingsRootView: View {
                     newCloudPassword = ""
                     confirmCloudPassword = ""
                     showChangePassword = false
-                    syncStatus = "密码已更新，云端数据已用新密码重封"
+                    syncStatus = "密码已更新，云端数据已用新密码重封。请在其他设备用新密码重新登录云同步。"
                 }
             } catch {
                 DispatchQueue.main.async {

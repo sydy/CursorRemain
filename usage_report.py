@@ -172,6 +172,7 @@ class UsageReport:
     grok_bot_count: int = 0
     actual_cny: float = 0.0
     uses_actual_cny: bool = False
+    window_plan_cny: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -191,6 +192,25 @@ class CnySpendSettings:
     usd_cny_rate: float = DEFAULT_USD_CNY_RATE
     membership_type: str = ""
     actual_cny: float = 0.0
+
+
+@dataclass(frozen=True)
+class ReportAllocationWindow:
+    account_kind: str = ""
+    temp_start_at: str = ""
+    temp_valid_days: int = 0
+    temp_valid_hours: int = 0
+    billing_cycle_start: str = ""
+    billing_cycle_end: str = ""
+    now_ms: int | None = None
+
+    def has_window(self) -> bool:
+        if str(self.billing_cycle_start or "").strip() or str(self.billing_cycle_end or "").strip():
+            return True
+        kind = str(self.account_kind or "").strip().lower().replace("-", "_")
+        return kind in {"temporary", "temp", "short"} and (
+            str(self.temp_start_at or "").strip() or int(self.temp_valid_days or 0) > 0 or int(self.temp_valid_hours or 0) > 0
+        )
 
 
 @dataclass(frozen=True)
@@ -756,26 +776,54 @@ def allocate_event_cny(
 def _cny_by_id(
     events: list[UsageEvent] | tuple[UsageEvent, ...],
     spend: CnySpendSettings | None,
-) -> tuple[dict[str, float], float, float, float, float, float, bool]:
+    allocation: ReportAllocationWindow | None = None,
+) -> tuple[dict[str, float], float, float, float, float, float, bool, float]:
     if spend is None:
-        return {}, 0.0, 0.0, 0.0, 0.0, 0.0, False
+        return {}, 0.0, 0.0, 0.0, 0.0, 0.0, False, 0.0
     rate = clamp_usd_cny_rate(spend.usd_cny_rate)
     monthly = resolve_monthly_plan_usd(spend.monthly_plan_usd, spend.membership_type)
     actual = clamp_actual_cny(spend.actual_cny)
     uses_actual = actual > 0
     plan_cny = actual if uses_actual else monthly * rate
-    pool = [ev for ev in events if is_cost_pool_kind(ev.kind, uses_actual)]
+    window_plan = plan_cny
+    start_ms = end_ms = None
+    if allocation is not None and allocation.has_window():
+        start_ms, end_ms, _ = resolve_compare_window(
+            account_kind=allocation.account_kind,
+            temp_start_at=allocation.temp_start_at,
+            temp_valid_days=allocation.temp_valid_days,
+            temp_valid_hours=allocation.temp_valid_hours,
+            billing_cycle_start=allocation.billing_cycle_start,
+            billing_cycle_end=allocation.billing_cycle_end,
+            now_ms=allocation.now_ms,
+        )
+        window_days = compare_window_days(start_ms, end_ms)
+        daily = plan_cny / HOLDING_DAYS if plan_cny > 0 else 0.0
+        window_plan = daily * window_days
+        if uses_actual and actual > 0:
+            window_plan = min(window_plan, actual)
+    alloc_events = [
+        ev
+        for ev in events
+        if start_ms is None or end_ms is None or start_ms <= ev.timestamp_ms <= end_ms
+    ]
+    pool = [ev for ev in alloc_events if is_cost_pool_kind(ev.kind, uses_actual)]
     included_cost_sum = sum(event_cost_cents(ev) for ev in pool)
     included_count = len(pool)
     by_id: dict[str, float] = {}
     on_demand_cny = 0.0
     for i, ev in enumerate(events):
-        amount = allocate_event_cny(ev, included_cost_sum, included_count, plan_cny, rate, uses_actual=uses_actual)
+        in_window = start_ms is None or end_ms is None or start_ms <= ev.timestamp_ms <= end_ms
+        amount = (
+            allocate_event_cny(ev, included_cost_sum, included_count, window_plan, rate, uses_actual=uses_actual)
+            if in_window
+            else 0.0
+        )
         key = ev.id or f"#{i}"
         by_id[key] = amount
         if ev.kind == KIND_ON_DEMAND:
             on_demand_cny += amount
-    return by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual
+    return by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual, window_plan
 
 
 def format_event_time(timestamp_ms: int) -> str:
@@ -1109,6 +1157,7 @@ def build_usage_report(
     events: list[UsageEvent] | tuple[UsageEvent, ...],
     filt: UsageReportFilter | None = None,
     spend: CnySpendSettings | None = None,
+    allocation: ReportAllocationWindow | None = None,
 ) -> UsageReport:
     filt = filt or UsageReportFilter()
     kind = (filt.kind or "").strip().lower()
@@ -1119,7 +1168,9 @@ def build_usage_report(
     start_ms = report_date_start_ms(start_date)
     end_ms = report_date_end_ms(end_date)
     source = list(events)
-    cny_by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual = _cny_by_id(source, spend)
+    cny_by_id, plan_cny, on_demand_cny, monthly, rate, actual, uses_actual, window_plan = _cny_by_id(
+        source, spend, allocation
+    )
     selected: list[UsageEvent] = []
     for i, event in enumerate(source):
         if kind and event.kind != kind:
@@ -1236,6 +1287,7 @@ def build_usage_report(
         on_demand_cny=on_demand_cny,
         usd_cny_rate=rate,
         monthly_plan_usd=monthly,
+        window_plan_cny=window_plan,
     )
 
 
@@ -1243,10 +1295,13 @@ def usage_events_to_csv(
     events: list[UsageEvent] | tuple[UsageEvent, ...],
     spend: CnySpendSettings | None = None,
     allocation_base: list[UsageEvent] | tuple[UsageEvent, ...] | None = None,
+    allocation: ReportAllocationWindow | None = None,
 ) -> str:
     cny_by_id: dict[str, float] = {}
     if spend is not None:
-        cny_by_id, _, _, _, _, _, _ = _cny_by_id(allocation_base if allocation_base is not None else events, spend)
+        cny_by_id, _, _, _, _, _, _, _ = _cny_by_id(
+            allocation_base if allocation_base is not None else events, spend, allocation
+        )
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(CSV_HEADER.split(","))
