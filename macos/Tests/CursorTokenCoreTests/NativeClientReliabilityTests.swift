@@ -71,6 +71,24 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(RefreshGeneration.prioritize(items) { _ in false }, items)
     }
 
+    func testReportSpendKpiAndTeamSkipCopy() {
+        XCTAssertTrue(StatusText.formatReportSpendKpi(totalCny: 75, planCny: 150, onDemandCny: 37.5, usdCnyRate: 7.5, usesActual: true, windowPlanCny: 75).contains("已分摊"))
+        XCTAssertTrue(StatusText.formatReportSpendKpi(totalCny: 75, planCny: 150, onDemandCny: 37.5, usdCnyRate: 7.5, usesActual: true, windowPlanCny: 75).contains("本窗口折算"))
+        XCTAssertTrue(StatusText.formatReportSpendKpi(totalCny: 12.5, planCny: 120, onDemandCny: 12.5, usdCnyRate: 7.5, usesActual: false).contains("月费"))
+        XCTAssertFalse(StatusText.formatReportSpendKpi(totalCny: 75, planCny: 150, onDemandCny: 0, usdCnyRate: 7.5, usesActual: true, windowPlanCny: 75).contains("预计实付"))
+        XCTAssertEqual(
+            StatusText.formatReportSyncResult(count: 3, fetched: 0, stamp: "12:00:00", note: UsageEvents.noteTeamPersonal),
+            "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。"
+        )
+        XCTAssertTrue(StatusText.formatReportSyncResult(count: 12, fetched: 0, stamp: "12:00:00").contains("已是最新"))
+        XCTAssertTrue(StatusText.formatReportSyncResult(count: 16, fetched: 4, stamp: "12:00:00").contains("新增 4"))
+        XCTAssertTrue(StatusText.formatReportSyncResult(count: 0, fetched: 0, stamp: "12:00:00").contains("还没有本周期明细"))
+        XCTAssertEqual(StatusText.formatFlyoutError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "登录已过期，点下方「粘贴 Token」更新")
+        XCTAssertEqual(StatusText.formatFlyoutError("未配置 Token，请打开设置粘贴"), "未配置 Token，点下方「粘贴 Token」导入")
+        XCTAssertEqual(StatusText.formatFlyoutError("HTTP 429"), "HTTP 429")
+        XCTAssertTrue(StatusText.compareHint.contains("绿色数字"))
+    }
+
     func testFlyoutAndReportCopyMatchAuthState() {
         XCTAssertEqual(StatusText.flyoutSettingsTitle(nil), "设置")
         XCTAssertEqual(StatusText.flyoutSettingsTitle("HTTP 429 Too Many Requests"), "设置")

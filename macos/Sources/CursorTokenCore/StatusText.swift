@@ -257,6 +257,55 @@ public enum StatusText {
         return "已同步 \(ok) 个账号，\(failures.count) 个失败（\(detail)）  ·  \(stamp)"
     }
 
+    public static func formatReportSpendKpi(
+        totalCny: Double,
+        planCny: Double,
+        onDemandCny: Double,
+        usdCnyRate: Double,
+        usesActual: Bool,
+        windowPlanCny: Double = 0
+    ) -> String {
+        if planCny <= 0 && onDemandCny <= 0 && totalCny <= 0 { return "" }
+        let rate = String(format: "%.2f", usdCnyRate)
+        if usesActual {
+            var text = "    已分摊 \(UsageEvents.formatCNY(totalCny))（月成本 \(UsageEvents.formatCNY(planCny))"
+            if windowPlanCny > 0 && abs(windowPlanCny - planCny) > 0.005 {
+                text += "，本窗口折算 \(UsageEvents.formatCNY(windowPlanCny))"
+            }
+            return text + "，按需已计入）· 汇率 \(rate)"
+        }
+        return "    已分摊 \(UsageEvents.formatCNY(totalCny))（月费 \(UsageEvents.formatCNY(planCny)) + 按需 \(UsageEvents.formatCNY(onDemandCny))）· 汇率 \(rate)"
+    }
+
+    public static func formatReportSyncResult(
+        count: Int,
+        fetched: Int,
+        stamp: String,
+        truncated: Bool = false,
+        totalAvailable: Int = 0,
+        note: String = "",
+        hasToken: Bool = true
+    ) -> String {
+        if !hasToken { return "未配置 Token，请先在设置里导入账号" }
+        if note == UsageEvents.noteTeamPersonal {
+            return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。"
+        }
+        let extra = truncated ? "（服务端约 \(totalAvailable) 条，已截到最近 \(count) 条）" : ""
+        if fetched > 0 { return "已同步 \(count) 条（新增 \(fetched)）\(extra)  ·  \(stamp)" }
+        if count > 0 { return "已是最新  ·  \(count) 条\(extra)  ·  \(stamp)" }
+        return "还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  \(stamp)"
+    }
+
+    public static func formatFlyoutError(_ errorMessage: String?) -> String {
+        let text = (errorMessage ?? "").trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return "等待刷新…" }
+        guard Token.isAuthErrorMessage(text) else { return text }
+        return text.contains("未配置") ? "未配置 Token，点下方「粘贴 Token」导入" : "登录已过期，点下方「粘贴 Token」更新"
+    }
+
+    public static let compareHint =
+        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字是当前表里最低的 ¥/百万 Token。"
+
     public static func formatReportSyncProgress(_ page: Int) -> String {
         page <= 1 ? "正在同步本周期明细…" : "正在同步本周期明细…第 \(page) 页"
     }

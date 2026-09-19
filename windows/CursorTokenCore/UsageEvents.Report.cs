@@ -5,7 +5,7 @@ namespace CursorTokenCore;
 
 public static partial class UsageEvents
 {
-    public static UsageReport BuildReport(IEnumerable<UsageEvent> events, UsageReportFilter? filter = null, CnySpendSettings? spend = null)
+    public static UsageReport BuildReport(IEnumerable<UsageEvent> events, UsageReportFilter? filter = null, CnySpendSettings? spend = null, ReportAllocationWindow? allocation = null)
     {
         filter ??= new UsageReportFilter();
         var kind = (filter.Kind ?? "").Trim().ToLowerInvariant();
@@ -16,7 +16,7 @@ public static partial class UsageEvents
         var startMs = ReportDateStartMs(startDate);
         var endMs = ReportDateEndMs(endDate);
         var source = events as IList<UsageEvent> ?? events.ToList();
-        var (cnyById, planCny, onDemandCny, monthly, rate, actual, usesActual) = CnyById(source, spend);
+        var (cnyById, planCny, onDemandCny, monthly, rate, actual, usesActual, windowPlan) = CnyById(source, spend, allocation);
         var selected = new List<UsageEvent>();
         for (var i = 0; i < source.Count; i++)
         {
@@ -83,6 +83,7 @@ public static partial class UsageEvents
             GrokBotCount = grokBot,
             ActualCny = actual,
             UsesActualCny = usesActual,
+            WindowPlanCny = windowPlan,
             Daily = dailyMap.OrderBy(kv => kv.Key).Select(kv => new DailyUsageRow(kv.Key, kv.Value.tokens, kv.Value.cents, kv.Value.count, kv.Value.cny)).ToList(),
             Models = modelMap.Select(kv => new ModelUsageRow(kv.Key, kv.Value.tokens, kv.Value.cents, kv.Value.count, kv.Value.headless, kv.Value.cny))
                 .OrderByDescending(m => m.Tokens).ThenByDescending(m => m.Cents).ThenByDescending(m => m.Count).ToList(),

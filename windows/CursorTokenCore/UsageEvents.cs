@@ -73,11 +73,46 @@ public sealed class UsageReport
     public double MonthlyPlanUsd { get; init; }
     public double ActualCny { get; init; }
     public bool UsesActualCny { get; init; }
+    public double WindowPlanCny { get; init; }
 }
 
 public readonly record struct CnySpendSettings(double MonthlyPlanUsd, double UsdCnyRate, string MembershipType, double ActualCny = 0)
 {
     public static CnySpendSettings Default => new(0, UsageEvents.DefaultUsdCnyRate, "");
+}
+
+public readonly record struct ReportAllocationWindow(
+    string AccountKind = "",
+    string TempStartAt = "",
+    int TempValidDays = 0,
+    int TempValidHours = 0,
+    string BillingCycleStart = "",
+    string BillingCycleEnd = "",
+    long? NowMs = null)
+{
+    public bool HasWindow
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(BillingCycleStart) || !string.IsNullOrWhiteSpace(BillingCycleEnd))
+                return true;
+            return AccountValidity.SanitizeKind(AccountKind) == AccountValidity.Temporary
+                && (!string.IsNullOrWhiteSpace(TempStartAt) || TempValidDays > 0 || TempValidHours > 0);
+        }
+    }
+
+    public static ReportAllocationWindow FromAccount(Account? acc, UsageSnapshot? usage, long? nowMs = null) =>
+        new(
+            acc?.AccountKind ?? "",
+            acc?.TempStartAt ?? "",
+            acc?.TempValidDays ?? 0,
+            acc?.TempValidHours ?? 0,
+            FirstNonEmpty(usage?.BillingCycleStart, acc?.BillingCycleStart),
+            FirstNonEmpty(usage?.BillingCycleEnd, acc?.BillingCycleEnd),
+            nowMs);
+
+    static string FirstNonEmpty(string? left, string? right) =>
+        !string.IsNullOrWhiteSpace(left) ? left.Trim() : (right ?? "").Trim();
 }
 
 public sealed class AccountCompareCategory
@@ -158,10 +193,11 @@ public sealed class AccountCompareReport
     public double HoldingDays { get; init; } = UsageEvents.HoldingDays;
 }
 
-public sealed record UsageEventsSyncResult(List<UsageEvent> Events, int Fetched, int TotalAvailable, bool Truncated);
+public sealed record UsageEventsSyncResult(List<UsageEvent> Events, int Fetched, int TotalAvailable, bool Truncated, string Note = "");
 
 public static partial class UsageEvents
 {
+    public const string NoteTeamPersonal = "team_personal";
     public const string KindIncluded = "included";
     public const string KindFree = "free";
     public const string KindOnDemand = "on_demand";
@@ -518,28 +554,47 @@ public static partial class UsageEvents
         return 0;
     }
 
-    static (Dictionary<string, double> byId, double planCny, double onDemandCny, double monthly, double rate, double actual, bool usesActual) CnyById(
-        IList<UsageEvent> events, CnySpendSettings? spend)
+    static (Dictionary<string, double> byId, double planCny, double onDemandCny, double monthly, double rate, double actual, bool usesActual, double windowPlan) CnyById(
+        IList<UsageEvent> events, CnySpendSettings? spend, ReportAllocationWindow? allocation = null)
     {
-        if (spend is null) return ([], 0, 0, 0, 0, 0, false);
+        if (spend is null) return ([], 0, 0, 0, 0, 0, false, 0);
         var resolved = ResolvePlanCny(spend.Value);
         var rate = resolved.rate;
         var monthly = resolved.monthly;
-        var pool = events.Where(ev => IsCostPoolKind(ev.Kind, resolved.usesActual)).ToList();
+        var planCny = resolved.planCny;
+        var windowPlan = planCny;
+        long? startMs = null;
+        long? endMs = null;
+        if (allocation is { HasWindow: true } win)
+        {
+            var (start, end, _) = ResolveCompareWindow(
+                win.AccountKind, win.TempStartAt, win.TempValidDays, win.TempValidHours,
+                win.BillingCycleStart, win.BillingCycleEnd, win.NowMs);
+            startMs = start;
+            endMs = end;
+            var daily = planCny > 0 ? planCny / HoldingDays : 0;
+            windowPlan = daily * CompareWindowDays(start, end);
+            if (resolved.usesActual && resolved.actual > 0)
+                windowPlan = Math.Min(windowPlan, resolved.actual);
+        }
+        var allocEvents = events.Where(ev => startMs is null || endMs is null || (ev.TimestampMs >= startMs && ev.TimestampMs <= endMs)).ToList();
+        var pool = allocEvents.Where(ev => IsCostPoolKind(ev.Kind, resolved.usesActual)).ToList();
         var includedCostSum = pool.Sum(CostCents);
         var includedCount = pool.Count;
-        var planCny = resolved.planCny;
         var byId = new Dictionary<string, double>(StringComparer.Ordinal);
         var onDemandCny = 0.0;
         for (var i = 0; i < events.Count; i++)
         {
             var ev = events[i];
-            var amount = AllocateEventCny(ev, includedCostSum, includedCount, planCny, rate, resolved.usesActual);
+            var inWindow = startMs is null || endMs is null || (ev.TimestampMs >= startMs && ev.TimestampMs <= endMs);
+            var amount = inWindow
+                ? AllocateEventCny(ev, includedCostSum, includedCount, windowPlan, rate, resolved.usesActual)
+                : 0;
             var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
             byId[key] = amount;
             if (ev.Kind == KindOnDemand) onDemandCny += amount;
         }
-        return (byId, planCny, onDemandCny, monthly, rate, resolved.actual, resolved.usesActual);
+        return (byId, planCny, onDemandCny, monthly, rate, resolved.actual, resolved.usesActual, windowPlan);
     }
 
     public static string FormatTime(long timestampMs)
@@ -797,7 +852,7 @@ public static partial class UsageEvents
             else if (teamId > 0)
             {
                 // Team feed without userId is the whole org; do not pollute the personal cache.
-                return new UsageEventsSyncResult(existing, 0, existing.Count, false);
+                return new UsageEventsSyncResult(existing, 0, existing.Count, false, NoteTeamPersonal);
             }
         }
         var fetched = await client.FetchUsageEvents(token, startMs, cycleEnd, team, teamScope ? null : userId, stopAt, onPage: onPage, ct: ct);

@@ -188,6 +188,55 @@ public static class StatusText
         return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
     }
 
+    public static string FormatReportSpendKpi(
+        double totalCny,
+        double planCny,
+        double onDemandCny,
+        double usdCnyRate,
+        bool usesActual,
+        double windowPlanCny = 0)
+    {
+        if (planCny <= 0 && onDemandCny <= 0 && totalCny <= 0) return "";
+        var rate = usdCnyRate.ToString("0.00", CultureInfo.InvariantCulture);
+        if (usesActual)
+        {
+            var text = $"    已分摊 {UsageEvents.FormatCny(totalCny)}（月成本 {UsageEvents.FormatCny(planCny)}";
+            if (windowPlanCny > 0 && Math.Abs(windowPlanCny - planCny) > 0.005)
+                text += $"，本窗口折算 {UsageEvents.FormatCny(windowPlanCny)}";
+            return text + $"，按需已计入）· 汇率 {rate}";
+        }
+        return $"    已分摊 {UsageEvents.FormatCny(totalCny)}（月费 {UsageEvents.FormatCny(planCny)} + 按需 {UsageEvents.FormatCny(onDemandCny)}）· 汇率 {rate}";
+    }
+
+    public static string FormatReportSyncResult(
+        int count,
+        int fetched,
+        string stamp,
+        bool truncated = false,
+        int totalAvailable = 0,
+        string note = "",
+        bool hasToken = true)
+    {
+        if (!hasToken) return "未配置 Token，请先在设置里导入账号";
+        if (note == UsageEvents.NoteTeamPersonal)
+            return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。";
+        var extra = truncated ? $"（服务端约 {totalAvailable} 条，已截到最近 {count} 条）" : "";
+        if (fetched > 0) return $"已同步 {count} 条（新增 {fetched}）{extra}  ·  {stamp}";
+        if (count > 0) return $"已是最新  ·  {count} 条{extra}  ·  {stamp}";
+        return $"还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  {stamp}";
+    }
+
+    public static string FormatFlyoutError(string? error)
+    {
+        var text = (error ?? "").Trim();
+        if (text.Length == 0) return "等待刷新…";
+        if (!Token.IsAuthErrorMessage(text)) return text;
+        return text.Contains("未配置") ? "未配置 Token，点下方「粘贴 Token」导入" : "登录已过期，点下方「粘贴 Token」更新";
+    }
+
+    public const string CompareHint =
+        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字是当前表里最低的 ¥/百万 Token。";
+
     public static string FormatReportSyncProgress(int page) =>
         page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
 

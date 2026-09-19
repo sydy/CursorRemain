@@ -5,7 +5,7 @@ namespace CursorRemain;
 
 sealed class ReportForm : Form
 {
-    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "");
+    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "", ReportAllocationWindow? Allocation = null);
 
     const int DesignWidth = 1100;
     const int DesignHeight = 880;
@@ -286,7 +286,7 @@ sealed class ReportForm : Form
         UpdateScopeVisible(st.IsTeam);
         if (string.IsNullOrWhiteSpace(st.Token))
         {
-            _status.Text = "未配置 Token，请先在设置里导入账号";
+            _status.Text = StatusText.FormatReportSyncResult(0, 0, "", hasToken: false);
             _syncing = false;
             _syncBtn.Enabled = true;
             return;
@@ -311,9 +311,9 @@ sealed class ReportForm : Form
             _all = result.Events;
             FillModels();
             Render();
-            var extra = result.Truncated ? $"（服务端约 {result.TotalAvailable} 条，已截到最近 {result.Events.Count} 条）" : "";
-            var stamp = DateTimeOffset.Now;
-            _status.Text = $"已同步 {_all.Count} 条{extra}  ·  {stamp:HH:mm:ss}";
+            var stamp = DateTimeOffset.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+            _status.Text = StatusText.FormatReportSyncResult(
+                _all.Count, result.Fetched, stamp, result.Truncated, result.TotalAvailable, result.Note);
         }
         catch (CursorApiException ex)
         {
@@ -419,7 +419,7 @@ sealed class ReportForm : Form
         _model.EndUpdate();
     }
 
-    UsageReport CurrentReport() => UsageEvents.BuildReport(_all, CurrentFilter(), _state().Spend);
+    UsageReport CurrentReport() => UsageEvents.BuildReport(_all, CurrentFilter(), _state().Spend, _state().Allocation);
 
     void Render()
     {
@@ -470,23 +470,17 @@ sealed class ReportForm : Form
     {
         var usage = _state().Usage;
         if (usage is null || !usage.ShowsAmount) return "";
-        return $"    企业额度 {UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)}";
+        return $"    企业额度（展示） {UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)}";
     }
 
-    static string SpendKpi(UsageReport report)
-    {
-        if (report.PlanCny <= 0 && report.OnDemandCny <= 0) return "";
-        var rate = report.UsdCnyRate.ToString("0.00", CultureInfo.InvariantCulture);
-        if (report.UsesActualCny)
-            return $"    预计实付 {UsageEvents.FormatCny(report.PlanCny)}（成本 {UsageEvents.FormatCny(report.PlanCny)}，按需已计入）· 汇率 {rate}";
-        var expected = report.PlanCny + report.OnDemandCny;
-        return $"    预计实付 {UsageEvents.FormatCny(expected)}（月费 {UsageEvents.FormatCny(report.PlanCny)} + 按需 {UsageEvents.FormatCny(report.OnDemandCny)}）· 汇率 {rate}";
-    }
+    static string SpendKpi(UsageReport report) =>
+        StatusText.FormatReportSpendKpi(report.TotalCny, report.PlanCny, report.OnDemandCny, report.UsdCnyRate, report.UsesActualCny, report.WindowPlanCny);
 
     void ExportCsv()
     {
         var spend = _state().Spend;
-        var report = UsageEvents.BuildReport(_all, CurrentFilter(), spend);
+        var allocation = _state().Allocation;
+        var report = UsageEvents.BuildReport(_all, CurrentFilter(), spend, allocation);
         if (report.Events.Count == 0) return;
         using var dlg = new SaveFileDialog
         {
@@ -497,7 +491,7 @@ sealed class ReportForm : Form
         if (dlg.ShowDialog(this) != DialogResult.OK) return;
         try
         {
-            File.WriteAllText(dlg.FileName, UsageEvents.ToCsv(report.Events, spend, _all));
+            File.WriteAllText(dlg.FileName, UsageEvents.ToCsv(report.Events, spend, _all, allocation));
             _status.Text = "已导出 " + dlg.FileName;
         }
         catch (Exception ex)

@@ -279,6 +279,18 @@ final class UsageParserFixtureTests: XCTestCase {
             let events = (cse["events"] as! [[String: Any]]).compactMap(UsageEvents.fromDict)
             let filt = cse["filter"] as! [String: Any]
             let spendRaw = cse["spend"] as! [String: Any]
+            var allocation: ReportAllocationWindow?
+            if let allocRaw = cse["allocation"] as? [String: Any] {
+                allocation = ReportAllocationWindow(
+                    accountKind: str(allocRaw["account_kind"]),
+                    tempStartAt: str(allocRaw["temp_start_at"]),
+                    tempValidDays: int(allocRaw["temp_valid_days"]) ?? 0,
+                    tempValidHours: int(allocRaw["temp_valid_hours"]) ?? 0,
+                    billingCycleStart: str(allocRaw["billing_cycle_start"]),
+                    billingCycleEnd: str(allocRaw["billing_cycle_end"]),
+                    nowMs: num(allocRaw["now_ms"]).map { Int64($0) }
+                )
+            }
             let report = UsageEvents.buildReport(
                 events,
                 filter: UsageReportFilter(
@@ -295,7 +307,8 @@ final class UsageParserFixtureTests: XCTestCase {
                     usdCnyRate: num(spendRaw["usd_cny_rate"]) ?? UsageEvents.defaultUsdCnyRate,
                     membershipType: str(spendRaw["membership_type"]),
                     actualCny: num(spendRaw["actual_cny"]) ?? 0
-                )
+                ),
+                allocation: allocation
             )
             let exp = cse["expected"] as! [String: Any]
             XCTAssertEqual(report.monthlyPlanUsd, try XCTUnwrap(num(exp["monthly_plan_usd"])), accuracy: 0.001)
@@ -303,6 +316,9 @@ final class UsageParserFixtureTests: XCTestCase {
             XCTAssertEqual(report.planCny, try XCTUnwrap(num(exp["plan_cny"])), accuracy: 0.001)
             XCTAssertEqual(report.onDemandCny, try XCTUnwrap(num(exp["on_demand_cny"])), accuracy: 0.001)
             XCTAssertEqual(report.totalCny, try XCTUnwrap(num(exp["total_cny"])), accuracy: 0.001)
+            if let wantWindow = num(exp["window_plan_cny"]) {
+                XCTAssertEqual(report.windowPlanCny, wantWindow, accuracy: 0.001)
+            }
             if let wantActual = num(exp["actual_cny"]) {
                 XCTAssertEqual(report.actualCny, wantActual, accuracy: 0.001)
             }

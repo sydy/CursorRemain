@@ -1202,6 +1202,67 @@
             { "name": "auto", "cny": 120.0 }
           ]
         }
+      },
+      {
+        "name": "actual_cny_matches_compare_window",
+        "spend": { "monthly_plan_usd": 0, "usd_cny_rate": 7.5, "membership_type": "pro", "actual_cny": 150 },
+        "allocation": {
+          "account_kind": "long_term",
+          "billing_cycle_start": "2026-09-01T00:00:00.000Z",
+          "billing_cycle_end": "2026-10-01T00:00:00.000Z",
+          "now_ms": 1789516800000
+        },
+        "filter": { "kind": "", "category": "", "model": "", "headless": null, "owning_user": "" },
+        "events": [
+          {
+            "id": "fp",
+            "timestamp": "2026-09-08T12:00:00.000Z",
+            "model": "composer-1.5",
+            "kind": "included",
+            "tokens": 1000000,
+            "chargedCents": 50
+          },
+          {
+            "id": "gb",
+            "timestamp": "2026-09-08T13:00:00.000Z",
+            "model": "grok-bot-1",
+            "kind": "included",
+            "tokens": 1000000,
+            "chargedCents": 50
+          },
+          {
+            "id": "api",
+            "timestamp": "2026-09-08T14:00:00.000Z",
+            "model": "gpt-5",
+            "kind": "on_demand",
+            "tokens": 100000,
+            "chargedCents": 100
+          },
+          {
+            "id": "old",
+            "timestamp": "2026-08-20T12:00:00.000Z",
+            "model": "composer-1.5",
+            "kind": "included",
+            "tokens": 999999,
+            "chargedCents": 80
+          }
+        ],
+        "expected": {
+          "monthly_plan_usd": 20.0,
+          "usd_cny_rate": 7.5,
+          "plan_cny": 150.0,
+          "window_plan_cny": 75.0,
+          "on_demand_cny": 37.5,
+          "total_cny": 75.0,
+          "actual_cny": 150.0,
+          "uses_actual_cny": true,
+          "event_cny": [37.5, 18.75, 18.75, 0.0],
+          "models": [
+            { "name": "composer-1.5", "cny": 18.75 },
+            { "name": "grok-bot-1", "cny": 18.75 },
+            { "name": "gpt-5", "cny": 37.5 }
+          ]
+        }
       }
     ]
   },
