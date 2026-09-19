@@ -346,6 +346,17 @@ final class UsageParserFixtureTests: XCTestCase {
             )
             XCTAssertEqual(UsageEvents.formatCost(ev), str(row["output"]))
         }
+        for row in root["discount_format"] as! [[String: Any]] {
+            XCTAssertEqual(
+                UsageEvents.formatDiscount(
+                    cny: num(row["cny"]) ?? 0,
+                    cents: num(row["cents"]) ?? 0,
+                    rate: num(row["rate"]) ?? 0,
+                    kind: str(row["kind"])
+                ),
+                str(row["output"])
+            )
+        }
         let first = (root["parse"] as! [[String: Any]])[0]
         let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: first["payload"] as Any))
         let csv = UsageEvents.toCSV(UsageEvents.parsePage(payload).events)

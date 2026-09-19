@@ -425,7 +425,7 @@ public enum UsageEvents {
     public static let windowFallback = "fallback"
     static let channelOrder = [channelSelfPay, channelThirdParty, ""]
     public static let tzLabel = "本地时间"
-    public static let csvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,云端Agent"
+    public static let csvHeader = "日期(本地时间),用户,类型,模型,Token,费用,实付,折扣,云端Agent"
     public static let defaultUsdCnyRate = 7.50
     public static let hourlyChartWindowHours = 48
     static let msHour: Int64 = 3_600_000
@@ -850,6 +850,21 @@ public enum UsageEvents {
     public static func formatEventCny(_ ev: UsageEvent, amount: Double? = nil) -> String {
         if ev.kind == kindFree { return "—" }
         return formatCNY(amount ?? ev.allocatedCny)
+    }
+
+    public static func formatDiscount(cny: Double, cents: Double, rate: Double, kind: String = "") -> String {
+        if kind.trimmingCharacters(in: .whitespaces).lowercased() == kindFree { return "—" }
+        if cny.isNaN || cents.isNaN || rate.isNaN || cny.isInfinite || cents.isInfinite || rate.isInfinite {
+            return "—"
+        }
+        let list = cents / 100.0 * rate
+        if list <= 1e-9 || cny <= 0 { return "—" }
+        let zhe = min(99.9, max(0, cny / list * 10.0))
+        return String(format: "%.1f折", locale: Locale(identifier: "en_US_POSIX"), zhe)
+    }
+
+    public static func formatEventDiscount(_ ev: UsageEvent, amount: Double? = nil, rate: Double) -> String {
+        formatDiscount(cny: amount ?? ev.allocatedCny, cents: costCents(ev), rate: rate, kind: ev.kind)
     }
 
     public static func allocateEventCny(
@@ -1331,15 +1346,17 @@ public enum UsageEvents {
             : cnyById(allocationBase ?? events, spend: spend, allocation: allocation)
         var lines = ["\u{FEFF}\(csvHeader)"]
         for (i, ev) in events.enumerated() {
-            let cnyText: String
+            let amount: Double?
             if spend != nil {
                 let key = ev.id.isEmpty ? "#\(i)" : ev.id
-                cnyText = formatEventCny(ev, amount: allocated.byId[key] ?? 0)
+                amount = allocated.byId[key] ?? 0
             } else if ev.allocatedCny > 0 {
-                cnyText = formatEventCny(ev)
+                amount = ev.allocatedCny
             } else {
-                cnyText = "—"
+                amount = nil
             }
+            let cnyText = amount == nil ? "—" : formatEventCny(ev, amount: amount)
+            let discount = formatEventDiscount(ev, amount: amount ?? 0, rate: allocated.rate)
             let cols = [
                 escapeCSV(formatTime(ev.timestampMs)),
                 escapeCSV(ev.userEmail),
@@ -1348,6 +1365,7 @@ public enum UsageEvents {
                 escapeCSV(String(ev.tokens)),
                 escapeCSV(formatCost(ev)),
                 escapeCSV(cnyText),
+                escapeCSV(discount),
                 escapeCSV(ev.isHeadless ? "是" : "否"),
             ]
             lines.append(cols.joined(separator: ","))

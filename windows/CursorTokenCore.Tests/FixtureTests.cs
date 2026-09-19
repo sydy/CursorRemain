@@ -327,6 +327,16 @@ public class FixtureTests
             };
             Assert.Equal(row.GetProperty("output").GetString(), UsageEvents.FormatCost(ev));
         }
+        foreach (var row in root.GetProperty("discount_format").EnumerateArray())
+        {
+            Assert.Equal(
+                row.GetProperty("output").GetString(),
+                UsageEvents.FormatDiscount(
+                    row.GetProperty("cny").GetDouble(),
+                    row.GetProperty("cents").GetDouble(),
+                    row.GetProperty("rate").GetDouble(),
+                    row.GetProperty("kind").GetString()));
+        }
         var csv = UsageEvents.ToCsv(UsageEvents.ParsePage(JsonBag.Parse(root.GetProperty("parse")[0].GetProperty("payload").GetRawText())).events);
         Assert.StartsWith("\ufeff", csv);
         Assert.StartsWith(root.GetProperty("csv_header").GetString(), csv.TrimStart('\ufeff'));

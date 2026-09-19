@@ -54,10 +54,13 @@ public static partial class UsageEvents
     {
         var rows = events as IList<UsageEvent> ?? events.ToList();
         Dictionary<string, double> cnyById = [];
+        var rate = 0.0;
         if (spend is not null)
         {
             var baseEvents = allocationBase as IList<UsageEvent> ?? allocationBase?.ToList() ?? rows;
-            cnyById = CnyById(baseEvents, spend, allocation).byId;
+            var allocated = CnyById(baseEvents, spend, allocation);
+            cnyById = allocated.byId;
+            rate = allocated.rate;
         }
         var sb = new StringBuilder();
         sb.Append('\uFEFF');
@@ -65,16 +68,16 @@ public static partial class UsageEvents
         for (var i = 0; i < rows.Count; i++)
         {
             var ev = rows[i];
-            string cnyText;
+            double? amount = null;
             if (spend is not null)
             {
                 var key = ev.Id.Length > 0 ? ev.Id : $"#{i}";
-                cnyText = FormatEventCny(ev, cnyById.GetValueOrDefault(key));
+                amount = cnyById.GetValueOrDefault(key);
             }
             else if (ev.AllocatedCny > 0)
-                cnyText = FormatEventCny(ev);
-            else
-                cnyText = "—";
+                amount = ev.AllocatedCny;
+            var cnyText = amount is null ? "—" : FormatEventCny(ev, amount);
+            var discount = FormatEventDiscount(ev, amount ?? 0, rate);
             sb.Append(EscapeCsv(FormatTime(ev.TimestampMs))).Append(',');
             sb.Append(EscapeCsv(ev.UserEmail)).Append(',');
             sb.Append(EscapeCsv(KindLabel(ev.Kind))).Append(',');
@@ -82,6 +85,7 @@ public static partial class UsageEvents
             sb.Append(EscapeCsv(ev.Tokens.ToString(CultureInfo.InvariantCulture))).Append(',');
             sb.Append(EscapeCsv(FormatCost(ev))).Append(',');
             sb.Append(EscapeCsv(cnyText)).Append(',');
+            sb.Append(EscapeCsv(discount)).Append(',');
             sb.Append(EscapeCsv(ev.IsHeadless ? "是" : "否"));
             sb.AppendLine();
         }
