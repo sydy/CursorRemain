@@ -7,6 +7,18 @@ public static class BoundedWork
 {
     public const int AccountRefreshLimit = 2;
 
+    public static List<T> Prioritize<T>(IEnumerable<T> items, Func<T, bool> isFirst)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentNullException.ThrowIfNull(isFirst);
+        return items
+            .Select((item, index) => (item, index, first: isFirst(item)))
+            .OrderBy(row => row.first ? 0 : 1)
+            .ThenBy(row => row.index)
+            .Select(row => row.item)
+            .ToList();
+    }
+
     public static async Task<T[]> MapAsync<TSource, T>(
         IEnumerable<TSource> items,
         Func<TSource, Task<T>> worker,

@@ -183,6 +183,13 @@ def is_single_token_paste(text: Any) -> bool:
     return len(items) == 1 and items[0]["kind"] == "token"
 
 
+def token_values(text: Any) -> list[str]:
+    items = parse_account_paste(text)
+    if not items or any(item.get("kind") != "token" for item in items):
+        return []
+    return [str(item.get("token") or "") for item in items if str(item.get("token") or "")]
+
+
 def default_account_label(email: str, existing_label: str = "") -> str:
     current = str(existing_label or "").strip()
     if current:

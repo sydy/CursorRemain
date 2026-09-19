@@ -34,7 +34,7 @@ sealed class SettingsForm : Form
     };
     readonly Label _actualHint = new()
     {
-        Text = "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了则按套餐内费用分摊，优先于月费。按需仍按费用×汇率。",
+        Text = "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。",
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 0, 0, 8),
@@ -860,8 +860,8 @@ sealed class SettingsForm : Form
         _cfg.AutostartEnabled = _auto.Checked;
         _cfg.AutoUpdateEnabled = _autoUpdate.Checked;
         ReadKindInto(_cfg.ActiveAccount);
-        if (CursorAccountPaste.IsSingleToken(_token.Text))
-            try { _cfg.UpsertAccount(_token.Text, activate: true); } catch { }
+        foreach (var token in CursorAccountPaste.TokenValues(_token.Text))
+            try { _cfg.UpsertAccount(token, activate: true); } catch { }
         AccountSync.TouchChangedSettings(_cfg, beforeSettings);
         _onSaved(_cfg);
         LoadFrom(_cfg);

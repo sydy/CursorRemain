@@ -38,6 +38,12 @@ public enum CursorAccountPaste {
         return items.count == 1 && items[0].kind == "token"
     }
 
+    public static func tokenValues(_ text: String?) -> [String] {
+        let items = parse(text)
+        guard !items.isEmpty, items.allSatisfy({ $0.kind == "token" }) else { return [] }
+        return items.map(\.token).filter { !$0.isEmpty }
+    }
+
     public static func parse(_ text: String?) -> [AccountPasteItem] {
         let raw = (text ?? "").replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         var items: [AccountPasteItem] = []

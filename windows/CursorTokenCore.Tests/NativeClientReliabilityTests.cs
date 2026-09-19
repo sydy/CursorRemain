@@ -52,6 +52,27 @@ public class NativeClientReliabilityTests
     }
 
     [Fact]
+    public void PrioritizeKeepsRelativeOrder()
+    {
+        var items = new[] { "b", "a", "c", "d" };
+        Assert.Equal(["a", "b", "c", "d"], BoundedWork.Prioritize(items, x => x == "a"));
+        Assert.Equal(items, BoundedWork.Prioritize(items, _ => false));
+    }
+
+    [Fact]
+    public void FlyoutAndReportCopyMatchAuthState()
+    {
+        Assert.Equal("设置", StatusText.FlyoutSettingsTitle(null));
+        Assert.Equal("设置", StatusText.FlyoutSettingsTitle("HTTP 429 Too Many Requests"));
+        Assert.Equal("粘贴 Token", StatusText.FlyoutSettingsTitle("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("粘贴 Token", StatusText.FlyoutSettingsTitle("未配置 Token，请打开设置粘贴"));
+        Assert.Equal("正在同步本周期明细…", StatusText.FormatReportSyncProgress(1));
+        Assert.Equal("正在同步本周期明细…第 4 页", StatusText.FormatReportSyncProgress(4));
+        Assert.Equal(["aaa.bbb.ccc", "ddd.eee.fff"], CursorAccountPaste.TokenValues("aaa.bbb.ccc\nddd.eee.fff"));
+        Assert.Empty(CursorAccountPaste.TokenValues("name@example.com:secret"));
+    }
+
+    [Fact]
     public void CompareSyncAndTrimStatusCopy()
     {
         Assert.Equal("已同步 3 个账号  ·  12:00:00", StatusText.FormatCompareSync(3, [], "12:00:00"));

@@ -3,6 +3,15 @@ import Foundation
 public enum RefreshGeneration {
     public static let accountRefreshLimit = 2
 
+    public static func prioritize<T>(_ items: [T], firstWhere: (T) -> Bool) -> [T] {
+        items.enumerated().sorted { lhs, rhs in
+            let left = firstWhere(lhs.element)
+            let right = firstWhere(rhs.element)
+            if left != right { return left && !right }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
     public static func shouldApply(
         outcomeId: String,
         activeId: String,

@@ -7,6 +7,7 @@ sealed class CompareForm : Form
 {
     public readonly record struct CompareState(
         IReadOnlyList<Account> Accounts,
+        string ActiveAccountId,
         double MonthlyPlanUsd,
         double UsdCnyRate,
         Action<string, string?, string?, string?> PersistCycle);
@@ -154,7 +155,8 @@ sealed class CompareForm : Form
     async Task SyncAsync()
     {
         if (_syncing) return;
-        var accounts = _state().Accounts.ToList();
+        var state = _state();
+        var accounts = BoundedWork.Prioritize(state.Accounts, acc => acc.Id == state.ActiveAccountId);
         if (accounts.Count == 0)
         {
             _status.Text = "还没有账号。请先在设置里导入。";

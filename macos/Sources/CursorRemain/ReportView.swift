@@ -93,6 +93,17 @@ final class ReportStore: ObservableObject {
         refreshModelNames()
     }
 
+    func reloadForCurrentAccount() {
+        let acc = app.config.activeAccount
+        let start = UsageEvents.sanitizeReportDate(acc?.reportStartDate)
+        let end = UsageEvents.sanitizeReportDate(acc?.reportEndDate)
+        startEnabled = !start.isEmpty
+        endEnabled = !end.isEmpty
+        if let value = UsageEvents.reportDateValue(start) { startDate = value }
+        if let value = UsageEvents.reportDateValue(end) { endDate = value }
+        loadCache()
+    }
+
     func sync() async {
         if syncing { return }
         let token = app.config.activeAccount?.token ?? app.config.sessionToken
@@ -103,7 +114,7 @@ final class ReportStore: ObservableObject {
         }
         syncing = true
         loadCache()
-        status = "正在同步本周期明细…"
+        status = StatusText.formatReportSyncProgress(1)
         defer { syncing = false }
         do {
             let result = try await UsageEvents.sync(
@@ -112,7 +123,12 @@ final class ReportStore: ObservableObject {
                 accountId: accountId,
                 usage: app.usage,
                 teamScope: teamScope,
-                directory: app.settingsDirectory
+                directory: app.settingsDirectory,
+                onPage: { page in
+                    Task { @MainActor in
+                        self.status = StatusText.formatReportSyncProgress(page)
+                    }
+                }
             )
             events = result.events
             refreshModelNames()
@@ -191,7 +207,6 @@ struct ReportRootView: View {
         }
         .padding(16)
         .frame(minWidth: 920, minHeight: 620)
-        .task { await store.sync() }
         .onChange(of: store.teamScope) { _ in
             Task { await store.sync() }
         }
@@ -355,11 +370,16 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
             win.delegate = self
             window = win
         }
-        let reportStore = ReportStore(app: app)
-        store = reportStore
-        window?.contentView = NSHostingView(rootView: ReportRootView(store: reportStore))
-        window?.center()
+        if store == nil {
+            let reportStore = ReportStore(app: app)
+            store = reportStore
+            window?.contentView = NSHostingView(rootView: ReportRootView(store: reportStore))
+            window?.center()
+        } else {
+            store?.reloadForCurrentAccount()
+        }
         window?.makeKeyAndOrderFront(nil)
+        Task { await store?.sync() }
     }
 
     func close() {

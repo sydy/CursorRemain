@@ -1,6 +1,7 @@
 import AppKit
 import CursorTokenCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsRootView: View {
     @ObservedObject var store: AppStore
@@ -115,7 +116,7 @@ struct SettingsRootView: View {
                 TextField("0", text: $actualCnyText).frame(width: 72)
             }
             .disabled(store.config.activeAccount == nil)
-            Text("仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了则按套餐内费用分摊，优先于月费。按需仍按费用×汇率。")
+            Text("仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）").font(.headline).padding(.top, 8)
@@ -325,11 +326,11 @@ struct SettingsRootView: View {
     func setValidity(kind: String? = nil, start: Date? = nil, days: Int? = nil, hours: Int? = nil, refresh: Bool = false) {
         guard let acc = store.config.activeAccount else { return }
         var c = store.config
-        var newKind = kind ?? acc.accountKind
+        let newKind = kind ?? acc.accountKind
         var newStart = acc.tempStartAt
         if let start { newStart = AccountSync.nowIso(start) }
         var newDays = days ?? acc.tempValidDays
-        var newHours = hours ?? acc.tempValidHours
+        let newHours = hours ?? acc.tempValidHours
         if AccountValidity.sanitizeKind(newKind) == AccountValidity.temporary {
             if newStart.trimmingCharacters(in: .whitespaces).isEmpty {
                 newStart = AccountSync.nowIso()
@@ -529,8 +530,8 @@ struct SettingsRootView: View {
             cfg.usdCnyRate = UsageEvents.clampUsdCnyRate(rate)
         }
         cfg.alertThresholds = ConfigStore.parseThresholds(thresholdText)
-        if CursorAccountPaste.isSingleToken(tokenText) {
-            _ = try? cfg.upsertAccount(token: tokenText, activate: true)
+        for token in CursorAccountPaste.tokenValues(tokenText) {
+            _ = try? cfg.upsertAccount(token: token, activate: true)
         }
         AccountSync.touchChangedSettings(&cfg, previous: before)
         store.applyConfig(cfg, refresh: true)
@@ -664,7 +665,9 @@ struct SettingsRootView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = AccountSync.filename
         panel.title = "导出加密账号包"
-        panel.allowedFileTypes = ["sync", "json"]
+        var types: [UTType] = [.json]
+        if let sync = UTType(filenameExtension: "sync") { types.insert(sync, at: 0) }
+        panel.allowedContentTypes = types
         if panel.runModal() != .OK { return }
         guard let url = panel.url else { return }
         var cfg = store.config
