@@ -418,7 +418,17 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("First-party", src)
             self.assertIn("Grok Bot", src)
         self.assertIn("CompareHint", win_compare)
-        self.assertIn("compareHint", mac_compare)
+        self.assertIn("formatCompareHint", mac_compare)
+        self.assertIn("CompareBestEligible", win_compare)
+        self.assertIn("compareBestEligible", mac_compare)
+        self.assertIn("CompareRowNote", win_compare)
+        self.assertIn("compareRowNote", mac_compare)
+        self.assertIn("FormatCompareHint", win_compare)
+        self.assertIn("formatCompareHint", mac_compare)
+        win_events = (root / "windows" / "CursorTokenCore" / "UsageEvents.cs").read_text(encoding="utf-8")
+        mac_events = (root / "macos" / "Sources" / "CursorTokenCore" / "UsageEvents.swift").read_text(encoding="utf-8")
+        self.assertIn("未填成本", win_events)
+        self.assertIn("未填成本", mac_events)
         win_status = (root / "windows" / "CursorTokenCore" / "StatusText.cs").read_text(encoding="utf-8")
         mac_status = (root / "macos" / "Sources" / "CursorTokenCore" / "StatusText.swift").read_text(encoding="utf-8")
         for src in (win_status, mac_status):
@@ -428,6 +438,13 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("本窗口折算", src)
             self.assertIn("未能拉取个人明细", src)
             self.assertIn("登录已过期，点下方", src)
+            self.assertIn("已填成本", src)
+        self.assertIn("FormatReportSyncError", win_status)
+        self.assertIn("formatReportSyncError", mac_status)
+        self.assertIn("FormatCloudDecryptNote", win_status)
+        self.assertIn("formatCloudDecryptNote", mac_status)
+        self.assertIn("FormatReportCacheStatus", win_status)
+        self.assertIn("formatReportCacheStatus", mac_status)
         self.assertIn("BuildAccountCompareReport", win_compare)
         self.assertIn("buildAccountCompareReport", mac_compare)
         self.assertIn("public void Reload()", win_compare)
@@ -442,6 +459,14 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("FormatReportSyncProgress", win_report)
         self.assertIn("formatReportSyncProgress", mac_report)
         self.assertIn("reloadForCurrentAccount", mac_report)
+        self.assertIn("activeAccountId", mac_report)
+        self.assertIn("FormatReportSyncError", win_report)
+        self.assertIn("formatReportSyncError", mac_report)
+        self.assertIn("FormatReportCacheStatus", win_report)
+        self.assertIn("formatReportCacheStatus", mac_report)
+        self.assertIn("_report.RequestSync()", win_prog)
+        self.assertIn("FormatCloudDecryptNote", win_settings)
+        self.assertIn("formatCloudDecryptNote", mac_settings)
         self.assertIn("if store == nil", mac_report)
         self.assertNotIn(".task { await store.sync() }", mac_report)
         win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
@@ -593,9 +618,13 @@ class SourceGuardTests(unittest.TestCase):
         from status_text import (
             compare_hint,
             flyout_settings_title,
+            format_cloud_decrypt_note,
+            format_compare_hint,
             format_compare_sync,
             format_flyout_error,
+            format_report_cache_status,
             format_report_spend_kpi,
+            format_report_sync_error,
             format_report_sync_progress,
             format_report_sync_result,
             format_sync_status,
@@ -618,6 +647,20 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(format_flyout_error("未配置 Token，请打开设置粘贴"), "未配置 Token，点下方「粘贴 Token」导入")
         self.assertEqual(format_flyout_error("HTTP 429"), "HTTP 429")
         self.assertIn("绿色数字", compare_hint())
+        self.assertIn("已填成本", compare_hint())
+        self.assertIn("绿色仅供参考", format_compare_hint(True))
+        self.assertEqual(format_compare_hint(False), compare_hint())
+        self.assertEqual(format_report_cache_status(12, "工作号"), "当前：工作号 · 本地 12 条，正在刷新…")
+        self.assertEqual(format_report_cache_status(0), "本地还没有明细，正在同步…")
+        self.assertEqual(
+            format_report_sync_error("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"),
+            "登录已过期，请到设置重新粘贴 Token",
+        )
+        self.assertEqual(format_report_sync_error("未配置 Token，请打开设置粘贴"), "未配置 Token，请先在设置里导入账号")
+        self.assertTrue(format_report_sync_error("HTTP 429").startswith("同步失败："))
+        self.assertIn("解不开云同步密钥", format_cloud_decrypt_note(False, True, False))
+        self.assertIn("重新粘贴 Token", format_cloud_decrypt_note(True, False, False))
+        self.assertEqual(format_cloud_decrypt_note(False, False, False), "")
         self.assertEqual(flyout_settings_title(None), "设置")
         self.assertEqual(flyout_settings_title("HTTP 429"), "设置")
         self.assertEqual(flyout_settings_title("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "粘贴 Token")
@@ -639,3 +682,82 @@ class SourceGuardTests(unittest.TestCase):
         mixed = format_sync_status("2026-09-19T04:00:00.000Z", "用量明细因体积限制裁掉了 12 条最旧记录")
         self.assertIn("上次同步", mixed)
         self.assertIn("体积限制", mixed)
+
+    def test_compare_best_skips_zero_cost_rows(self) -> None:
+        from usage_report import (
+            AccountCompareCategory,
+            AccountCompareRow,
+            compare_best_eligible,
+            compare_best_per_million,
+            compare_row_note,
+            compare_windows_mixed,
+        )
+
+        empty = AccountCompareCategory(category="first_party")
+        unpaid = AccountCompareRow(
+            account_id="a",
+            label="",
+            channel="",
+            membership_type="",
+            window_source="fallback",
+            window_start_ms=0,
+            window_end_ms=0,
+            window_days=30,
+            plan_cny=0,
+            daily_holding_cny=0,
+            window_plan_cny=0,
+            on_demand_cny=0,
+            total_cny=0,
+            event_count=2,
+            total_tokens=2_000_000,
+            first_party=empty,
+            api=empty,
+            grok_bot=empty,
+        )
+        paid = AccountCompareRow(
+            account_id="b",
+            label="",
+            channel="",
+            membership_type="",
+            window_source="cycle",
+            window_start_ms=0,
+            window_end_ms=0,
+            window_days=15,
+            plan_cny=150,
+            daily_holding_cny=5,
+            window_plan_cny=75,
+            on_demand_cny=0,
+            total_cny=75,
+            event_count=1,
+            total_tokens=1_000_000,
+            first_party=empty,
+            api=empty,
+            grok_bot=empty,
+        )
+        other = AccountCompareRow(
+            account_id="c",
+            label="",
+            channel="",
+            membership_type="",
+            window_source="validity",
+            window_start_ms=0,
+            window_end_ms=0,
+            window_days=20,
+            plan_cny=150,
+            daily_holding_cny=5,
+            window_plan_cny=150,
+            on_demand_cny=0,
+            total_cny=30,
+            event_count=1,
+            total_tokens=1_000_000,
+            first_party=empty,
+            api=empty,
+            grok_bot=empty,
+        )
+        self.assertFalse(compare_best_eligible(unpaid))
+        self.assertEqual(compare_row_note(unpaid), "未填成本")
+        self.assertEqual(compare_row_note(paid, has_token=False), "未配置 Token")
+        self.assertEqual(compare_row_note(paid, last_error="Token 已过期或无效"), "登录已过期")
+        self.assertEqual(compare_best_per_million([unpaid, paid, other]), 30)
+        self.assertTrue(compare_windows_mixed([paid, other]))
+        self.assertFalse(compare_windows_mixed([paid, unpaid]))

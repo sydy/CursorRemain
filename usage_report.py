@@ -377,6 +377,34 @@ def unit_cny(amount: float, denom: float) -> float | None:
     return max(0.0, float(amount)) / denom
 
 
+def compare_row_has_cost(row: AccountCompareRow) -> bool:
+    return row.plan_cny > 0 or row.window_plan_cny > 0
+
+
+def compare_best_eligible(row: AccountCompareRow) -> bool:
+    return row.cny_per_million is not None and compare_row_has_cost(row)
+
+
+def compare_best_per_million(rows: list[AccountCompareRow]) -> float | None:
+    values = [row.cny_per_million for row in rows if compare_best_eligible(row) and row.cny_per_million is not None]
+    return min(values) if values else None
+
+
+def compare_windows_mixed(rows: list[AccountCompareRow]) -> bool:
+    sources = {row.window_source for row in rows if compare_best_eligible(row)}
+    return len(sources) > 1
+
+
+def compare_row_note(row: AccountCompareRow, *, has_token: bool = True, last_error: str = "") -> str:
+    if not has_token:
+        return "未配置 Token"
+    if last_error and ("过期" in last_error or "无效" in last_error or "未配置" in last_error):
+        return "登录已过期" if "未配置" not in last_error else "未配置 Token"
+    if not compare_row_has_cost(row):
+        return "未填成本"
+    return ""
+
+
 def format_cny_unit(amount: float | None, suffix: str) -> str:
     if amount is None:
         return "—"

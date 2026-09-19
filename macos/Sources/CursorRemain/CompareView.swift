@@ -168,7 +168,7 @@ struct CompareRootView: View {
             Text(store.status)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text(StatusText.compareHint)
+            Text(StatusText.formatCompareHint(mixedWindows: UsageEvents.compareWindowsMixed(store.report.rows)))
                 .font(.caption)
                 .foregroundStyle(.secondary)
             table
@@ -235,19 +235,27 @@ struct CompareRootView: View {
             ))
             for row in group.rows {
                 let name = accountName(row)
+                let acc = store.app.config.accounts.first { $0.id == row.accountId }
+                let note = UsageEvents.compareRowNote(
+                    row,
+                    hasToken: acc == nil || !(acc?.token.trimmingCharacters(in: .whitespaces).isEmpty ?? true),
+                    lastError: acc?.lastError ?? ""
+                )
+                var window = "\(row.windowLabel) \(formatDays(row.windowDays))天"
+                if !note.isEmpty { window += " · \(note)" }
                 out.append(line(
                     id: "acc-\(row.accountId)",
                     kind: .account,
                     name: name,
                     membership: UsageParser.formatMembershipType(row.membershipType),
-                    window: "\(row.windowLabel) \(formatDays(row.windowDays))天",
+                    window: window,
                     dailyHolding: UsageEvents.formatCNY(row.dailyHoldingCny),
                     paid: UsageEvents.formatCNY(row.totalCny),
                     requests: formatCount(row.eventCount),
                     tokens: UsageParser.formatTokenCount(Double(row.totalTokens)),
                     perMillion: unit(row.cnyPerMillion),
                     perRequest: unit(row.cnyPerRequest),
-                    bestUnit: isBest(row.cnyPerMillion, best)
+                    bestUnit: UsageEvents.compareBestEligible(row) && isBest(row.cnyPerMillion, best)
                 ))
                 out.append(contentsOf: categoryLines(accountId: row.accountId, firstParty: row.firstParty, api: row.api, grok: row.grokBot))
             }
@@ -270,7 +278,7 @@ struct CompareRootView: View {
     }
 
     var bestPerMillion: Double? {
-        store.report.rows.compactMap(\.cnyPerMillion).min()
+        UsageEvents.compareBestPerMillion(store.report.rows)
     }
 
     func categoryLines(accountId: String, firstParty: AccountCompareCategory, api: AccountCompareCategory, grok: AccountCompareCategory) -> [CompareLine] {

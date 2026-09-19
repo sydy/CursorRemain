@@ -87,6 +87,30 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(StatusText.formatFlyoutError("未配置 Token，请打开设置粘贴"), "未配置 Token，点下方「粘贴 Token」导入")
         XCTAssertEqual(StatusText.formatFlyoutError("HTTP 429"), "HTTP 429")
         XCTAssertTrue(StatusText.compareHint.contains("绿色数字"))
+        XCTAssertTrue(StatusText.compareHint.contains("已填成本"))
+        XCTAssertTrue(StatusText.formatCompareHint(mixedWindows: true).contains("绿色仅供参考"))
+        XCTAssertEqual(StatusText.formatCompareHint(mixedWindows: false), StatusText.compareHint)
+        XCTAssertEqual(StatusText.formatReportCacheStatus(count: 12, accountLabel: "工作号"), "当前：工作号 · 本地 12 条，正在刷新…")
+        XCTAssertEqual(StatusText.formatReportCacheStatus(count: 0), "本地还没有明细，正在同步…")
+        XCTAssertEqual(StatusText.formatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "登录已过期，请到设置重新粘贴 Token")
+        XCTAssertEqual(StatusText.formatReportSyncError("未配置 Token，请打开设置粘贴"), "未配置 Token，请先在设置里导入账号")
+        XCTAssertTrue(StatusText.formatReportSyncError("HTTP 429").hasPrefix("同步失败："))
+        XCTAssertTrue(StatusText.formatCloudDecryptNote(decryptError: false, syncSecretFailed: true, cloudAccessFailed: false).contains("解不开云同步密钥"))
+        XCTAssertTrue(StatusText.formatCloudDecryptNote(decryptError: true, syncSecretFailed: false, cloudAccessFailed: false).contains("重新粘贴 Token"))
+        XCTAssertEqual(StatusText.formatCloudDecryptNote(decryptError: false, syncSecretFailed: false, cloudAccessFailed: false), "")
+    }
+
+    func testCompareBestSkipsZeroCostRows() {
+        let unpaid = AccountCompareRow(windowSource: "fallback", totalCny: 0, totalTokens: 2_000_000)
+        let paid = AccountCompareRow(windowSource: "cycle", planCny: 150, windowPlanCny: 75, totalCny: 75, totalTokens: 1_000_000)
+        let other = AccountCompareRow(windowSource: "validity", planCny: 150, windowPlanCny: 150, totalCny: 30, totalTokens: 1_000_000)
+        XCTAssertFalse(UsageEvents.compareBestEligible(unpaid))
+        XCTAssertEqual(UsageEvents.compareRowNote(unpaid), "未填成本")
+        XCTAssertEqual(UsageEvents.compareRowNote(paid, hasToken: false), "未配置 Token")
+        XCTAssertEqual(UsageEvents.compareRowNote(paid, lastError: "Token 已过期或无效"), "登录已过期")
+        XCTAssertEqual(UsageEvents.compareBestPerMillion([unpaid, paid, other]), 30)
+        XCTAssertTrue(UsageEvents.compareWindowsMixed([paid, other]))
+        XCTAssertFalse(UsageEvents.compareWindowsMixed([paid, unpaid]))
     }
 
     func testFlyoutAndReportCopyMatchAuthState() {

@@ -76,6 +76,32 @@ public class NativeClientReliabilityTests
         Assert.Equal("未配置 Token，点下方「粘贴 Token」导入", StatusText.FormatFlyoutError("未配置 Token，请打开设置粘贴"));
         Assert.Equal("HTTP 429", StatusText.FormatFlyoutError("HTTP 429"));
         Assert.Contains("绿色数字", StatusText.CompareHint);
+        Assert.Contains("已填成本", StatusText.CompareHint);
+        Assert.Contains("绿色仅供参考", StatusText.FormatCompareHint(true));
+        Assert.Equal(StatusText.CompareHint, StatusText.FormatCompareHint(false));
+        Assert.Equal("当前：工作号 · 本地 12 条，正在刷新…", StatusText.FormatReportCacheStatus(12, "工作号"));
+        Assert.Equal("本地还没有明细，正在同步…", StatusText.FormatReportCacheStatus(0));
+        Assert.Equal("登录已过期，请到设置重新粘贴 Token", StatusText.FormatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("未配置 Token，请先在设置里导入账号", StatusText.FormatReportSyncError("未配置 Token，请打开设置粘贴"));
+        Assert.StartsWith("同步失败：", StatusText.FormatReportSyncError("HTTP 429"));
+        Assert.Contains("解不开云同步密钥", StatusText.FormatCloudDecryptNote(false, true, false));
+        Assert.Contains("重新粘贴 Token", StatusText.FormatCloudDecryptNote(true, false, false));
+        Assert.Equal("", StatusText.FormatCloudDecryptNote(false, false, false));
+    }
+
+    [Fact]
+    public void CompareBestSkipsZeroCostRows()
+    {
+        var unpaid = new AccountCompareRow { PlanCny = 0, WindowPlanCny = 0, TotalCny = 0, TotalTokens = 2_000_000, WindowSource = "fallback" };
+        var paid = new AccountCompareRow { PlanCny = 150, WindowPlanCny = 75, TotalCny = 75, TotalTokens = 1_000_000, WindowSource = "cycle" };
+        var other = new AccountCompareRow { PlanCny = 150, WindowPlanCny = 150, TotalCny = 30, TotalTokens = 1_000_000, WindowSource = "validity" };
+        Assert.False(UsageEvents.CompareBestEligible(unpaid));
+        Assert.Equal("未填成本", UsageEvents.CompareRowNote(unpaid));
+        Assert.Equal("未配置 Token", UsageEvents.CompareRowNote(paid, hasToken: false));
+        Assert.Equal("登录已过期", UsageEvents.CompareRowNote(paid, lastError: "Token 已过期或无效"));
+        Assert.Equal(30, UsageEvents.CompareBestPerMillion([unpaid, paid, other]));
+        Assert.True(UsageEvents.CompareWindowsMixed([paid, other]));
+        Assert.False(UsageEvents.CompareWindowsMixed([paid, unpaid]));
     }
 
     [Fact]

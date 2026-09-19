@@ -52,7 +52,14 @@ struct SettingsRootView: View {
             cloudEmail = store.config.cloudEmail
             cloudPassword = ""
             syncStatus = {
+                let decrypt = StatusText.formatCloudDecryptNote(
+                    decryptError: store.config.decryptError,
+                    syncSecretFailed: store.config.syncSecretDecryptFailed,
+                    cloudAccessFailed: store.config.cloudAccessDecryptFailed
+                )
                 let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
+                if !decrypt.isEmpty && !text.isEmpty { return decrypt + " " + text }
+                if !decrypt.isEmpty { return decrypt }
                 if !text.isEmpty { return text }
                 return store.config.cloudLoggedIn ? "尚未同步" : ""
             }()
