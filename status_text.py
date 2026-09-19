@@ -326,8 +326,40 @@ def compare_hint() -> str:
     return (
         "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。"
         "填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。"
-        "绿色数字是当前表里最低的 ¥/百万 Token。"
+        "绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。"
     )
+
+
+def format_compare_hint(mixed_windows: bool) -> str:
+    if not mixed_windows:
+        return compare_hint()
+    return compare_hint() + " 当前表里计费窗口不一致，绿色仅供参考。"
+
+
+def format_report_cache_status(count: int, account_label: str | None = None) -> str:
+    prefix = f"当前：{account_label.strip()} · " if (account_label or "").strip() else ""
+    if count > 0:
+        return f"{prefix}本地 {count} 条，正在刷新…"
+    return f"{prefix}本地还没有明细，正在同步…"
+
+
+def format_report_sync_error(error: str | None) -> str:
+    from cursor_api import is_auth_error_message
+
+    text = (error or "").strip()
+    if not text:
+        return "同步失败"
+    if is_auth_error_message(text):
+        return "未配置 Token，请先在设置里导入账号" if "未配置" in text else "登录已过期，请到设置重新粘贴 Token"
+    return "同步失败：" + short_error(text, 80)
+
+
+def format_cloud_decrypt_note(decrypt_error: bool, sync_secret_failed: bool, cloud_access_failed: bool) -> str:
+    if sync_secret_failed or cloud_access_failed:
+        return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。"
+    if decrypt_error:
+        return "本机有账号 Token 解不开。请重新粘贴 Token。"
+    return ""
 
 
 def format_report_sync_progress(page: int) -> str:

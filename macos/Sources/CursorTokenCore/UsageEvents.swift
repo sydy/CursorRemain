@@ -314,6 +314,50 @@ public struct AccountCompareRow: Equatable, Sendable {
     public var lastRemaining: Double?
     public var usesActualCny: Bool
 
+    public init(
+        accountId: String = "",
+        label: String = "",
+        channel: String = "",
+        membershipType: String = "",
+        windowSource: String = "",
+        windowStartMs: Int64 = 0,
+        windowEndMs: Int64 = 0,
+        windowDays: Double = 0,
+        planCny: Double = 0,
+        dailyHoldingCny: Double = 0,
+        windowPlanCny: Double = 0,
+        onDemandCny: Double = 0,
+        totalCny: Double = 0,
+        eventCount: Int = 0,
+        totalTokens: Int = 0,
+        firstParty: AccountCompareCategory = AccountCompareCategory(category: UsageEvents.categoryFirstParty),
+        api: AccountCompareCategory = AccountCompareCategory(category: UsageEvents.categoryAPI),
+        grokBot: AccountCompareCategory = AccountCompareCategory(category: UsageEvents.categoryGrokBot),
+        lastRemaining: Double? = nil,
+        usesActualCny: Bool = false
+    ) {
+        self.accountId = accountId
+        self.label = label
+        self.channel = channel
+        self.membershipType = membershipType
+        self.windowSource = windowSource
+        self.windowStartMs = windowStartMs
+        self.windowEndMs = windowEndMs
+        self.windowDays = windowDays
+        self.planCny = planCny
+        self.dailyHoldingCny = dailyHoldingCny
+        self.windowPlanCny = windowPlanCny
+        self.onDemandCny = onDemandCny
+        self.totalCny = totalCny
+        self.eventCount = eventCount
+        self.totalTokens = totalTokens
+        self.firstParty = firstParty
+        self.api = api
+        self.grokBot = grokBot
+        self.lastRemaining = lastRemaining
+        self.usesActualCny = usesActualCny
+    }
+
     public var channelLabel: String { UsageEvents.channelLabel(channel) }
     public var windowLabel: String { UsageEvents.windowLabel(windowSource) }
     public var cnyPerMillion: Double? { UsageEvents.unitCny(totalCny, totalTokens > 0 ? Double(totalTokens) / 1_000_000.0 : 0) }
@@ -516,6 +560,33 @@ public enum UsageEvents {
     public static func unitCny(_ amount: Double, _ denom: Double) -> Double? {
         if denom <= 1e-12 { return nil }
         return max(0, amount) / denom
+    }
+
+    public static func compareRowHasCost(_ row: AccountCompareRow) -> Bool {
+        row.planCny > 0 || row.windowPlanCny > 0
+    }
+
+    public static func compareBestEligible(_ row: AccountCompareRow) -> Bool {
+        row.cnyPerMillion != nil && compareRowHasCost(row)
+    }
+
+    public static func compareBestPerMillion(_ rows: [AccountCompareRow]) -> Double? {
+        let values = rows.filter(compareBestEligible).compactMap(\.cnyPerMillion)
+        return values.min()
+    }
+
+    public static func compareWindowsMixed(_ rows: [AccountCompareRow]) -> Bool {
+        Set(rows.filter(compareBestEligible).map(\.windowSource)).count > 1
+    }
+
+    public static func compareRowNote(_ row: AccountCompareRow, hasToken: Bool = true, lastError: String = "") -> String {
+        if !hasToken { return "未配置 Token" }
+        let error = lastError.trimmingCharacters(in: .whitespaces)
+        if !error.isEmpty && (error.contains("过期") || error.contains("无效") || error.contains("未配置")) {
+            return error.contains("未配置") ? "未配置 Token" : "登录已过期"
+        }
+        if !compareRowHasCost(row) { return "未填成本" }
+        return ""
     }
 
     public static func formatCnyUnit(_ amount: Double?, suffix: String) -> String {

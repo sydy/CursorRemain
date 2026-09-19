@@ -235,10 +235,42 @@ public static class StatusText
     }
 
     public const string CompareHint =
-        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字是当前表里最低的 ¥/百万 Token。";
+        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。";
+
+    public static string FormatCompareHint(bool mixedWindows)
+    {
+        if (!mixedWindows) return CompareHint;
+        return CompareHint + " 当前表里计费窗口不一致，绿色仅供参考。";
+    }
 
     public static string FormatReportSyncProgress(int page) =>
         page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
+
+    public static string FormatReportCacheStatus(int count, string? accountLabel = null)
+    {
+        var prefix = string.IsNullOrWhiteSpace(accountLabel) ? "" : "当前：" + accountLabel.Trim() + " · ";
+        return count > 0
+            ? prefix + $"本地 {count} 条，正在刷新…"
+            : prefix + "本地还没有明细，正在同步…";
+    }
+
+    public static string FormatReportSyncError(string? error)
+    {
+        var text = (error ?? "").Trim();
+        if (text.Length == 0) return "同步失败";
+        if (Token.IsAuthErrorMessage(text))
+            return text.Contains("未配置") ? "未配置 Token，请先在设置里导入账号" : "登录已过期，请到设置重新粘贴 Token";
+        return "同步失败：" + ShortError(text, 80);
+    }
+
+    public static string FormatCloudDecryptNote(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed)
+    {
+        if (syncSecretFailed || cloudAccessFailed)
+            return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。";
+        if (decryptError)
+            return "本机有账号 Token 解不开。请重新粘贴 Token。";
+        return "";
+    }
 
     public static string FlyoutSettingsTitle(string? error) =>
         Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";

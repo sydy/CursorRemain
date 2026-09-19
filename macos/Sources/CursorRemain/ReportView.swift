@@ -13,7 +13,7 @@ final class ReportStore: ObservableObject {
     @Published var cloud = ""
     @Published var chartHourly = false
     @Published var hiddenChartModels: Set<String> = []
-    @Published var status = "正在同步本周期明细…"
+    @Published var status = ""
     @Published var syncing = false
     @Published var events: [UsageEvent] = []
     @Published var modelNames: [String] = []
@@ -118,7 +118,7 @@ final class ReportStore: ObservableObject {
         }
         syncing = true
         loadCache()
-        status = StatusText.formatReportSyncProgress(1)
+        status = StatusText.formatReportCacheStatus(count: events.count, accountLabel: app.config.activeAccount?.displayLabel)
         defer { syncing = false }
         do {
             let result = try await UsageEvents.sync(
@@ -153,10 +153,10 @@ final class ReportStore: ObservableObject {
             )
         } catch let err as CursorAPIError {
             refreshModelNames()
-            status = "同步失败：\(err.message)"
+            status = StatusText.formatReportSyncError(err.message)
         } catch {
             refreshModelNames()
-            status = "同步失败：\(error.localizedDescription)"
+            status = StatusText.formatReportSyncError(error.localizedDescription)
         }
     }
 
@@ -215,6 +215,10 @@ struct ReportRootView: View {
         .padding(16)
         .frame(minWidth: 920, minHeight: 620)
         .onChange(of: store.teamScope) { _ in
+            Task { await store.sync() }
+        }
+        .onChange(of: store.app.config.activeAccountId) { _ in
+            store.reloadForCurrentAccount()
             Task { await store.sync() }
         }
         .onChange(of: store.startEnabled) { _ in store.persistDates() }

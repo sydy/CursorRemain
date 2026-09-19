@@ -376,7 +376,8 @@ sealed partial class TrayContext : ApplicationContext
                         _config.SpendSettings(usage?.MembershipType),
                         _config.ActiveAccount?.ReportStartDate ?? "",
                         _config.ActiveAccount?.ReportEndDate ?? "",
-                        ReportAllocationWindow.FromAccount(_config.ActiveAccount, usage));
+                        ReportAllocationWindow.FromAccount(_config.ActiveAccount, usage),
+                        _config.ActiveAccount?.DisplayLabel ?? "");
                 }, (id, start, end) =>
                 {
                     _config = ConfigStore.Update(live => live.SetReportRange(id, start, end));
@@ -422,6 +423,8 @@ sealed partial class TrayContext : ApplicationContext
         if (prevAuto != cfg.AutostartEnabled) Autostart.Apply(cfg.AutostartEnabled);
         if (refresh) RequestRefresh();
         UpdateUi();
+        if (_report is { IsDisposed: false }) _report.RequestSync();
+        if (_compare is { IsDisposed: false }) _compare.Reload();
         _ = PersistAndSyncAsync(cfg);
     }
 

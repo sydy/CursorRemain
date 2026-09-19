@@ -304,10 +304,39 @@ public enum StatusText {
     }
 
     public static let compareHint =
-        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字是当前表里最低的 ¥/百万 Token。"
+        "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。"
+
+    public static func formatCompareHint(mixedWindows: Bool) -> String {
+        mixedWindows ? compareHint + " 当前表里计费窗口不一致，绿色仅供参考。" : compareHint
+    }
 
     public static func formatReportSyncProgress(_ page: Int) -> String {
         page <= 1 ? "正在同步本周期明细…" : "正在同步本周期明细…第 \(page) 页"
+    }
+
+    public static func formatReportCacheStatus(count: Int, accountLabel: String? = nil) -> String {
+        let trimmed = (accountLabel ?? "").trimmingCharacters(in: .whitespaces)
+        let prefix = trimmed.isEmpty ? "" : "当前：\(trimmed) · "
+        return count > 0 ? "\(prefix)本地 \(count) 条，正在刷新…" : "\(prefix)本地还没有明细，正在同步…"
+    }
+
+    public static func formatReportSyncError(_ error: String?) -> String {
+        let text = (error ?? "").trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return "同步失败" }
+        if Token.isAuthErrorMessage(text) {
+            return text.contains("未配置") ? "未配置 Token，请先在设置里导入账号" : "登录已过期，请到设置重新粘贴 Token"
+        }
+        return "同步失败：" + shortError(text, maxLen: 80)
+    }
+
+    public static func formatCloudDecryptNote(decryptError: Bool, syncSecretFailed: Bool, cloudAccessFailed: Bool) -> String {
+        if syncSecretFailed || cloudAccessFailed {
+            return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。"
+        }
+        if decryptError {
+            return "本机有账号 Token 解不开。请重新粘贴 Token。"
+        }
+        return ""
     }
 
     public static func flyoutSettingsTitle(_ errorMessage: String?) -> String {

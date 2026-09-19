@@ -642,7 +642,10 @@ sealed class SettingsForm : Form
 
     static string SyncStatusText(AppConfig cfg)
     {
+        var decrypt = StatusText.FormatCloudDecryptNote(cfg.DecryptError, cfg.SyncSecretDecryptFailed, cfg.CloudAccessDecryptFailed);
         var text = StatusText.FormatSyncStatus(cfg.SyncLastAt, cfg.SyncLastError);
+        if (decrypt.Length > 0 && text.Length > 0) return decrypt + " " + text;
+        if (decrypt.Length > 0) return decrypt;
         if (text.Length > 0) return text;
         return cfg.CloudLoggedIn ? "尚未同步" : "";
     }

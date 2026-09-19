@@ -5,7 +5,7 @@ namespace CursorRemain;
 
 sealed class ReportForm : Form
 {
-    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "", ReportAllocationWindow? Allocation = null);
+    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "", ReportAllocationWindow? Allocation = null, string AccountLabel = "");
 
     const int DesignWidth = 1100;
     const int DesignHeight = 880;
@@ -291,13 +291,10 @@ sealed class ReportForm : Form
             _syncBtn.Enabled = true;
             return;
         }
-        if (!forceFull)
-        {
-            _all = UsageEvents.Load(st.AccountId, _teamScope);
-            FillModels();
-            Render();
-        }
-        _status.Text = StatusText.FormatReportSyncProgress(1);
+        _all = UsageEvents.Load(st.AccountId, _teamScope);
+        FillModels();
+        Render();
+        _status.Text = StatusText.FormatReportCacheStatus(_all.Count, st.AccountLabel);
         try
         {
             var result = await UsageEvents.SyncAsync(_client, st.Token, st.AccountId, st.Usage, _teamScope, onPage: page =>
@@ -319,13 +316,13 @@ sealed class ReportForm : Form
         {
             FillModels();
             Render();
-            _status.Text = "同步失败：" + ex.Message;
+            _status.Text = StatusText.FormatReportSyncError(ex.Message);
         }
         catch (Exception ex)
         {
             FillModels();
             Render();
-            _status.Text = "同步失败：" + ex.Message;
+            _status.Text = StatusText.FormatReportSyncError(ex.Message);
         }
         finally
         {

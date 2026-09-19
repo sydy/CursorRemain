@@ -17,7 +17,7 @@ sealed class CompareForm : Form
     readonly Label _status = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 8, 0, 0) };
     readonly Label _hint = new()
     {
-        Text = StatusText.CompareHint,
+        Text = StatusText.FormatCompareHint(false),
         AutoSize = true,
         ForeColor = Color.DimGray,
         Margin = new Padding(0, 4, 0, 8),
@@ -206,9 +206,8 @@ sealed class CompareForm : Form
     {
         _grid.Rows.Clear();
         _grid.SuspendLayout();
-        var units = _report.Rows.Where(r => r.CnyPerMillion is not null).Select(r => r.CnyPerMillion!.Value).ToList();
-        var hasBest = units.Count > 0;
-        var best = hasBest ? units.Min() : 0;
+        var best = UsageEvents.CompareBestPerMillion(_report.Rows);
+        _hint.Text = StatusText.FormatCompareHint(UsageEvents.CompareWindowsMixed(_report.Rows));
         var accounts = _state().Accounts;
         foreach (var group in _report.Groups)
         {
@@ -219,9 +218,16 @@ sealed class CompareForm : Form
                 var memb = UsageParser.FormatMembershipType(row.MembershipType);
                 if (!string.IsNullOrEmpty(memb) && !memb.Equals(name, StringComparison.OrdinalIgnoreCase))
                     name += "  " + memb;
+                var acc = accounts.FirstOrDefault(a => a.Id == row.AccountId);
+                var note = UsageEvents.CompareRowNote(
+                    row,
+                    hasToken: acc is null || !string.IsNullOrWhiteSpace(acc.Token),
+                    lastError: acc?.LastError ?? "");
+                var window = $"{row.WindowLabel} {FormatDays(row.WindowDays)}天";
+                if (note.Length > 0) window += " · " + note;
                 var accIdx = _grid.Rows.Add(Line(
                     name,
-                    $"{row.WindowLabel} {FormatDays(row.WindowDays)}天",
+                    window,
                     UsageEvents.FormatCny(row.DailyHoldingCny),
                     UsageEvents.FormatCny(row.TotalCny),
                     FormatCount(row.EventCount),
@@ -229,7 +235,7 @@ sealed class CompareForm : Form
                     Unit(row.CnyPerMillion),
                     Unit(row.CnyPerRequest)));
                 StyleRow(_grid.Rows[accIdx], RowKind.Account);
-                if (hasBest && row.CnyPerMillion is { } perM && Math.Abs(perM - best) < 1e-9)
+                if (best is { } bestVal && row.CnyPerMillion is { } perM && UsageEvents.CompareBestEligible(row) && Math.Abs(perM - bestVal) < 1e-9)
                     _grid.Rows[accIdx].Cells["perM"].Style.ForeColor = Color.SeaGreen;
                 AddCategory("First-party", row.FirstParty);
                 AddCategory("API", row.Api);

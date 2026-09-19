@@ -358,6 +358,31 @@ public static partial class UsageEvents
         return Math.Max(0, amount) / denom;
     }
 
+    public static bool CompareRowHasCost(AccountCompareRow row) =>
+        row.PlanCny > 0 || row.WindowPlanCny > 0;
+
+    public static bool CompareBestEligible(AccountCompareRow row) =>
+        row.CnyPerMillion is not null && CompareRowHasCost(row);
+
+    public static double? CompareBestPerMillion(IEnumerable<AccountCompareRow> rows)
+    {
+        var values = rows.Where(CompareBestEligible).Select(r => r.CnyPerMillion!.Value).ToList();
+        return values.Count == 0 ? null : values.Min();
+    }
+
+    public static bool CompareWindowsMixed(IEnumerable<AccountCompareRow> rows) =>
+        rows.Where(CompareBestEligible).Select(r => r.WindowSource).Distinct().Count() > 1;
+
+    public static string CompareRowNote(AccountCompareRow row, bool hasToken = true, string lastError = "")
+    {
+        if (!hasToken) return "未配置 Token";
+        var error = (lastError ?? "").Trim();
+        if (error.Length > 0 && (error.Contains("过期") || error.Contains("无效") || error.Contains("未配置")))
+            return error.Contains("未配置") ? "未配置 Token" : "登录已过期";
+        if (!CompareRowHasCost(row)) return "未填成本";
+        return "";
+    }
+
     public static string FormatCnyUnit(double? amount, string suffix) =>
         amount is null ? "—" : FormatCny(amount) + suffix;
 
