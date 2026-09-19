@@ -66,7 +66,17 @@ struct SettingsRootView: View {
             if focusToken || store.focusToken {
                 tokenFocused = true
             }
-            if startImport {
+            if startImport || store.pendingCursorImport {
+                store.pendingCursorImport = false
+                Task { await importFrom(prefer: "cursor-app") }
+            }
+        }
+        .onChange(of: store.focusToken) { focused in
+            if focused { tokenFocused = true }
+        }
+        .onChange(of: store.pendingCursorImport) { pending in
+            if pending {
+                store.pendingCursorImport = false
                 Task { await importFrom(prefer: "cursor-app") }
             }
         }
@@ -537,13 +547,26 @@ struct SettingsRootView: View {
             cfg.usdCnyRate = UsageEvents.clampUsdCnyRate(rate)
         }
         cfg.alertThresholds = ConfigStore.parseThresholds(thresholdText)
+        var added = 0
+        var failed = 0
         for token in CursorAccountPaste.tokenValues(tokenText) {
-            _ = try? cfg.upsertAccount(token: token, activate: true)
+            do {
+                _ = try cfg.upsertAccount(token: token, activate: true)
+                added += 1
+            } catch {
+                failed += 1
+            }
         }
+        if added > 0 { tokenText = "" }
         AccountSync.touchChangedSettings(&cfg, previous: before)
         store.applyConfig(cfg, refresh: true)
-        hint = close ? "" : "已应用"
-        if close { SettingsWindowController.shared.close() }
+        let saved = StatusText.formatTokenSaveResult(ok: added, fail: failed)
+        if close {
+            hint = saved
+            SettingsWindowController.shared.close()
+        } else {
+            hint = saved.isEmpty ? "已应用" : saved
+        }
     }
 
     func persistAccountFields() {
@@ -829,8 +852,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             win.delegate = self
             window = win
         }
-        window?.contentView = NSHostingView(rootView: SettingsRootView(store: store, startImport: startImport, focusToken: focusToken))
-        window?.center()
+        if window?.contentView == nil {
+            window?.contentView = NSHostingView(rootView: SettingsRootView(store: store, startImport: startImport, focusToken: focusToken))
+            window?.center()
+        }
         window?.makeKeyAndOrderFront(nil)
         if focusToken {
             DispatchQueue.main.async {

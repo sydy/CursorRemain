@@ -451,10 +451,19 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("formatCompareSyncProgress", mac_status)
         self.assertIn("FormatCloudSyncNotify", win_status)
         self.assertIn("formatCloudSyncNotify", mac_status)
+        self.assertIn("FormatExportFilename", win_status)
+        self.assertIn("formatExportFilename", mac_status)
+        self.assertIn("FormatCompareAccountName", win_status)
+        self.assertIn("formatCompareAccountName", mac_status)
+        self.assertIn("FormatTokenSaveResult", win_status)
+        self.assertIn("formatTokenSaveResult", mac_status)
         py_status = (root / "status_text.py").read_text(encoding="utf-8")
         self.assertIn("def format_report_filter_empty", py_status)
         self.assertIn("def format_compare_sync_progress", py_status)
         self.assertIn("def format_cloud_sync_notify", py_status)
+        self.assertIn("def format_export_filename", py_status)
+        self.assertIn("def format_compare_account_name", py_status)
+        self.assertIn("def format_token_save_result", py_status)
         self.assertIn("Token 解不开", win_events)
         self.assertIn("Token 解不开", mac_events)
         self.assertIn("BuildAccountCompareReport", win_compare)
@@ -493,6 +502,14 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("formatCloudDecryptNote", mac_settings)
         self.assertIn("if store == nil", mac_report)
         self.assertNotIn(".task { await store.sync() }", mac_report)
+        self.assertIn("formatExportFilename", mac_report)
+        self.assertIn("FormatExportFilename", win_report)
+        self.assertIn("formatCompareAccountName", mac_compare)
+        self.assertIn("FormatCompareAccountName", win_compare)
+        self.assertIn("FormatTokenSaveResult", win_settings)
+        self.assertIn("formatTokenSaveResult", mac_settings)
+        self.assertIn("if window?.contentView == nil", mac_settings)
+        self.assertIn("pendingCursorImport", mac_settings)
         win_flyout = (root / "windows" / "CursorRemain" / "FlyoutForm.cs").read_text(encoding="utf-8")
         mac_flyout = (root / "macos" / "Sources" / "CursorRemain" / "FlyoutView.swift").read_text(encoding="utf-8")
         mac_store = (root / "macos" / "Sources" / "CursorRemain" / "AppStore.swift").read_text(encoding="utf-8")
@@ -502,6 +519,10 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("CompareWindowController.shared.reloadIfVisible", mac_store)
         self.assertIn("FormatCloudSyncNotify", win_prog)
         self.assertIn("formatCloudSyncNotify", mac_store)
+        self.assertIn("pendingCursorImport", mac_store)
+        switch_src = mac_store.split("func switchAccount")[1].split("func loginToCursor")[0]
+        self.assertNotIn("FlyoutWindowController.shared.close()", switch_src)
+        self.assertNotIn("flyoutVisible = false", switch_src)
         self.assertIn("IsAuthErrorMessage(_error)", win_prog)
         self.assertIn("Token.isAuthErrorMessage", mac_flyout)
         self.assertIn("TokenValues", (root / "windows" / "CursorRemain" / "UiForms.cs").read_text(encoding="utf-8"))
@@ -652,7 +673,10 @@ class SourceGuardTests(unittest.TestCase):
             format_compare_sync,
             format_flyout_error,
             format_cloud_sync_notify,
+            format_compare_account_name,
             format_compare_sync_progress,
+            format_export_filename,
+            format_token_save_result,
             format_report_cache_status,
             format_report_filter_empty,
             format_report_spend_kpi,
@@ -672,6 +696,13 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(format_cloud_sync_notify(True, "登录已过期，请重新登录"), "")
         self.assertEqual(format_cloud_sync_notify(False, "登录已过期，请重新登录"), "登录已过期，请重新登录")
         self.assertEqual(format_cloud_sync_notify(False, "用量明细因体积限制裁掉了 3 条最旧记录"), "")
+        self.assertEqual(format_export_filename("cursor-usage", "工作号", "20260919"), "cursor-usage-工作号-20260919.csv")
+        self.assertEqual(format_export_filename("cursor-account-compare", "", "20260919"), "cursor-account-compare-20260919.csv")
+        self.assertEqual(format_compare_account_name("工作号", True), "工作号  · 当前")
+        self.assertEqual(format_compare_account_name("工作号", False), "工作号")
+        self.assertEqual(format_token_save_result(1, 0), "")
+        self.assertEqual(format_token_save_result(2, 0), "已保存 2 个账号")
+        self.assertEqual(format_token_save_result(1, 1), "成功 1 / 失败 1")
         kpi = format_report_spend_kpi(75, 150, 37.5, 7.5, True, 75)
         self.assertIn("已分摊", kpi)
         self.assertIn("本窗口折算", kpi)

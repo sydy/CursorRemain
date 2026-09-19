@@ -393,6 +393,41 @@ def format_cloud_sync_notify(ok: bool, message: str) -> str:
     return text
 
 
+def export_file_slug(label: str | None) -> str:
+    text = (label or "").strip()
+    if not text:
+        return ""
+    cleaned: list[str] = []
+    for ch in text:
+        if ch.isalnum() or "\u4e00" <= ch <= "\u9fff" or ch in "-_":
+            cleaned.append(ch)
+        else:
+            cleaned.append("-")
+    slug = "".join(cleaned).strip("-")
+    return slug[:24]
+
+
+def format_export_filename(prefix: str, label: str | None = None, day: str | None = None) -> str:
+    stamp = (day or "").strip() or datetime.now().strftime("%Y%m%d")
+    slug = export_file_slug(label)
+    if slug:
+        return f"{prefix}-{slug}-{stamp}.csv"
+    return f"{prefix}-{stamp}.csv"
+
+
+def format_compare_account_name(name: str, is_active: bool) -> str:
+    text = (name or "").strip() or "未命名账号"
+    return f"{text}  · 当前" if is_active else text
+
+
+def format_token_save_result(ok: int, fail: int) -> str:
+    if ok <= 0 and fail <= 0:
+        return ""
+    if fail <= 0:
+        return f"已保存 {ok} 个账号" if ok > 1 else ""
+    return f"成功 {ok} / 失败 {fail}"
+
+
 def flyout_settings_title(error_message: str | None) -> str:
     from cursor_api import is_auth_error_message
 

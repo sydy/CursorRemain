@@ -331,6 +331,44 @@ public enum StatusText {
         return text
     }
 
+    public static func exportFileSlug(_ label: String?) -> String {
+        let text = (label ?? "").trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return "" }
+        let cleaned = String(text.map { ch in
+            ch.isLetter || ch.isNumber || (ch >= "\u{4e00}" && ch <= "\u{9fff}") || ch == "-" || ch == "_"
+                ? ch
+                : "-"
+        }).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return cleaned.count > 24 ? String(cleaned.prefix(24)) : cleaned
+    }
+
+    public static func formatExportFilename(_ prefix: String, label: String? = nil, day: String? = nil) -> String {
+        let stamp: String = {
+            if let day, !day.trimmingCharacters(in: .whitespaces).isEmpty {
+                return day.trimmingCharacters(in: .whitespaces)
+            }
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = .current
+            f.dateFormat = "yyyyMMdd"
+            return f.string(from: Date())
+        }()
+        let slug = exportFileSlug(label)
+        return slug.isEmpty ? "\(prefix)-\(stamp).csv" : "\(prefix)-\(slug)-\(stamp).csv"
+    }
+
+    public static func formatCompareAccountName(_ name: String, isActive: Bool) -> String {
+        let text = name.trimmingCharacters(in: .whitespaces)
+        let label = text.isEmpty ? "未命名账号" : text
+        return isActive ? "\(label)  · 当前" : label
+    }
+
+    public static func formatTokenSaveResult(ok: Int, fail: Int) -> String {
+        if ok <= 0 && fail <= 0 { return "" }
+        if fail <= 0 { return ok > 1 ? "已保存 \(ok) 个账号" : "" }
+        return "成功 \(ok) / 失败 \(fail)"
+    }
+
     public static func formatReportCacheStatus(count: Int, accountLabel: String? = nil) -> String {
         let trimmed = (accountLabel ?? "").trimmingCharacters(in: .whitespaces)
         let prefix = trimmed.isEmpty ? "" : "当前：\(trimmed) · "

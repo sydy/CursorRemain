@@ -128,6 +128,13 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(StatusText.formatCloudSyncNotify(ok: true, message: "登录已过期，请重新登录"), "")
         XCTAssertEqual(StatusText.formatCloudSyncNotify(ok: false, message: "登录已过期，请重新登录"), "登录已过期，请重新登录")
         XCTAssertEqual(StatusText.formatCloudSyncNotify(ok: false, message: "用量明细因体积限制裁掉了 3 条最旧记录"), "")
+        XCTAssertEqual(StatusText.formatExportFilename("cursor-usage", label: "工作号", day: "20260919"), "cursor-usage-工作号-20260919.csv")
+        XCTAssertEqual(StatusText.formatExportFilename("cursor-account-compare", label: "", day: "20260919"), "cursor-account-compare-20260919.csv")
+        XCTAssertEqual(StatusText.formatCompareAccountName("工作号", isActive: true), "工作号  · 当前")
+        XCTAssertEqual(StatusText.formatCompareAccountName("工作号", isActive: false), "工作号")
+        XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 1, fail: 0), "")
+        XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 2, fail: 0), "已保存 2 个账号")
+        XCTAssertEqual(StatusText.formatTokenSaveResult(ok: 1, fail: 1), "成功 1 / 失败 1")
         XCTAssertEqual(CursorAccountPaste.tokenValues("aaa.bbb.ccc\nddd.eee.fff"), ["aaa.bbb.ccc", "ddd.eee.fff"])
         XCTAssertEqual(CursorAccountPaste.tokenValues("name@example.com:secret"), [])
     }

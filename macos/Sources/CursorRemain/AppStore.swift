@@ -17,6 +17,7 @@ final class AppStore: ObservableObject {
     @Published var updateStatus = ""
     @Published var updateBusy = false
     @Published var focusToken = false
+    @Published var pendingCursorImport = false
     @Published var historyPoints: [HistoryPoint] = []
     @Published var dailyAvgBurn: Double?
 
@@ -79,6 +80,7 @@ final class AppStore: ObservableObject {
 
     func openSettings(focusToken: Bool = false, startImport: Bool = false) {
         self.focusToken = focusToken
+        if startImport { pendingCursorImport = true }
         settingsVisible = true
         SettingsWindowController.shared.show(store: self, focusToken: focusToken, startImport: startImport)
     }
@@ -148,8 +150,6 @@ final class AppStore: ObservableObject {
         updatedAt = nil
         applyConfig(cfg, refresh: true)
         reloadHistory()
-        flyoutVisible = false
-        FlyoutWindowController.shared.close()
     }
 
     func loginToCursor(confirmClose: (Bool) -> Bool) async -> CursorAuthApplyResult {
