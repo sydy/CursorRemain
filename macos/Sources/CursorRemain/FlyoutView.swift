@@ -407,8 +407,8 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
 
     func installMonitor() {
         removeMonitor()
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
-            let loc = event.locationInWindow
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            let loc = NSEvent.mouseLocation
             Task { @MainActor in
                 guard let self, let window = self.window, window.isVisible else { return }
                 if !window.frame.contains(loc) {

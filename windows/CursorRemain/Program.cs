@@ -116,6 +116,7 @@ sealed partial class TrayContext : ApplicationContext
     bool _refreshNow;
     long _refreshGeneration;
     (int? Remaining, bool Error, string Mode, int Size)? _iconKey;
+    string _lastCloudNotify = "";
 
     public TrayContext()
     {
@@ -458,6 +459,7 @@ sealed partial class TrayContext : ApplicationContext
                     try { await Task.Run(() => ConfigStore.Save(_config)); }
                     catch (Exception ex) { CrashLog.Write(ex); }
                 }
+                NotifyCloudSync(status);
                 if (status.Changed) RequestRefresh();
             } while (_reconcileAgain && _config.SyncEnabled);
         }
@@ -539,6 +541,19 @@ sealed partial class TrayContext : ApplicationContext
         _settings?.Dispose();
         _sync.Dispose();
         Application.Exit();
+    }
+
+    void NotifyCloudSync(SyncStatus status)
+    {
+        var body = StatusText.FormatCloudSyncNotify(status.Ok, status.Message);
+        if (body.Length == 0)
+        {
+            _lastCloudNotify = "";
+            return;
+        }
+        if (body == _lastCloudNotify) return;
+        _lastCloudNotify = body;
+        OnUi(() => _icon.ShowBalloonTip(5000, "云同步失败", body, ToolTipIcon.Warning));
     }
 
     [DllImport("user32.dll")]

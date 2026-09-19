@@ -368,6 +368,31 @@ def format_report_sync_progress(page: int) -> str:
     return f"正在同步本周期明细…第 {page} 页"
 
 
+def format_report_filter_empty(total: int) -> str:
+    if total <= 0:
+        return ""
+    return f"当前筛选无结果（本地共 {total} 条，可清空筛选）"
+
+
+def format_compare_sync_progress(index: int, total: int, name: str, page: int = 0) -> str:
+    label = (name or "").strip() or "账号"
+    text = f"正在同步 {label}（{max(1, index)}/{max(1, total)}）…"
+    if page > 1:
+        text += f"第 {page} 页"
+    return text
+
+
+def format_cloud_sync_notify(ok: bool, message: str) -> str:
+    from account_sync import is_trim_note
+
+    if ok:
+        return ""
+    text = (message or "").strip()
+    if not text or is_trim_note(text):
+        return ""
+    return text
+
+
 def flyout_settings_title(error_message: str | None) -> str:
     from cursor_api import is_auth_error_message
 

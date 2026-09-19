@@ -375,8 +375,9 @@ public static partial class UsageEvents
 
     public static string CompareRowNote(AccountCompareRow row, bool hasToken = true, string lastError = "")
     {
-        if (!hasToken) return "未配置 Token";
         var error = (lastError ?? "").Trim();
+        if (error.Contains("解密")) return "Token 解不开";
+        if (!hasToken) return "未配置 Token";
         if (error.Length > 0 && (error.Contains("过期") || error.Contains("无效") || error.Contains("未配置")))
             return error.Contains("未配置") ? "未配置 Token" : "登录已过期";
         if (!CompareRowHasCost(row)) return "未填成本";

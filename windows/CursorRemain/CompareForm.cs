@@ -167,7 +167,9 @@ sealed class CompareForm : Form
         _status.Text = "正在同步各账号最新周期…";
         try
         {
-            var results = await BoundedWork.MapAsync(accounts, SyncOneAsync);
+            var total = accounts.Count;
+            var indexed = accounts.Select((acc, i) => (acc, index: i + 1)).ToList();
+            var results = await BoundedWork.MapAsync(indexed, item => SyncOneAsync(item.acc, item.index, total));
             var ok = results.Count(r => r is null);
             var failures = results.Where(r => r is not null).Cast<string>().ToList();
             _report = BuildReport();
@@ -182,9 +184,12 @@ sealed class CompareForm : Form
         }
     }
 
-    async Task<string?> SyncOneAsync(Account acc)
+    async Task<string?> SyncOneAsync(Account acc, int index, int total)
     {
         var name = string.IsNullOrWhiteSpace(acc.DisplayLabel) ? acc.Id : acc.DisplayLabel;
+        SetProgress(StatusText.FormatCompareSyncProgress(index, total, name));
+        if (acc.TokenDecryptFailed)
+            return $"{name}：Token 解不开";
         if (string.IsNullOrWhiteSpace(acc.Token))
             return $"{name}：未配置 Token";
         try
@@ -192,7 +197,8 @@ sealed class CompareForm : Form
             var snap = await _client.FetchUsageSummary(acc.Token, 20);
             AccountValidity.ApplyEndOverride(snap, acc);
             _state().PersistCycle(acc.Id, snap.MembershipType, snap.BillingCycleStart, snap.BillingCycleEnd);
-            await UsageEvents.SyncAsync(_client, acc.Token, acc.Id, snap, false);
+            await UsageEvents.SyncAsync(_client, acc.Token, acc.Id, snap, false, onPage: page =>
+                SetProgress(StatusText.FormatCompareSyncProgress(index, total, name, page)));
             return null;
         }
         catch (Exception ex)
@@ -200,6 +206,14 @@ sealed class CompareForm : Form
             CrashLog.Write(ex);
             return $"{name}：{StatusText.ShortError(ex is CursorApiException api ? api.Message : ex.Message)}";
         }
+    }
+
+    void SetProgress(string text)
+    {
+        void Apply() { if (!IsDisposed) _status.Text = text; }
+        if (IsDisposed) return;
+        if (InvokeRequired) BeginInvoke(Apply);
+        else Apply();
     }
 
     void Render()

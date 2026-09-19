@@ -396,10 +396,13 @@ def compare_windows_mixed(rows: list[AccountCompareRow]) -> bool:
 
 
 def compare_row_note(row: AccountCompareRow, *, has_token: bool = True, last_error: str = "") -> str:
+    error = (last_error or "").strip()
+    if "解密" in error:
+        return "Token 解不开"
     if not has_token:
         return "未配置 Token"
-    if last_error and ("过期" in last_error or "无效" in last_error or "未配置" in last_error):
-        return "登录已过期" if "未配置" not in last_error else "未配置 Token"
+    if error and ("过期" in error or "无效" in error or "未配置" in error):
+        return "登录已过期" if "未配置" not in error else "未配置 Token"
     if not compare_row_has_cost(row):
         return "未填成本"
     return ""
