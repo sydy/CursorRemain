@@ -28,7 +28,6 @@ NOTES_FILE="${GITHUB_WORKSPACE:-.}/latest-release-notes.md"
   printf '%s\n' "- **构建**: [Actions run ${GITHUB_RUN_ID}](${RUN_URL})"
   printf '%s\n' ""
   printf '%s\n' "Windows 安装版 [\`CursorRemain-windows-setup.exe\`](https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/CursorRemain-windows-setup.exe) 与 zip 便携包均为自包含，无需另装 .NET。自动更新在本机已有 .NET 8 Desktop Runtime 时会下载不含运行时的 [\`CursorRemain-windows-light.zip\`](https://github.com/${GITHUB_REPOSITORY}/releases/download/latest/CursorRemain-windows-light.zip)；否则仍下自包含 zip。macOS 为 Swift \`.app\`。"
-  printf '%s\n' "程序已更名为 CursorRemain；旧版自动更新仍可下载 CursorTokenTray-*.zip。"
   printf '%s\n' "从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 \`xattr -cr CursorRemain.app\`。"
 } > "${NOTES_FILE}"
 
@@ -46,5 +45,10 @@ if ! gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" \
     -f ref="refs/tags/latest" \
     -f sha="${GITHUB_SHA}" >/dev/null
 fi
+
+# Drop leftover CursorTokenTray assets from the rolling latest release.
+for asset in CursorTokenTray-windows.zip CursorTokenTray-macos.zip; do
+  gh release delete-asset latest "${asset}" --yes >/dev/null 2>&1 || true
+done
 
 echo "Updated latest release to ${VERSION} ${SHORT_SHA} (${TIME_UTC})"

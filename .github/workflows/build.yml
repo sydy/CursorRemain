@@ -154,8 +154,6 @@ jobs:
         run: |
           Copy-Item -Force windows\packaging\首次运行.txt dist-win\首次运行.txt
           Compress-Archive -Path dist-win\CursorRemain.exe, dist-win\首次运行.txt -DestinationPath CursorRemain-windows.zip -Force
-          Copy-Item -Force dist-win\CursorRemain.exe dist-win\CursorTokenTray.exe
-          Compress-Archive -Path dist-win\CursorTokenTray.exe, dist-win\首次运行.txt -DestinationPath CursorTokenTray-windows.zip -Force
           '{0} {1:N2} MB' -f 'CursorRemain-windows.zip', ((Get-Item CursorRemain-windows.zip).Length / 1MB)
       - name: Publish framework-dependent light exe
         shell: pwsh
@@ -197,7 +195,6 @@ jobs:
             CursorRemain-windows.zip
             CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
-            CursorTokenTray-windows.zip
           if-no-files-found: error
           retention-days: 1
       - name: Publish latest build
@@ -215,7 +212,6 @@ jobs:
             CursorRemain-windows.zip
             CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
-            CursorTokenTray-windows.zip
           body: |
             滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
             Windows 安装版与 zip 为自包含包，无需另装 .NET；自动更新在本机已有 .NET 8 Desktop Runtime 时会改下不含运行时的轻量包。macOS 为 Swift `.app`。
@@ -230,7 +226,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: bash .github/scripts/publish-official-release.sh CursorRemain-windows.zip CursorRemain-windows-light.zip CursorRemain-windows-setup.exe CursorTokenTray-windows.zip
+        run: bash .github/scripts/publish-official-release.sh CursorRemain-windows.zip CursorRemain-windows-light.zip CursorRemain-windows-setup.exe
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
@@ -239,7 +235,6 @@ jobs:
             CursorRemain-windows.zip
             CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
-            CursorTokenTray-windows.zip
           generate_release_notes: true
           make_latest: true
 
@@ -259,10 +254,6 @@ jobs:
       - name: Zip .app
         run: |
           ditto -c -k macos/dist/release CursorRemain-macos.zip
-          mkdir -p macos/dist/legacy-release
-          cp -R macos/dist/release/CursorRemain.app macos/dist/legacy-release/CursorTokenTray.app
-          cp macos/dist/release/首次打开.command macos/dist/legacy-release/首次打开.command
-          ditto -c -k macos/dist/legacy-release CursorTokenTray-macos.zip
       - uses: actions/upload-artifact@v6
         if: github.event_name != 'pull_request'
         continue-on-error: true
@@ -270,7 +261,6 @@ jobs:
           name: CursorRemain-macos
           path: |
             CursorRemain-macos.zip
-            CursorTokenTray-macos.zip
           if-no-files-found: error
           retention-days: 1
       - name: Publish latest build
@@ -286,7 +276,6 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: |
             CursorRemain-macos.zip
-            CursorTokenTray-macos.zip
           body: |
             滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
             Windows 安装版与 zip 为自包含包，无需另装 .NET；macOS 为 Swift `.app`。
@@ -301,13 +290,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
-        run: bash .github/scripts/publish-official-release.sh CursorRemain-macos.zip CursorTokenTray-macos.zip
+        run: bash .github/scripts/publish-official-release.sh CursorRemain-macos.zip
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
           files: |
             CursorRemain-macos.zip
-            CursorTokenTray-macos.zip
           generate_release_notes: true
           make_latest: true

@@ -171,7 +171,6 @@ public enum AccountSync {
     public static let format = "cursortokentray.accounts.v1"
     public static let formatV2 = "cursortokentray.sync.v2"
     public static let filename = "CursorRemain.accounts.sync"
-    public static let legacyFilename = "CursorTokenTray.accounts.sync"
     public static let kdf = "pbkdf2-sha256"
     public static let defaultIterations = 210_000
     public static let keyLen = 32

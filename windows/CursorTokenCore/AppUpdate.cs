@@ -495,16 +495,14 @@ public static class AppUpdate
     public static IReadOnlyList<string> AssetNameCandidates(string preferred)
     {
         if (preferred.Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase)
-            || preferred.Equals(WindowsAssetName, StringComparison.OrdinalIgnoreCase)
-            || preferred.Equals(LegacyWindowsAssetName, StringComparison.OrdinalIgnoreCase))
+            || preferred.Equals(WindowsAssetName, StringComparison.OrdinalIgnoreCase))
         {
             if (preferred.Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase))
-                return [WindowsLightAssetName, WindowsAssetName, LegacyWindowsAssetName];
-            return [WindowsAssetName, LegacyWindowsAssetName];
+                return [WindowsLightAssetName, WindowsAssetName];
+            return [WindowsAssetName];
         }
-        if (preferred.Equals(MacosAssetName, StringComparison.OrdinalIgnoreCase)
-            || preferred.Equals(LegacyMacosAssetName, StringComparison.OrdinalIgnoreCase))
-            return [MacosAssetName, LegacyMacosAssetName];
+        if (preferred.Equals(MacosAssetName, StringComparison.OrdinalIgnoreCase))
+            return [MacosAssetName];
         return [preferred];
     }
 

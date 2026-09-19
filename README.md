@@ -123,13 +123,13 @@ open /Applications/CursorRemain.app
 
 1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
 2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime；同时保留旧名 zip 供旧版自动更新），以及不含运行时的 `CursorRemain-windows-light.zip` 供自动更新
-4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`；同时保留旧名 zip）
+3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime），以及不含运行时的 `CursorRemain-windows-light.zip` 供自动更新
+4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`）
 
 版本号写在仓库根目录 `VERSION`。合入 `main` 后：
 
 - 若 `v{VERSION}` 还不存在，会创建**正式版** Release（例如 [v2.1.0](https://github.com/sydy/CursorRemain/releases/latest)），之后自动更新以它为准
-- 同时覆盖滚动预发布 **[latest](https://github.com/sydy/CursorRemain/releases/tag/latest)**，给旧客户端兜底
+- 同时覆盖滚动预发布 **[latest](https://github.com/sydy/CursorRemain/releases/tag/latest)**，给同版本号的已装客户端按提交哈希更新
 - 对应 run 的 **Artifacts**（保留 1 天；若制品配额尚未重算，这里可能暂时没有）
 
 PR 不上传制品。要发下一个正式版，只需改 `VERSION`（例如 `2.1.0` → `2.2.0`）后合入 `main`；也可以打匹配的 `v*` 标签。  

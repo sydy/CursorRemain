@@ -54,9 +54,6 @@ cat > "$STAGE/首次打开.command" << 'EOF'
 #!/bin/bash
 cd "$(dirname "$0")"
 APP="CursorRemain.app"
-if [[ ! -d "$APP" && -d "CursorTokenTray.app" ]]; then
-  APP="CursorTokenTray.app"
-fi
 if [[ ! -d "$APP" ]]; then
   osascript -e 'display alert "找不到 CursorRemain.app" message "请把本脚本和 App 放在同一文件夹后再双击。"' >/dev/null
   exit 1

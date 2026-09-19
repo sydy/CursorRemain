@@ -2,7 +2,7 @@
   "extract_sha": [
     {
       "name": "full_sha_in_backticks",
-      "text": "提交: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+      "text": "提交: [`518192b`](https://github.com/sydy/CursorRemain/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
       "sha": "518192b000000000000000000000000000000000"
     },
     {
@@ -191,7 +191,7 @@
         "tag_name": "latest",
         "html_url": "https://github.com/sydy/CursorRemain/releases/tag/latest",
         "published_at": "2026-09-14T03:20:00Z",
-        "body": "最新 `main` 构建。\n- **版本**: `2.1.1`\n- **提交**: [`518192b`](https://github.com/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
+        "body": "最新 `main` 构建。\n- **版本**: `2.1.1`\n- **提交**: [`518192b`](https://github.com/sydy/CursorRemain/commit/518192b000000000000000000000000000000000) `518192b000000000000000000000000000000000`",
         "assets": [
           {
             "id": 101,
@@ -262,7 +262,7 @@
   "parse_release_page": [
     {
       "name": "github_html_commit_and_notes",
-      "html": "<a href=\"/sydy/CursorTokenTray/commit/518192b000000000000000000000000000000000\">commit</a><li><strong>提交</strong>: <code>518192b000000000000000000000000000000000</code></li>",
+      "html": "<a href=\"/sydy/CursorRemain/commit/518192b000000000000000000000000000000000\">commit</a><li><strong>提交</strong>: <code>518192b000000000000000000000000000000000</code></li>",
       "sha": "518192b000000000000000000000000000000000",
       "windows_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-windows.zip",
       "macos_url": "https://github.com/sydy/CursorRemain/releases/download/latest/CursorRemain-macos.zip"

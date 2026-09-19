@@ -33,7 +33,6 @@ SYNC_FORMAT = "cursortokentray.accounts.v1"
 SYNC_FORMAT_V2 = "cursortokentray.sync.v2"
 SYNC_FORMATS = {SYNC_FORMAT, SYNC_FORMAT_V2}
 SYNC_FILENAME = "CursorRemain.accounts.sync"
-LEGACY_SYNC_FILENAME = "CursorTokenTray.accounts.sync"
 SYNC_KDF = "pbkdf2-sha256"
 DEFAULT_ITERATIONS = 210_000
 KEY_LEN = 32

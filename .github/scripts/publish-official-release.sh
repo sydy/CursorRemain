@@ -45,7 +45,6 @@ write_notes() {
     printf '%s\n' "- **构建**: [Actions run ${GITHUB_RUN_ID}](${RUN_URL})"
     printf '%s\n' ""
     printf '%s\n' "Windows 安装版与 zip 为自包含包，无需另装 .NET。自动更新在本机已有 .NET 8 Desktop Runtime 时会下载不含运行时的 \`CursorRemain-windows-light.zip\`；否则仍下自包含 zip。macOS 为 Swift \`.app\`。"
-    printf '%s\n' "程序已更名为 CursorRemain；旧版自动更新仍可从 [\`latest\`](https://github.com/${GITHUB_REPOSITORY}/releases/tag/latest) 下载 CursorTokenTray-*.zip。"
     printf '%s\n' "从浏览器下载的 macOS 包若提示「已损坏」，请双击 zip 内的「首次打开.command」，或执行 \`xattr -cr CursorRemain.app\`。"
   } > "${NOTES_FILE}"
 }

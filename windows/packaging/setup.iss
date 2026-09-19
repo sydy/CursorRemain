@@ -21,7 +21,7 @@
 
 #define MyAppName "Cursor 余量"
 #define MyAppExe "CursorRemain.exe"
-#define MyAppMutex "Local\CursorTokenTray_SingleInstance_v2"
+#define MyAppMutex "Local\CursorRemain_SingleInstance_v2"
 
 [Setup]
 AppId={{E8C4A1B7-5D29-4F6A-9C3E-1B7A2D4E6F80}

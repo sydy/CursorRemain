@@ -21,7 +21,7 @@ static class Program
             e.SetObserved();
         };
 
-        using var mutex = new Mutex(true, @"Local\CursorTokenTray_SingleInstance_v2", out var created);
+        using var mutex = new Mutex(true, @"Local\CursorRemain_SingleInstance_v2", out var created);
         if (!created)
         {
             MessageBox.Show("余量已经在托盘运行。", "已在后台运行", MessageBoxButtons.OK, MessageBoxIcon.Information);

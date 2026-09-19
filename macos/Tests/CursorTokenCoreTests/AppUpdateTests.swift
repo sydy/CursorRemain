@@ -129,11 +129,11 @@ final class AppUpdateTests: XCTestCase {
         )
         XCTAssertEqual(
             AppUpdate.assetNameCandidates(AppUpdate.windowsLightAssetName),
-            [AppUpdate.windowsLightAssetName, AppUpdate.windowsAssetName, AppUpdate.legacyWindowsAssetName]
+            [AppUpdate.windowsLightAssetName, AppUpdate.windowsAssetName]
         )
         XCTAssertEqual(
             AppUpdate.assetNameCandidates(AppUpdate.windowsAssetName),
-            [AppUpdate.windowsAssetName, AppUpdate.legacyWindowsAssetName]
+            [AppUpdate.windowsAssetName]
         )
         XCTAssertEqual(AppUpdate.preferredWindowsAssetName(preferLight: true), AppUpdate.windowsLightAssetName)
         XCTAssertEqual(AppUpdate.preferredWindowsAssetName(preferLight: false), AppUpdate.windowsAssetName)
@@ -174,7 +174,7 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(decision.asset?.id, 9)
     }
 
-    func testPrefersNewAssetThenFallsBackToLegacy() {
+    func testIgnoresLegacyZipWhenCurrentAssetMissing() {
         let release = AppRelease(
             tag: "latest",
             commitSha: "518192b000000000000000000000000000000000",
@@ -186,15 +186,14 @@ final class AppUpdateTests: XCTestCase {
                 )
             ]
         )
-        let asset = AppUpdate.findPreferredAsset(release, name: AppUpdate.windowsAssetName)
-        XCTAssertEqual(asset?.name, AppUpdate.legacyWindowsAssetName)
+        XCTAssertNil(AppUpdate.findPreferredAsset(release, name: AppUpdate.windowsAssetName))
         let decision = AppUpdate.evaluate(
             release: release,
             assetName: AppUpdate.windowsAssetName,
             currentSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         )
-        XCTAssertTrue(decision.available)
-        XCTAssertEqual(decision.asset?.id, 7)
+        XCTAssertFalse(decision.available)
+        XCTAssertEqual(decision.message, "最新发布没有本平台安装包")
     }
 
     func testDisplayVersionAndInformationalSha() {

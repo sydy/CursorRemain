@@ -81,7 +81,6 @@ public static class AccountSync
     public const string Format = "cursortokentray.accounts.v1";
     public const string FormatV2 = "cursortokentray.sync.v2";
     public const string Filename = "CursorRemain.accounts.sync";
-    public const string LegacyFilename = "CursorTokenTray.accounts.sync";
     public const string Kdf = "pbkdf2-sha256";
     public const int DefaultIterations = 210_000;
     public const int KeyLen = 32;
