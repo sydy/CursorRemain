@@ -101,7 +101,7 @@ struct CompareSyncOutcome: Sendable {
     var error: String?
 }
 
-func compareSyncOne(client: CursorClient, account: Account, directory: URL) async -> CompareSyncOutcome {
+func compareSyncOne(client: CursorClient, account: Account, directory: URL?) async -> CompareSyncOutcome {
     let name = account.displayLabel.trimmingCharacters(in: .whitespaces).isEmpty ? account.id : account.displayLabel
     let token = account.token.trimmingCharacters(in: .whitespaces)
     if token.isEmpty {
