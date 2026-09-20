@@ -61,7 +61,7 @@ sealed class SettingsForm : Form
     readonly Button _syncNow = ActionButton("立即同步", UiButtonKind.Primary);
     readonly Button _syncExport = ActionButton("导出…");
     readonly Button _syncImport = ActionButton("导入…");
-    readonly ComboBox _accounts = new FlatCombo { Dock = DockStyle.Fill };
+    readonly ComboBox _accounts = new FlatCombo();
     readonly ComboBox _kind = new FlatCombo { Width = 220 };
     readonly DateTimePicker _startAt = new FlatDatePicker
     {
@@ -145,10 +145,12 @@ sealed class SettingsForm : Form
         var tokenFrame = UiChrome.Frame(_token, 90);
         tokenFrame.Padding = new Padding(8, 6, 8, 6);
         tokenFrame.MinimumSize = new Size(0, 88);
+        var accounts = UiChrome.Frame(_accounts);
+        accounts.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
         _tabs.TabPages.AddRange([
             MakeTab(SettingsLayout.AccountTab,
                 UiChrome.Heading("当前账号", first: true),
-                _accounts,
+                accounts,
                 ImportRow(rename, del, login),
                 FieldRow("账号类型", _kind),
                 _tempFields,
@@ -283,6 +285,7 @@ sealed class SettingsForm : Form
         base.OnDpiChanged(e);
         BeginInvoke(() =>
         {
+            UiChrome.Apply(this);
             SizeButtons();
             FitToContent();
         });
@@ -331,12 +334,19 @@ sealed class SettingsForm : Form
         {
             foreach (Control child in page.Controls)
             {
+                child.Width = innerW;
                 child.PerformLayout();
-                bodyH = Math.Max(bodyH, child.GetPreferredSize(new Size(innerW, 0)).Height);
+                var pref = child.GetPreferredSize(new Size(innerW, 0)).Height;
+                var stacked = child.Padding.Vertical;
+                foreach (Control c in child.Controls)
+                    stacked += c.Height + c.Margin.Vertical;
+                bodyH = Math.Max(bodyH, Math.Max(pref, stacked));
             }
         }
         var extra = _root.Padding.Vertical + _tabs.ItemSize.Height + UiLayout.ScalePx(72, dpi);
-        var h = Math.Min(max.Item2, Math.Max(UiLayout.ScalePx(SettingsLayout.MinHeight, dpi), bodyH + extra));
+        var need = bodyH + extra;
+        var cap = Math.Max(max.Item2, work.Height - UiLayout.ScalePx(48, dpi));
+        var h = Math.Min(cap, Math.Max(max.Item2, need));
         ClientSize = new Size(max.Item1, h);
         WrapText();
     }
@@ -469,25 +479,25 @@ sealed class SettingsForm : Form
     {
         var p = Flow(items);
         p.WrapContents = true;
+        p.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
         return p;
     }
 
     static TableLayoutPanel FieldRow(string label, Control field)
     {
-        var rowH = FormTone.FieldHeight + 8;
         var row = new TableLayoutPanel
         {
-            AutoSize = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
             RowCount = 1,
             Dock = DockStyle.Top,
-            Height = rowH,
-            MinimumSize = new Size(0, rowH),
             Margin = new Padding(0, 4, 0, 4),
+            Tag = UiChrome.FieldRowTag,
         };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, FormTone.LabelColumn));
         row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.RowStyles.Add(new RowStyle(SizeType.Absolute, rowH));
+        row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         row.Controls.Add(new Label
         {
             Text = label,
@@ -497,22 +507,18 @@ sealed class SettingsForm : Form
             Margin = new Padding(0, 0, 10, 0),
         }, 0, 0);
         field.Margin = new Padding(0, 2, 0, 2);
-        field.MaximumSize = new Size(0, FormTone.FieldHeight + 4);
         field.MinimumSize = new Size(0, FormTone.FieldHeight);
-        if (field is TextBox box && !box.Multiline)
+        field.MaximumSize = Size.Empty;
+        if ((field is TextBox box && !box.Multiline) || field is ComboBox)
         {
-            var framed = UiChrome.Frame(box);
+            var framed = UiChrome.Frame(field);
             framed.Dock = DockStyle.Fill;
-            framed.Height = FormTone.FieldHeight + 2;
-            framed.MaximumSize = new Size(0, FormTone.FieldHeight + 4);
             framed.Margin = new Padding(0, 2, 0, 2);
             row.Controls.Add(framed, 1, 0);
         }
         else
         {
             field.Dock = DockStyle.Fill;
-            if (field is ComboBox combo)
-                combo.Height = FormTone.FieldHeight;
             row.Controls.Add(field, 1, 0);
         }
         return row;

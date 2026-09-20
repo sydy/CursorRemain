@@ -110,6 +110,8 @@ public static class SettingsLayout
     public const int MinWidth = 480;
     public const int MinHeight = 420;
     public const int PagePadding = 20;
+    /// <summary>Vertical air between a full-width combo and the action buttons under it.</summary>
+    public const int StackGap = 10;
 
     public const string AccountTab = "账户";
     public const string NotifyTab = "通知";
