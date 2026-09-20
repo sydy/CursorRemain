@@ -76,6 +76,8 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertTrue(StatusText.formatReportSpendKpi(totalCny: 75, planCny: 150, onDemandCny: 37.5, usdCnyRate: 7.5, usesActual: true, windowPlanCny: 75).contains("本窗口折算"))
         XCTAssertTrue(StatusText.formatReportSpendKpi(totalCny: 12.5, planCny: 120, onDemandCny: 12.5, usdCnyRate: 7.5, usesActual: false).contains("月费"))
         XCTAssertFalse(StatusText.formatReportSpendKpi(totalCny: 75, planCny: 150, onDemandCny: 0, usdCnyRate: 7.5, usesActual: true, windowPlanCny: 75).contains("预计实付"))
+        XCTAssertEqual(StatusText.formatReportPerMillionKpi(totalCny: 10, totalTokens: 2_000_000), "≈¥5.00")
+        XCTAssertEqual(StatusText.formatReportPerMillionKpi(totalCny: 10, totalTokens: 0), "")
         XCTAssertEqual(
             StatusText.formatReportSyncResult(count: 3, fetched: 0, stamp: "12:00:00", note: UsageEvents.noteTeamPersonal),
             "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。"

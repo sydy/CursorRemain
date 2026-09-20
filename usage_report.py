@@ -174,6 +174,10 @@ class UsageReport:
     uses_actual_cny: bool = False
     window_plan_cny: float = 0.0
 
+    @property
+    def cny_per_million(self) -> float | None:
+        return unit_cny(self.total_cny, self.total_tokens / 1_000_000.0 if self.total_tokens else 0.0)
+
 
 @dataclass(frozen=True)
 class UsageReportFilter:

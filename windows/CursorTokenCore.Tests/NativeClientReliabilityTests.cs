@@ -66,6 +66,8 @@ public class NativeClientReliabilityTests
         Assert.Contains("本窗口折算", StatusText.FormatReportSpendKpi(75, 150, 37.5, 7.5, true, 75));
         Assert.Contains("月费", StatusText.FormatReportSpendKpi(12.5, 120, 12.5, 7.5, false));
         Assert.DoesNotContain("预计实付", StatusText.FormatReportSpendKpi(75, 150, 0, 7.5, true, 75));
+        Assert.Equal("≈¥5.00", StatusText.FormatReportPerMillionKpi(10, 2_000_000));
+        Assert.Equal("", StatusText.FormatReportPerMillionKpi(10, 0));
         Assert.Equal(
             "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。",
             StatusText.FormatReportSyncResult(3, 0, "12:00:00", note: UsageEvents.NoteTeamPersonal));

@@ -20,7 +20,7 @@ sealed class CompareForm : Form
         Text = StatusText.FormatCompareHint(false),
         AutoSize = true,
         ForeColor = Color.DimGray,
-        Margin = new Padding(0, 4, 0, 8),
+        Margin = new Padding(0, 6, 0, 10),
     };
     readonly DataGridView _grid = new()
     {
@@ -55,6 +55,8 @@ sealed class CompareForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         Width = 1020;
         Height = 640;
+        _grid.ColumnHeadersHeight = 32;
+        _grid.RowTemplate.Height = 26;
         _grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
 
         foreach (var (name, header, fill, align) in Columns())
@@ -68,51 +70,39 @@ sealed class CompareForm : Form
             });
         }
 
-        var actions = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            WrapContents = false,
-            Margin = new Padding(0),
-        };
-        actions.Controls.Add(_syncBtn);
-        actions.Controls.Add(_exportBtn);
-        var toolbar = new TableLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            Margin = new Padding(0, 0, 0, 4),
-        };
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        toolbar.Controls.Add(_status, 0, 0);
-        toolbar.Controls.Add(actions, 1, 0);
+        var toolbar = UiChrome.ActionBar(_status, _syncBtn, _exportBtn);
+        toolbar.Dock = DockStyle.Top;
+        _hint.Dock = DockStyle.Top;
+        _grid.Dock = DockStyle.Fill;
 
-        var root = new TableLayoutPanel
+        var root = new Panel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 3,
             Padding = new Padding(20),
         };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.Controls.Add(toolbar, 0, 0);
-        root.Controls.Add(_hint, 0, 1);
-        root.Controls.Add(_grid, 0, 2);
+        root.Controls.Add(_grid);
+        root.Controls.Add(_hint);
+        root.Controls.Add(toolbar);
         Controls.Add(root);
         UiChrome.StyleGrid(_grid);
 
         _syncBtn.Click += async (_, _) => await SyncAsync();
         _exportBtn.Click += (_, _) => ExportCsv();
+        void WrapHint()
+        {
+            var inner = Math.Max(400, root.ClientSize.Width - 8);
+            _hint.MaximumSize = new Size(inner, 0);
+            _status.MaximumSize = new Size(Math.Max(160, inner - 220), 0);
+        }
         Load += (_, _) =>
         {
+            WrapHint();
             LoadCache();
-            _hint.MaximumSize = new Size(Math.Max(400, ClientSize.Width - 40), 0);
         };
+        root.Resize += (_, _) => WrapHint();
         ResumeLayout();
         UiChrome.Apply(this);
+        UiChrome.Equalize(DeviceDpi, _syncBtn, _exportBtn);
     }
 
     public void Reload()
@@ -310,6 +300,8 @@ sealed class CompareForm : Form
                 row.DefaultCellStyle.BackColor = UiChrome.HeaderFill();
                 break;
         }
+        row.DefaultCellStyle.SelectionBackColor = UiChrome.SelectionFill();
+        row.DefaultCellStyle.SelectionForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
     }
 
     static object[] Line(string name, string window, string holding, string paid, string requests, string tokens, string perM, string perR) =>

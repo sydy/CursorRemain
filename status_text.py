@@ -264,6 +264,13 @@ def format_compare_sync(ok: int, failures: list[str], stamp: str) -> str:
     return f"已同步 {ok} 个账号，{len(failures)} 个失败（{detail}）  ·  {stamp}"
 
 
+def format_report_per_million_kpi(total_cny: float, total_tokens: int) -> str:
+    from usage_report import format_cny, unit_cny
+
+    per = unit_cny(total_cny, total_tokens / 1_000_000.0 if total_tokens else 0.0)
+    return "" if per is None else "≈" + format_cny(per)
+
+
 def format_report_spend_kpi(
     total_cny: float,
     plan_cny: float,

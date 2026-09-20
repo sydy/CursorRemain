@@ -36,7 +36,9 @@ sealed class UsageChartPanel : Panel
         AutoSize = true,
         ForeColor = Color.DimGray,
         Text = "按日 Token（本地时间）",
-        Margin = new Padding(0, 4, 8, 4),
+        MinimumSize = new Size(0, FormTone.FieldHeight),
+        TextAlign = ContentAlignment.MiddleLeft,
+        Margin = new Padding(0, 2, 8, 2),
         Anchor = AnchorStyles.Left | AnchorStyles.Top,
     };
     readonly SegmentedToggle _toggle = new();
@@ -50,29 +52,26 @@ sealed class UsageChartPanel : Panel
         Margin = new Padding(0),
         Padding = new Padding(0, 2, 0, 2),
     };
-    readonly FlowLayoutPanel _legend = new()
+    readonly LegendStrip _legend = new()
     {
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        WrapContents = true,
         Dock = DockStyle.Top,
         Margin = new Padding(0, 2, 0, 6),
-        Padding = new Padding(0),
     };
-    readonly UsageChartBox _plot = new() { Dock = DockStyle.Top, Margin = new Padding(0) };
-    readonly ToolTip _tip = new();
+    readonly UsageChartBox _plot = new() { Dock = DockStyle.Fill, Margin = new Padding(0) };
     readonly HashSet<string> _hidden = new(StringComparer.Ordinal);
     List<UsageEvent> _events = [];
     bool _hourly;
-    int _legendWidth = -1;
+    int _rebuildGen;
+    int _fitWidth;
+
+    public bool Hourly => _hourly;
 
     public UsageChartPanel()
     {
-        AutoSize = true;
-        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        AutoSize = false;
         Dock = DockStyle.Fill;
         Margin = new Padding(0);
-        Padding = new Padding(0);
+        Padding = new Padding(0, 0, 0, 8);
 
         _header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _header.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -82,57 +81,44 @@ sealed class UsageChartPanel : Panel
         _header.Controls.Add(_caption, 0, 0);
         _header.Controls.Add(_toggle, 1, 0);
 
-        // Dock.Top: last added sits at the top.
         Controls.Add(_plot);
         Controls.Add(_legend);
         Controls.Add(_header);
 
         _toggle.HourlyChanged += (_, _) => SetHourly(_toggle.Hourly);
-        _plot.Height = UsageChartLayout.PlotHeight(DeviceDpi);
+        _legend.Toggled += (_, name) =>
+        {
+            if (!_hidden.Add(name)) _hidden.Remove(name);
+            _ = RebuildAsync();
+        };
+        Height = UsageChartLayout.HeaderHeight(DeviceDpi) + UsageChartLayout.PlotHeight(DeviceDpi) + 8;
     }
 
-    public void Bind(IReadOnlyList<UsageEvent> events)
+    public HashSet<string> HiddenSnapshot() => new(_hidden, StringComparer.Ordinal);
+
+    public void Bind(IReadOnlyList<UsageEvent> events, UsageChartSeries? series = null)
     {
         _events = events as List<UsageEvent> ?? events.ToList();
-        var models = UsageEvents.ChartModels(_events);
+        var models = series?.Models ?? UsageEvents.ChartModels(_events);
         _hidden.RemoveWhere(n => !models.Contains(n));
-        Rebuild();
+        if (series is null) _ = RebuildAsync();
+        else ApplySeries(series);
     }
 
-    public void ApplyDpi(int dpi)
+    public void ApplyDpi(int dpi, bool compact = false)
     {
         _toggle.ApplyDpi(dpi);
-        _plot.Height = UsageChartLayout.PlotHeight(dpi);
-        foreach (Control chip in _legend.Controls)
-            chip.Font = Font;
-        SyncLegendWidth(force: true);
-        PerformLayout();
-    }
-
-    public override Size GetPreferredSize(Size proposedSize)
-    {
-        var w = proposedSize.Width > 1 ? proposedSize.Width : Math.Max(ClientSize.Width, 200);
-        var headerH = Math.Max(_header.GetPreferredSize(new Size(w, 0)).Height, UsageChartLayout.HeaderHeight(DeviceDpi));
-        var legendH = 0;
-        if (_legend.Visible && _legend.Controls.Count > 0)
-            legendH = _legend.GetPreferredSize(new Size(w, 0)).Height + _legend.Margin.Vertical;
-        var plotH = Math.Max(_plot.Height, UsageChartLayout.PlotHeight(DeviceDpi)) + _plot.Margin.Vertical;
-        return new Size(w, headerH + legendH + plotH);
+        Padding = new Padding(0, 0, 0, UiLayout.ScalePx(compact ? 6 : 8, dpi));
+        _legend.Font = Font;
+        _legend.Relayout();
     }
 
     protected override void OnSizeChanged(EventArgs e)
     {
         base.OnSizeChanged(e);
-        SyncLegendWidth(force: false);
-    }
-
-    void SyncLegendWidth(bool force)
-    {
-        var w = Math.Max(1, ClientSize.Width);
-        if (!force && _legendWidth == w) return;
-        _legendWidth = w;
-        _legend.MaximumSize = new Size(w, 0);
-        _legend.PerformLayout();
+        if (ClientSize.Width == _fitWidth) return;
+        _fitWidth = ClientSize.Width;
+        _legend.Relayout();
     }
 
     void SetHourly(bool hourly)
@@ -140,54 +126,25 @@ sealed class UsageChartPanel : Panel
         if (_hourly == hourly) return;
         _hourly = hourly;
         _toggle.Hourly = hourly;
-        Rebuild();
+        _ = RebuildAsync();
     }
 
-    void Rebuild()
+    async Task RebuildAsync()
     {
-        var series = UsageEvents.BuildChart(_events, _hourly, _hidden);
+        var gen = ++_rebuildGen;
+        var events = _events;
+        var hourly = _hourly;
+        var hidden = HiddenSnapshot();
+        var series = await Task.Run(() => UsageEvents.BuildChart(events, hourly, hidden));
+        if (IsDisposed || gen != _rebuildGen) return;
+        ApplySeries(series);
+    }
+
+    void ApplySeries(UsageChartSeries series)
+    {
         _caption.Text = series.Caption;
         _plot.Series = series;
-        RebuildLegend();
-    }
-
-    void RebuildLegend()
-    {
-        var series = _plot.Series;
-        _legend.SuspendLayout();
-        _legend.Controls.Clear();
-        if (series.Models.Count == 0)
-        {
-            _legend.Visible = false;
-            _legend.ResumeLayout();
-            NotifyParentLayout();
-            return;
-        }
-        _legend.Visible = true;
-        foreach (var name in series.Models)
-        {
-            var chip = new LegendChip(name, UsageChartPalette.ForModel(series.Models, name), !_hidden.Contains(name))
-            {
-                Font = Font,
-            };
-            chip.Toggled += (_, _) =>
-            {
-                if (_hidden.Contains(name)) _hidden.Remove(name);
-                else _hidden.Add(name);
-                Rebuild();
-            };
-            _tip.SetToolTip(chip, "显示 / 隐藏此模型");
-            _legend.Controls.Add(chip);
-        }
-        _legend.ResumeLayout(true);
-        SyncLegendWidth(force: true);
-        NotifyParentLayout();
-    }
-
-    void NotifyParentLayout()
-    {
-        PerformLayout();
-        Parent?.PerformLayout();
+        _legend.Set(series.Models, _hidden);
     }
 }
 
@@ -252,18 +209,18 @@ sealed class SegmentedToggle : Control
         var radius = Math.Max(3f, UsageChartLayout.ToggleRadius(DeviceDpi));
         var mid = bounds.X + bounds.Width / 2f;
         using var outline = Rounded(bounds, radius);
-        using var bg = new SolidBrush(Color.White);
-        using var border = new Pen(Color.FromArgb(180, 180, 180));
+        using var bg = new SolidBrush(UiChrome.ColorOf(UiChrome.Tone.Field));
+        using var border = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
         g.FillPath(bg, outline);
         var onRect = _hourly
             ? new RectangleF(mid, bounds.Y, bounds.Right - mid, bounds.Height)
             : new RectangleF(bounds.X, bounds.Y, mid - bounds.X, bounds.Height);
         g.SetClip(outline);
-        using var onBr = new SolidBrush(Color.FromArgb(0, 120, 212));
+        using var onBr = new SolidBrush(UiChrome.ColorOf(UiChrome.Tone.Accent));
         g.FillRectangle(onBr, onRect);
         g.ResetClip();
         g.DrawPath(border, outline);
-        using var div = new Pen(Color.FromArgb(180, 180, 180));
+        using var div = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
         g.DrawLine(div, mid, bounds.Y + 1, mid, bounds.Bottom - 1);
         DrawLabel(g, "按日", new Rectangle(0, 0, (int)mid, Height), !_hourly);
         DrawLabel(g, "按小时", new Rectangle((int)mid, 0, Width - (int)mid, Height), _hourly);
@@ -271,7 +228,7 @@ sealed class SegmentedToggle : Control
 
     void DrawLabel(Graphics g, string text, Rectangle rect, bool on)
     {
-        var color = on ? Color.White : Color.FromArgb(32, 32, 32);
+        var color = on ? UiChrome.ColorOf(UiChrome.Tone.OnAccent) : UiChrome.ColorOf(UiChrome.Tone.Text);
         TextRenderer.DrawText(
             g, text, Font, rect, color,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
@@ -290,51 +247,70 @@ sealed class SegmentedToggle : Control
     }
 }
 
-sealed class LegendChip : Control
+sealed class LegendStrip : Control
 {
-    public event EventHandler? Toggled;
-    readonly Color _swatch;
-    bool _on;
+    public event EventHandler<string>? Toggled;
+    List<string> _models = [];
+    HashSet<string> _hidden = new(StringComparer.Ordinal);
+    readonly List<(string Name, Rectangle Bounds)> _hits = [];
 
-    public LegendChip(string model, Color swatch, bool on)
+    public LegendStrip()
     {
-        _swatch = swatch;
-        _on = on;
-        Text = UsageEvents.ChartModelLabel(model);
-        Cursor = Cursors.Hand;
-        AutoSize = true;
-        Margin = new Padding(0, 0, 8, 4);
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        Size = GetPreferredSize(Size.Empty);
+        Cursor = Cursors.Hand;
+        TabStop = false;
     }
 
-    protected override void OnFontChanged(EventArgs e)
+    public void Set(IReadOnlyList<string> models, HashSet<string> hidden)
     {
-        base.OnFontChanged(e);
-        Size = GetPreferredSize(Size.Empty);
-    }
-
-    protected override void OnDpiChangedAfterParent(EventArgs e)
-    {
-        base.OnDpiChangedAfterParent(e);
-        Size = GetPreferredSize(Size.Empty);
-    }
-
-    public override Size GetPreferredSize(Size proposedSize)
-    {
-        var text = TextRenderer.MeasureText(
-            Text, Font, Size.Empty,
-            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-        var (w, h) = UsageChartLayout.ChipSize(text.Width, Font.Height, DeviceDpi);
-        return new Size(w, h);
-    }
-
-    protected override void OnClick(EventArgs e)
-    {
-        _on = !_on;
+        _models = models as List<string> ?? models.ToList();
+        _hidden = hidden;
+        Visible = _models.Count > 0;
+        Relayout();
         Invalidate();
-        Toggled?.Invoke(this, EventArgs.Empty);
-        base.OnClick(e);
+    }
+
+    public void Relayout()
+    {
+        _hits.Clear();
+        if (_models.Count == 0)
+        {
+            if (Height != 0) Height = 0;
+            return;
+        }
+        var dpi = DeviceDpi;
+        var maxW = Math.Max(1, Width > 8 ? Width : Parent?.ClientSize.Width ?? Width);
+        var sizes = new List<(int Width, int Height)>(_models.Count);
+        foreach (var name in _models)
+        {
+            var label = UsageEvents.ChartModelLabel(name);
+            var text = TextRenderer.MeasureText(label, Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            sizes.Add(UsageChartLayout.ChipSize(text.Width, Font.Height, dpi));
+        }
+        var packed = UsageChartLayout.WrapChips(
+            sizes,
+            maxW,
+            UiLayout.ScalePx(UsageChartLayout.DesignLegendGap, dpi),
+            UiLayout.ScalePx(6, dpi));
+        for (var i = 0; i < _models.Count && i < packed.Frames.Length; i++)
+        {
+            var f = packed.Frames[i];
+            _hits.Add((_models[i], new Rectangle(f.X, f.Y, f.Width, f.Height)));
+        }
+        var need = Math.Max(1, packed.Height) + UiLayout.ScalePx(8, dpi);
+        if (Height != need) Height = need;
+        Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        foreach (var (name, bounds) in _hits)
+        {
+            if (!bounds.Contains(e.Location)) continue;
+            Toggled?.Invoke(this, name);
+            return;
+        }
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -342,21 +318,26 @@ sealed class LegendChip : Control
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var (padX, dot, gap, _, _) = UsageChartLayout.ChipMetrics(DeviceDpi);
-        var fill = _on ? Blend(_swatch, Color.White, 0.82f) : Color.White;
-        var border = _on ? _swatch : Color.FromArgb(180, 180, 180);
-        var r = Height / 2f;
-        using var path = Rounded(ClientRectangle, r);
-        using var br = new SolidBrush(fill);
-        using var pen = new Pen(border);
-        g.FillPath(br, path);
-        g.DrawPath(pen, path);
-        var cy = (Height - dot) / 2;
-        using var sw = new SolidBrush(_on ? _swatch : Color.FromArgb(180, 180, 180));
-        g.FillEllipse(sw, padX, cy, dot, dot);
-        var fc = _on ? Color.FromArgb(32, 32, 32) : Color.DimGray;
-        TextRenderer.DrawText(
-            g, Text, Font, new Point(padX + dot + gap, (Height - Font.Height) / 2), fc,
-            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        foreach (var (name, bounds) in _hits)
+        {
+            var on = !_hidden.Contains(name);
+            var swatch = UsageChartPalette.ForModel(_models, name);
+            var fill = on ? Blend(swatch, UiChrome.ColorOf(UiChrome.Tone.Field), 0.78f) : UiChrome.ColorOf(UiChrome.Tone.Button);
+            var border = on ? swatch : UiChrome.ColorOf(UiChrome.Tone.Stroke);
+            using var path = Rounded(bounds, bounds.Height / 2f);
+            using var br = new SolidBrush(fill);
+            using var pen = new Pen(border);
+            g.FillPath(br, path);
+            g.DrawPath(pen, path);
+            var cy = bounds.Y + (bounds.Height - dot) / 2;
+            using var sw = new SolidBrush(on ? swatch : Color.FromArgb(180, 180, 180));
+            g.FillEllipse(sw, bounds.X + padX, cy, dot, dot);
+            var fc = on ? UiChrome.ColorOf(UiChrome.Tone.Text) : UiChrome.ColorOf(UiChrome.Tone.Secondary);
+            TextRenderer.DrawText(
+                g, UsageEvents.ChartModelLabel(name), Font,
+                new Point(bounds.X + padX + dot + gap, bounds.Y + (bounds.Height - Font.Height) / 2),
+                fc, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        }
     }
 
     static Color Blend(Color a, Color b, float t) =>
@@ -435,9 +416,7 @@ sealed class UsageChartBox : Control
         base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        g.Clear(Color.White);
-        using var border = new Pen(Color.FromArgb(210, 210, 210));
-        g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        g.Clear(UiChrome.ColorOf(UiChrome.Tone.Window));
 
         var axisFont = Font;
         var buckets = _series.Buckets;
@@ -447,30 +426,32 @@ sealed class UsageChartBox : Control
         var yLabels = ticks.Select(t => t == 0 ? "0" : UsageParser.FormatTokenCount(t)).ToList();
         var labelW = yLabels.Max(s => TextRenderer.MeasureText(g, s, axisFont).Width);
         var padL = labelW + 10;
-        var padB = axisFont.Height + 8;
-        var padT = 8;
+        var padB = Math.Min(axisFont.Height + 8, Math.Max(6, Height / 5));
+        var padT = Math.Min(UiLayout.ScalePx(8, DeviceDpi), Math.Max(4, Height / 8));
         var padR = 8;
         _plot = new RectangleF(padL, padT, Math.Max(8, Width - padL - padR), Math.Max(8, Height - padT - padB));
-        using var grid = new Pen(Color.FromArgb(230, 230, 230));
-        using var dim = new SolidBrush(Color.DimGray);
+        using var grid = new Pen(UiChrome.ColorOf(UiChrome.Tone.Hairline));
+        using var dim = new SolidBrush(UiChrome.ColorOf(UiChrome.Tone.Secondary));
         for (var i = 0; i < ticks.Count; i++)
         {
             var y = _plot.Bottom - (ticks[i] / (float)yMax) * _plot.Height;
             g.DrawLine(grid, _plot.Left, y, _plot.Right, y);
             var lab = yLabels[i];
             var sz = TextRenderer.MeasureText(g, lab, axisFont);
-            TextRenderer.DrawText(g, lab, axisFont, new Point((int)(_plot.Left - sz.Width - 4), (int)y - sz.Height / 2), Color.DimGray, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, lab, axisFont, new Point((int)(_plot.Left - sz.Width - 4), (int)y - sz.Height / 2), UiChrome.ColorOf(UiChrome.Tone.Secondary), TextFormatFlags.NoPadding);
         }
 
         if (buckets.Count == 0)
         {
-            TextRenderer.DrawText(g, "暂无数据", axisFont, Rectangle.Round(_plot), Color.Silver, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(g, "暂无数据", axisFont, Rectangle.Round(_plot), UiChrome.ColorOf(UiChrome.Tone.Secondary), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            DrawFrame(g);
             return;
         }
 
         var n = buckets.Count;
         var slot = _plot.Width / n;
-        var maxBar = Math.Min(slot * 0.58f, UiLayout.ScalePx(72, DeviceDpi));
+        var cap = UiLayout.ScalePx(n <= 10 ? 96 : 72, DeviceDpi);
+        var maxBar = Math.Min(slot * 0.58f, cap);
         var barW = Math.Max(2f, maxBar);
         for (var i = 0; i < n; i++)
         {
@@ -488,7 +469,7 @@ sealed class UsageChartBox : Control
             }
             if (i == _hover)
             {
-                using var hi = new Pen(Color.FromArgb(60, 0, 0, 0), 1);
+                using var hi = new Pen(Color.FromArgb(80, UiChrome.ColorOf(UiChrome.Tone.Text)), 1);
                 g.DrawRectangle(hi, x0, yb, barW, _plot.Bottom - yb);
             }
         }
@@ -499,11 +480,25 @@ sealed class UsageChartBox : Control
             var lab = buckets[i].Label;
             var cx = (int)(_plot.Left + slot * (i + 0.5f));
             var sz = TextRenderer.MeasureText(g, lab, axisFont);
-            TextRenderer.DrawText(g, lab, axisFont, new Point(cx - sz.Width / 2, (int)_plot.Bottom + 2), Color.DimGray, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, lab, axisFont, new Point(cx - sz.Width / 2, (int)_plot.Bottom + 2), UiChrome.ColorOf(UiChrome.Tone.Secondary), TextFormatFlags.NoPadding);
         }
 
+        DrawFrame(g);
         if (_hover >= 0 && _hover < n)
             DrawTooltip(g, axisFont, buckets[_hover], _plot.Left + slot * (_hover + 0.5f));
+    }
+
+    void DrawFrame(Graphics g)
+    {
+        if (Width <= 2 || Height <= 2) return;
+        var oldSmooth = g.SmoothingMode;
+        var oldOffset = g.PixelOffsetMode;
+        g.SmoothingMode = SmoothingMode.None;
+        g.PixelOffsetMode = PixelOffsetMode.None;
+        using var border = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke), 1f);
+        g.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+        g.SmoothingMode = oldSmooth;
+        g.PixelOffsetMode = oldOffset;
     }
 
     void DrawTooltip(Graphics g, Font font, ChartBucket bucket, float barX)
@@ -519,7 +514,7 @@ sealed class UsageChartBox : Control
         var th = lineH * lines.Count + pad;
         var x = (int)Math.Min(Width - tw - 4, Math.Max(4, barX + 10));
         var y = 8;
-        using var bg = new SolidBrush(Color.FromArgb(230, 40, 40, 40));
+        using var bg = new SolidBrush(Color.FromArgb(230, UiChrome.ColorOf(UiChrome.Tone.Header)));
         using var path = new GraphicsPath();
         var rr = new Rectangle(x, y, tw, th);
         const int rad = 6;
@@ -532,7 +527,7 @@ sealed class UsageChartBox : Control
         var yy = y + pad / 2 + 2;
         foreach (var line in lines)
         {
-            TextRenderer.DrawText(g, line, font, new Point(x + pad, yy), Color.White, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, line, font, new Point(x + pad, yy), UiChrome.ColorOf(UiChrome.Tone.Text), TextFormatFlags.NoPadding);
             yy += lineH;
         }
     }

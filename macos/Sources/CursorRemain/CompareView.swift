@@ -193,8 +193,10 @@ struct CompareRootView: View {
             HStack(spacing: 10) {
                 Button("同步") { Task { await store.sync() } }
                     .disabled(store.syncing)
+                    .frame(minWidth: 84)
                 Button("导出 CSV") { store.exportCSV() }
                     .disabled(store.report.rows.isEmpty)
+                    .frame(minWidth: 84)
                 Spacer()
             }
             Text(store.status)

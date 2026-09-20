@@ -101,6 +101,7 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            Text("成本与渠道").font(.headline).padding(.top, 4)
             Picker("渠道", selection: $channel) {
                 Text("未标").tag("")
                 Text("自费").tag(UsageEvents.channelSelfPay)
@@ -112,13 +113,13 @@ struct SettingsRootView: View {
                 TextField("0", text: $actualCnyText).frame(width: 72)
             }
             .disabled(store.config.activeAccount == nil)
-            Text("仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
+            Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）").font(.headline).padding(.top, 8)
             TextEditor(text: $tokenText)
                 .font(.system(.body, design: .monospaced))
-                .frame(height: 120)
+                .frame(minHeight: 88, maxHeight: 120)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
                 .focused($tokenFocused)
             HStack {

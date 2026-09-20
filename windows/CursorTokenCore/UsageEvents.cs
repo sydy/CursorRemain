@@ -74,6 +74,7 @@ public sealed class UsageReport
     public double ActualCny { get; init; }
     public bool UsesActualCny { get; init; }
     public double WindowPlanCny { get; init; }
+    public double? CnyPerMillion => UsageEvents.UnitCny(TotalCny, TotalTokens > 0 ? TotalTokens / 1_000_000.0 : 0);
 }
 
 public readonly record struct CnySpendSettings(double MonthlyPlanUsd, double UsdCnyRate, string MembershipType, double ActualCny = 0)

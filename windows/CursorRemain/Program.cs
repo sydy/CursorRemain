@@ -5,9 +5,14 @@ namespace CursorRemain;
 
 static class Program
 {
+    internal static bool LaunchReport;
+    internal static bool LaunchSettings;
+
     [STAThread]
-    static void Main()
+    static void Main(string[] args)
     {
+        LaunchReport = args.Any(a => string.Equals(a, "--report", StringComparison.OrdinalIgnoreCase));
+        LaunchSettings = args.Any(a => string.Equals(a, "--settings", StringComparison.OrdinalIgnoreCase));
         ApplicationConfiguration.Initialize();
         UiChrome.Install();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
@@ -25,10 +30,37 @@ static class Program
         using var mutex = new Mutex(true, @"Local\CursorRemain_SingleInstance_v2", out var created);
         if (!created)
         {
+            if (LaunchReport && TrayIpc.RequestOpenReport()) return;
+            if (LaunchSettings && TrayIpc.RequestOpenSettings()) return;
             MessageBox.Show("余量已经在托盘运行。", "已在后台运行", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         Application.Run(new TrayContext());
+    }
+}
+
+static class TrayIpc
+{
+    public const string HiddenTitle = "CursorRemain.HiddenSync";
+    public const int WmOpenReport = 0x8001;
+    public const int WmOpenSettings = 0x8002;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr FindWindow(string? lpClassName, string lpWindowName);
+
+    [DllImport("user32.dll")]
+    static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    public static bool RequestOpenReport()
+    {
+        var hwnd = FindWindow(null, HiddenTitle);
+        return hwnd != IntPtr.Zero && PostMessage(hwnd, WmOpenReport, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    public static bool RequestOpenSettings()
+    {
+        var hwnd = FindWindow(null, HiddenTitle);
+        return hwnd != IntPtr.Zero && PostMessage(hwnd, WmOpenSettings, IntPtr.Zero, IntPtr.Zero);
     }
 }
 
@@ -60,7 +92,25 @@ sealed class HiddenSyncForm : Form
         Size = new Size(1, 1);
         Opacity = 0;
         ShowIcon = false;
-        Text = "";
+        Text = TrayIpc.HiddenTitle;
+    }
+
+    public event Action? OpenReportRequested;
+    public event Action? OpenSettingsRequested;
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == TrayIpc.WmOpenReport)
+        {
+            OpenReportRequested?.Invoke();
+            return;
+        }
+        if (m.Msg == TrayIpc.WmOpenSettings)
+        {
+            OpenSettingsRequested?.Invoke();
+            return;
+        }
+        base.WndProc(ref m);
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -147,12 +197,16 @@ sealed partial class TrayContext : ApplicationContext
             _iconKey = null;
             UpdateUi();
         };
+        _sync.OpenReportRequested += OpenReport;
+        _sync.OpenSettingsRequested += () => OpenSettings(false, false);
         _sync.BeginInvoke(() =>
         {
             if (string.IsNullOrEmpty(_config.SessionToken))
                 OpenSettings(true, false);
             _ = LoopAsync(_cts.Token);
             _ = UpdateLoopAsync(_cts.Token);
+            if (Program.LaunchReport) OpenReport();
+            if (Program.LaunchSettings) OpenSettings(false, false);
         });
     }
 

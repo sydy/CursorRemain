@@ -257,6 +257,11 @@ public enum StatusText {
         return "已同步 \(ok) 个账号，\(failures.count) 个失败（\(detail)）  ·  \(stamp)"
     }
 
+    public static func formatReportPerMillionKpi(totalCny: Double, totalTokens: Int) -> String {
+        guard let per = UsageEvents.unitCny(totalCny, totalTokens > 0 ? Double(totalTokens) / 1_000_000.0 : 0) else { return "" }
+        return "≈" + UsageEvents.formatCNY(per)
+    }
+
     public static func formatReportSpendKpi(
         totalCny: Double,
         planCny: Double,

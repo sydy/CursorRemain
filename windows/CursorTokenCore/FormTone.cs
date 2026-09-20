@@ -8,8 +8,12 @@ public static class FormTone
 {
     public const int FieldHeight = 28;
     public const int ButtonMinHeight = 28;
+    public const int ButtonMinWidth = 72;
+    public const int LabelColumn = 160;
     public const int ButtonRadius = 6;
-    public const int ButtonPadX = 10;
+    public const int ButtonPadX = 12;
+    public const int TabItemWidth = 84;
+    public const int TabItemHeight = 34;
 
     public readonly record struct Rgb(int R, int G, int B);
 
@@ -49,7 +53,7 @@ public static class FormTone
 
     public static Palette Dark { get; } = new(
         Window: new(36, 36, 38),
-        Field: new(48, 48, 50),
+        Field: new(56, 56, 60),
         Text: new(245, 245, 247),
         Secondary: new(152, 152, 157),
         Accent: new(10, 132, 255),

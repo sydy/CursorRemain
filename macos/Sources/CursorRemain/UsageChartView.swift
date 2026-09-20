@@ -29,7 +29,7 @@ struct UsageChartView: View {
     @State private var hoverKey: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center) {
                 Text(series.caption)
                     .font(.caption)
@@ -50,7 +50,7 @@ struct UsageChartView: View {
                 FlowLegend(models: series.models, hidden: hiddenModels, onToggle: onToggleModel)
             }
             plot
-                .frame(height: 168)
+                .frame(minHeight: 72, maxHeight: .infinity)
         }
     }
 
@@ -79,7 +79,7 @@ struct UsageChartView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
         .overlay(
-            Rectangle().stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+            Rectangle().strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
         )
     }
 
@@ -245,7 +245,7 @@ private struct FlowLegend: View {
 }
 
 /// Left-to-right wrap that keeps each subview at its intrinsic size.
-private struct ChipFlowLayout: Layout {
+struct ChipFlowLayout: Layout {
     var hSpacing: CGFloat
     var vSpacing: CGFloat
 

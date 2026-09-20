@@ -157,6 +157,7 @@ public struct UsageReport: Equatable, Sendable {
     public var actualCny: Double = 0
     public var usesActualCny: Bool = false
     public var windowPlanCny: Double = 0
+    public var cnyPerMillion: Double? { UsageEvents.unitCny(totalCny, totalTokens > 0 ? Double(totalTokens) / 1_000_000.0 : 0) }
 }
 
 public struct CnySpendSettings: Equatable, Sendable {

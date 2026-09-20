@@ -189,6 +189,12 @@ public static class StatusText
         return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
     }
 
+    public static string FormatReportPerMillionKpi(double totalCny, long totalTokens)
+    {
+        var per = UsageEvents.UnitCny(totalCny, totalTokens > 0 ? totalTokens / 1_000_000.0 : 0);
+        return per is null ? "" : "≈" + UsageEvents.FormatCny(per);
+    }
+
     public static string FormatReportSpendKpi(
         double totalCny,
         double planCny,

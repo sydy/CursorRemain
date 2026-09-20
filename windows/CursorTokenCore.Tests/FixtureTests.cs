@@ -894,6 +894,11 @@ public class FixtureTests
     {
         Assert.Equal(28, FormTone.FieldHeight);
         Assert.Equal(28, FormTone.ButtonMinHeight);
+        Assert.Equal(72, FormTone.ButtonMinWidth);
+        Assert.Equal(160, FormTone.LabelColumn);
+        Assert.Equal(12, FormTone.ButtonPadX);
+        Assert.Equal(84, FormTone.TabItemWidth);
+        Assert.Equal(34, FormTone.TabItemHeight);
         Assert.Equal(6, FormTone.ButtonRadius);
         Assert.Equal(246, FormTone.Light.Window.R);
         Assert.Equal(246, FormTone.Light.Window.G);
@@ -1036,7 +1041,7 @@ public class FixtureTests
     {
         var shortBtn = FlyoutLayout.ToolButtonSize(16, 12, hasIcon: true, scale: 1);
         var longBtn = FlyoutLayout.ToolButtonSize(32, 12, hasIcon: true, scale: 1);
-        Assert.Equal(8 + 14 + 4 + 16 + 8, shortBtn.Width, 3);
+        Assert.Equal(FlyoutLayout.ToolButtonPadX + FlyoutLayout.ToolButtonIcon + FlyoutLayout.ToolButtonIconGap + 16 + FlyoutLayout.ToolButtonPadX, shortBtn.Width, 3);
         Assert.Equal(16, longBtn.Width - shortBtn.Width, 3);
         Assert.True(shortBtn.Height >= FlyoutLayout.ToolButtonHeight);
         var high = FlyoutLayout.ToolButtonSize(16, 12, hasIcon: true, scale: 1.5f);
