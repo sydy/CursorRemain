@@ -9,6 +9,7 @@ static class Program
     static void Main()
     {
         ApplicationConfiguration.Initialize();
+        UiChrome.Install();
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
         Application.ThreadException += (_, e) => CrashLog.Write(e.Exception);
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>

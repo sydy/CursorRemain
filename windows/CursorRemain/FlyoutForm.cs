@@ -463,7 +463,7 @@ sealed class FlyoutForm : Form
 
     void ApplyPalette()
     {
-        Palette = FlyoutPalette.For(AppsUseLightTheme());
+        Palette = FlyoutPalette.For(UiChrome.AppsUseLightTheme());
         BackColor = Palette.Window;
         ForeColor = Palette.Text;
     }
@@ -581,16 +581,6 @@ sealed class FlyoutForm : Form
         return path;
     }
 
-    static bool AppsUseLightTheme()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            return key?.GetValue("AppsUseLightTheme") is int v && v == 1;
-        }
-        catch { return false; }
-    }
-
     protected override void Dispose(bool disposing)
     {
         if (disposing)
@@ -629,29 +619,34 @@ readonly struct FlyoutPalette
     public required Color Button { get; init; }
     public required Color ButtonHover { get; init; }
 
-    public static FlyoutPalette For(bool light) => light
-        ? new()
-        {
-            Window = Color.FromArgb(246, 246, 248),
-            Card = Color.FromArgb(18, 0, 0, 0),
-            Text = Color.FromArgb(28, 28, 30),
-            Secondary = Color.FromArgb(110, 110, 115),
-            Accent = Color.FromArgb(0, 122, 255),
-            Track = Color.FromArgb(28, 0, 0, 0),
-            Border = Color.FromArgb(40, 0, 0, 0),
-            Button = Color.FromArgb(22, 0, 0, 0),
-            ButtonHover = Color.FromArgb(40, 0, 0, 0),
-        }
-        : new()
-        {
-            Window = Color.FromArgb(36, 36, 38),
-            Card = Color.FromArgb(22, 255, 255, 255),
-            Text = Color.FromArgb(245, 245, 247),
-            Secondary = Color.FromArgb(152, 152, 157),
-            Accent = Color.FromArgb(10, 132, 255),
-            Track = Color.FromArgb(36, 255, 255, 255),
-            Border = Color.FromArgb(40, 255, 255, 255),
-            Button = Color.FromArgb(24, 255, 255, 255),
-            ButtonHover = Color.FromArgb(42, 255, 255, 255),
-        };
+    public static FlyoutPalette For(bool light)
+    {
+        var tone = FormTone.For(light);
+        Color Solid(FormTone.Rgb c) => Color.FromArgb(c.R, c.G, c.B);
+        return light
+            ? new()
+            {
+                Window = Solid(tone.Window),
+                Card = Color.FromArgb(18, 0, 0, 0),
+                Text = Solid(tone.Text),
+                Secondary = Solid(tone.Secondary),
+                Accent = Solid(tone.Accent),
+                Track = Color.FromArgb(28, 0, 0, 0),
+                Border = Color.FromArgb(40, 0, 0, 0),
+                Button = Color.FromArgb(22, 0, 0, 0),
+                ButtonHover = Color.FromArgb(40, 0, 0, 0),
+            }
+            : new()
+            {
+                Window = Solid(tone.Window),
+                Card = Color.FromArgb(22, 255, 255, 255),
+                Text = Solid(tone.Text),
+                Secondary = Solid(tone.Secondary),
+                Accent = Solid(tone.Accent),
+                Track = Color.FromArgb(36, 255, 255, 255),
+                Border = Color.FromArgb(40, 255, 255, 255),
+                Button = Color.FromArgb(24, 255, 255, 255),
+                ButtonHover = Color.FromArgb(42, 255, 255, 255),
+            };
+    }
 }

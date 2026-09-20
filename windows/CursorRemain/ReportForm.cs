@@ -42,8 +42,8 @@ sealed class ReportForm : Form
     readonly UsageChartPanel _chart = new();
     readonly DataGridView _models = MakeGrid();
     readonly DataGridView _grid = MakeGrid();
-    readonly Button _syncBtn = new() { Text = "同步", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-    readonly Button _exportBtn = new() { Text = "导出 CSV", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+    readonly Button _syncBtn = UiChrome.Button("同步", UiButtonKind.Primary);
+    readonly Button _exportBtn = UiChrome.Button("导出 CSV");
     readonly Label _scopeLabel = new() { Text = "范围", AutoSize = true, Anchor = AnchorStyles.Left, Margin = new Padding(0, 8, 6, 0) };
     readonly Label _detailsLabel = new() { Text = "明细", AutoSize = true, Margin = new Padding(0, 8, 0, 4) };
     readonly TableLayoutPanel _root = new()
@@ -163,6 +163,7 @@ sealed class ReportForm : Form
         _exportBtn.Click += (_, _) => ExportCsv();
         Shown += (_, _) => _ = SyncAsync(false);
         ResumeLayout(false);
+        UiChrome.Apply(this);
     }
 
     protected override void OnLoad(EventArgs e)
@@ -235,21 +236,24 @@ sealed class ReportForm : Form
         _status.MaximumSize = new Size(Math.Max(160, inner / 2), 0);
     }
 
-    static DataGridView MakeGrid() => new()
+    static DataGridView MakeGrid()
     {
-        Dock = DockStyle.Fill,
-        ReadOnly = true,
-        AllowUserToAddRows = false,
-        AllowUserToDeleteRows = false,
-        AllowUserToResizeRows = false,
-        AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-        ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-        RowHeadersVisible = false,
-        SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-        MultiSelect = false,
-        BackgroundColor = Color.White,
-        BorderStyle = BorderStyle.FixedSingle,
-    };
+        var grid = new DataGridView
+        {
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+        };
+        UiChrome.StyleGrid(grid);
+        return grid;
+    }
 
     public void RequestSync() => _ = SyncAsync(false);
 

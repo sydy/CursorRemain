@@ -400,7 +400,7 @@ sealed class UsageChartBox : Control
     public UsageChartBox()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-        BackColor = Color.White;
+        BackColor = UiChrome.ColorOf(UiChrome.Tone.Window);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)

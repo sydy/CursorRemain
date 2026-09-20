@@ -71,12 +71,12 @@ sealed class SettingsForm : Form
     readonly FlowLayoutPanel _cloudActions = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly TableLayoutPanel _cloudEmailRow;
     readonly TableLayoutPanel _cloudPasswordRow;
-    readonly Button _cloudLogin = ActionButton("登录");
+    readonly Button _cloudLogin = ActionButton("登录", UiButtonKind.Primary);
     readonly Button _cloudRegister = ActionButton("注册");
     readonly Button _cloudLogout = ActionButton("退出登录");
     readonly Button _cloudChangePassword = ActionButton("修改密码");
-    readonly Button _cloudDelete = ActionButton("注销账号");
-    readonly Button _syncNow = ActionButton("立即同步");
+    readonly Button _cloudDelete = ActionButton("注销账号", UiButtonKind.Danger);
+    readonly Button _syncNow = ActionButton("立即同步", UiButtonKind.Primary);
     readonly Button _syncExport = ActionButton("导出…");
     readonly Button _syncImport = ActionButton("导入…");
     readonly ComboBox _accounts = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
@@ -132,10 +132,10 @@ sealed class SettingsForm : Form
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         var rename = ActionButton("重命名");
-        var del = ActionButton("删除");
+        var del = ActionButton("删除", UiButtonKind.Danger);
         var login = ActionButton("登录到 Cursor");
         var cur = ActionButton("从 Cursor 导入");
-        var add = ActionButton("添加");
+        var add = ActionButton("添加", UiButtonKind.Primary);
         var ff = ActionButton("Firefox 登录");
         var cookie = ActionButton("仅导入 Cookie");
         _kind.Items.AddRange(["长期账号", "临时账号"]);
@@ -195,7 +195,7 @@ sealed class SettingsForm : Form
         ]);
         var cancel = ActionButton("取消");
         var apply = ActionButton("应用");
-        var save = ActionButton("保存");
+        var save = ActionButton("保存", UiButtonKind.Primary);
         var actions = Flow(save, apply, cancel);
         actions.FlowDirection = FlowDirection.RightToLeft;
         actions.Dock = DockStyle.Fill;
@@ -260,6 +260,7 @@ sealed class SettingsForm : Form
         _syncImport.Click += (_, _) => DoImportFile();
         _checkUpdate.Click += async (_, _) => await DoCheckUpdate();
         ResumeLayout(false);
+        UiChrome.Apply(this);
         if (startImport) BeginInvoke(async () => await DoImport("cursor-app"));
     }
 
@@ -321,7 +322,7 @@ sealed class SettingsForm : Form
             Padding = new Padding(16),
         };
         var field = new TextBox { Text = _cfg.ActiveAccount.Label, Width = 320, MinimumSize = new Size(260, 0) };
-        var ok = ActionButton("确定");
+        var ok = ActionButton("确定", UiButtonKind.Primary);
         ok.DialogResult = DialogResult.OK;
         var cancelR = ActionButton("取消");
         cancelR.DialogResult = DialogResult.Cancel;
@@ -336,6 +337,7 @@ sealed class SettingsForm : Form
         prompt.Controls.Add(box);
         prompt.AcceptButton = ok;
         prompt.CancelButton = cancelR;
+        UiChrome.Apply(prompt);
         if (prompt.ShowDialog(this) != DialogResult.OK) return;
         _cfg.RenameAccount(_cfg.ActiveAccount.Id, field.Text);
         LoadFrom(_cfg); NotifySaved();
@@ -402,13 +404,8 @@ sealed class SettingsForm : Form
         return row;
     }
 
-    static Button ActionButton(string text) => new()
-    {
-        Text = text,
-        AutoSize = true,
-        AutoSizeMode = AutoSizeMode.GrowAndShrink,
-        Margin = new Padding(0, 0, 8, 4),
-    };
+    static Button ActionButton(string text, UiButtonKind kind = UiButtonKind.Secondary)
+        => UiChrome.Button(text, kind);
 
     static FlowLayoutPanel Flow(params Control[] items)
     {
@@ -961,11 +958,16 @@ sealed class SettingsForm : Form
         var box = new TextBox { Width = 240, UseSystemPasswordChar = true, Left = 90, Top = 24 };
         dlg.Controls.Add(new Label { Text = label, AutoSize = true, Left = 16, Top = 28 });
         dlg.Controls.Add(box);
-        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Left = 170, Top = 80 };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Left = 250, Top = 80 };
+        var ok = ActionButton("确定", UiButtonKind.Primary);
+        ok.DialogResult = DialogResult.OK;
+        ok.Location = new Point(170, 80);
+        var cancel = ActionButton("取消");
+        cancel.DialogResult = DialogResult.Cancel;
+        cancel.Location = new Point(250, 80);
         dlg.Controls.AddRange([ok, cancel]);
         dlg.AcceptButton = ok;
         dlg.CancelButton = cancel;
+        UiChrome.Apply(dlg);
         if (dlg.ShowDialog() != DialogResult.OK) return false;
         password = box.Text.Trim();
         return password.Length > 0;
@@ -991,11 +993,16 @@ sealed class SettingsForm : Form
         dlg.Controls.Add(new Label { Text = newLabel, AutoSize = true, Left = 16, Top = 56 });
         dlg.Controls.Add(new Label { Text = confirmLabel, AutoSize = true, Left = 16, Top = 92 });
         dlg.Controls.AddRange([oldBox, newBox, confirmBox]);
-        var ok = new Button { Text = "确定", DialogResult = DialogResult.OK, Left = 200, Top = 140 };
-        var cancel = new Button { Text = "取消", DialogResult = DialogResult.Cancel, Left = 280, Top = 140 };
+        var ok = ActionButton("确定", UiButtonKind.Primary);
+        ok.DialogResult = DialogResult.OK;
+        ok.Location = new Point(200, 140);
+        var cancel = ActionButton("取消");
+        cancel.DialogResult = DialogResult.Cancel;
+        cancel.Location = new Point(280, 140);
         dlg.Controls.AddRange([ok, cancel]);
         dlg.AcceptButton = ok;
         dlg.CancelButton = cancel;
+        UiChrome.Apply(dlg);
         if (dlg.ShowDialog() != DialogResult.OK) return false;
         oldPass = oldBox.Text.Trim();
         newPass = newBox.Text.Trim();

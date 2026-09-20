@@ -34,12 +34,10 @@ sealed class CompareForm : Form
         RowHeadersVisible = false,
         SelectionMode = DataGridViewSelectionMode.FullRowSelect,
         MultiSelect = false,
-        BackgroundColor = Color.White,
-        BorderStyle = BorderStyle.FixedSingle,
         ScrollBars = ScrollBars.Both,
     };
-    readonly Button _syncBtn = new() { Text = "同步", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
-    readonly Button _exportBtn = new() { Text = "导出 CSV", AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink };
+    readonly Button _syncBtn = UiChrome.Button("同步", UiButtonKind.Primary);
+    readonly Button _exportBtn = UiChrome.Button("导出 CSV");
     AccountCompareReport _report = new();
     bool _syncing;
 
@@ -95,6 +93,7 @@ sealed class CompareForm : Form
         root.Controls.Add(_hint, 0, 1);
         root.Controls.Add(_grid, 0, 2);
         Controls.Add(root);
+        UiChrome.StyleGrid(_grid);
 
         _syncBtn.Click += async (_, _) => await SyncAsync();
         _exportBtn.Click += (_, _) => ExportCsv();
@@ -104,6 +103,7 @@ sealed class CompareForm : Form
             _hint.MaximumSize = new Size(Math.Max(400, ClientSize.Width - 40), 0);
         };
         ResumeLayout();
+        UiChrome.Apply(this);
     }
 
     public void Reload()
@@ -287,18 +287,18 @@ sealed class CompareForm : Form
         {
             case RowKind.Header:
                 row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
-                row.DefaultCellStyle.BackColor = Color.FromArgb(245, 245, 245);
+                row.DefaultCellStyle.BackColor = UiChrome.HeaderFill();
                 break;
             case RowKind.Account:
                 row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
                 break;
             case RowKind.Category:
-                row.DefaultCellStyle.ForeColor = Color.DimGray;
+                row.DefaultCellStyle.ForeColor = UiChrome.SecondaryText();
                 row.Cells["name"].Style.Padding = new Padding(18, 0, 0, 0);
                 break;
             case RowKind.Total:
                 row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
-                row.DefaultCellStyle.BackColor = Color.FromArgb(248, 248, 248);
+                row.DefaultCellStyle.BackColor = UiChrome.HeaderFill();
                 break;
         }
     }
