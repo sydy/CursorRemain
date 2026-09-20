@@ -337,46 +337,62 @@ def _snapshot_byte_size(snap: dict[str, Any]) -> int:
     return len(json.dumps(snap, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode("utf-8"))
 
 
-def _drop_oldest_usage(usage: list[dict[str, Any]]) -> bool:
-    best_aid = ""
-    best_kind = ""
-    best_ts = float("inf")
+GZIP_MAGIC = b"\x1f\x8b"
+
+
+def _maybe_gunzip(raw: bytes, compression: str) -> bytes:
+    kind = (compression or "").strip().lower()
+    if kind == "gzip" or (not kind and raw.startswith(GZIP_MAGIC)):
+        try:
+            return gzip.decompress(raw)
+        except Exception as exc:
+            raise ValueError("同步文件损坏") from exc
+    if kind:
+        raise ValueError("不支持的同步压缩")
+    return raw
+
+
+def _usage_trim_items(usage: list[dict[str, Any]]) -> list[tuple[float, int, str, str, Any]]:
+    items: list[tuple[float, int, str, str, Any]] = []
     for row in usage:
         aid = str(row.get("account_id") or "")
         for point in row.get("history") or []:
             try:
                 ts = float(point.get("ts") or 0)
             except (TypeError, ValueError):
-                continue
-            if ts < best_ts:
-                best_ts = ts
-                best_aid = aid
-                best_kind = "history"
-        for kind in ("events", "team_events"):
+                ts = 0.0
+            items.append((ts, 0, aid, "history", point))
+        for kind_order, kind in ((1, "events"), (2, "team_events")):
             for ev in row.get(kind) or []:
                 try:
                     ts = float(ev.get("timestamp_ms") or 0) / 1000.0
                 except (TypeError, ValueError):
-                    continue
-                if ts < best_ts:
-                    best_ts = ts
-                    best_aid = aid
-                    best_kind = kind
-    if not best_aid or not best_kind:
-        return False
-    for row in usage:
-        if row.get("account_id") != best_aid:
-            continue
-        items = list(row.get(best_kind) or [])
-        if not items:
-            return False
-        if best_kind == "history":
-            items.sort(key=lambda p: float(p.get("ts") or 0))
-        else:
-            items.sort(key=lambda e: float(e.get("timestamp_ms") or 0))
-        row[best_kind] = items[1:]
-        return True
-    return False
+                    ts = 0.0
+                items.append((ts, kind_order, aid, kind, ev))
+    items.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    return items
+
+
+def _rebuild_usage(items: list[tuple[float, int, str, str, Any]], keep_newest: int) -> list[dict[str, Any]]:
+    start = max(0, len(items) - max(0, keep_newest))
+    rows: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for _, _, aid, kind, record in items[start:]:
+        row = rows.get(aid)
+        if row is None:
+            row = {"account_id": aid, "history": [], "events": [], "team_events": []}
+            rows[aid] = row
+            order.append(aid)
+        row[kind].append(record)
+    out = []
+    for aid in order:
+        row = rows[aid]
+        row["history"] = sorted(row["history"], key=lambda p: float(p.get("ts") or 0))
+        row["events"] = sorted(row["events"], key=lambda e: float(e.get("timestamp_ms") or 0))
+        row["team_events"] = sorted(row["team_events"], key=lambda e: float(e.get("timestamp_ms") or 0))
+        if row["history"] or row["events"] or row["team_events"]:
+            out.append(row)
+    return out
 
 
 def usage_record_count(snap: dict[str, Any] | None) -> int:
@@ -421,15 +437,23 @@ def trim_snapshot_for_upload(snap: dict[str, Any], budget: int = SYNC_PLAINTEXT_
     out = dict(snap)
     if not isinstance(out.get("usage"), list):
         return out
-    usage = [dict(row) for row in out["usage"]]
-    for row in usage:
-        row["history"] = list(row.get("history") or [])
-        row["events"] = list(row.get("events") or [])
-        row["team_events"] = list(row.get("team_events") or [])
-    while usage and _snapshot_byte_size({**out, "usage": usage}) > budget:
-        if not _drop_oldest_usage(usage):
-            break
-    usage = [row for row in usage if row.get("history") or row.get("events") or row.get("team_events")]
+    items = _usage_trim_items([row for row in out["usage"] if isinstance(row, dict)])
+
+    def sized(keep: int) -> dict[str, Any]:
+        return {**out, "usage": _rebuild_usage(items, keep)}
+
+    full = sized(len(items))
+    if _snapshot_byte_size(full) <= budget:
+        out["usage"] = full["usage"]
+        return out
+    lo, hi = 0, len(items)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if _snapshot_byte_size(sized(mid)) <= budget:
+            lo = mid
+        else:
+            hi = mid - 1
+    usage = _rebuild_usage(items, lo)
     if _snapshot_byte_size({**out, "usage": usage}) > budget:
         usage = []
     out["usage"] = usage
@@ -922,14 +946,7 @@ def decrypt_envelope(envelope: dict[str, Any], passphrase: str) -> dict[str, Any
         raw = _aes_gcm_decrypt(key, nonce, blob)
     except Exception as exc:
         raise ValueError("同步口令不正确或文件已损坏") from exc
-    compression = str(envelope.get("compression") or "").strip().lower()
-    if compression == "gzip":
-        try:
-            raw = gzip.decompress(raw)
-        except Exception as exc:
-            raise ValueError("同步文件损坏") from exc
-    elif compression:
-        raise ValueError("不支持的同步压缩")
+    raw = _maybe_gunzip(raw, str(envelope.get("compression") or ""))
     try:
         payload = json.loads(raw.decode("utf-8"))
     except Exception as exc:

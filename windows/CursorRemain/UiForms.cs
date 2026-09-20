@@ -969,6 +969,8 @@ sealed class SettingsForm : Form
             _syncStatus.Text = "请填写邮箱和密码";
             return;
         }
+        _cloudLogin.Enabled = false;
+        _cloudRegister.Enabled = false;
         _syncStatus.Text = register ? "正在注册…" : "正在登录…";
         try
         {
@@ -976,12 +978,21 @@ sealed class SettingsForm : Form
                 ? await CloudSync.RegisterAsync(email, password)
                 : await CloudSync.LoginAsync(email, password);
             CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, password, result.Access, result.Refresh);
-            var status = await CloudSync.ReconcileAsync(_cfg);
+            if (!IsDisposed) _syncStatus.Text = "正在从云端导入账号和用量…";
+            var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
             _syncStatus.Text = status.Ok ? status.Message : status.Message;
             NotifySaved();
             LoadFrom(_cfg);
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                _cloudLogin.Enabled = true;
+                _cloudRegister.Enabled = true;
+            }
+        }
     }
 
     async Task DoChangePassword()
@@ -1094,7 +1105,8 @@ sealed class SettingsForm : Form
 
     async Task DoSync()
     {
-        var status = await CloudSync.ReconcileAsync(_cfg);
+        _syncStatus.Text = "正在同步账号和用量…";
+        var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
         _syncStatus.Text = status.Message;
         _status.Text = status.Message;
         NotifySaved();

@@ -832,53 +832,81 @@ public enum AccountSync {
     }
 
     public static func trimSnapshotForUpload(_ snap: SyncSnapshot, budget: Int = syncPlaintextBudget) -> SyncSnapshot {
-        guard var usage = snap.usage else { return snap }
+        guard let usage = snap.usage else { return snap }
+        let items = collectUsageTrimItems(usage)
         var clone = snap
-        clone.usage = usage
-        while !usage.isEmpty, (canonicalJSON(clone).utf8.count) > budget {
-            if !dropOldestUsage(&usage) { break }
-            clone.usage = usage
+        clone.usage = rebuildUsage(items, keepNewest: items.count)
+        if canonicalJSON(clone).utf8.count <= budget { return clone }
+        var lo = 0
+        var hi = items.count
+        while lo < hi {
+            let mid = lo + (hi - lo + 1) / 2
+            clone = snap
+            clone.usage = rebuildUsage(items, keepNewest: mid)
+            if canonicalJSON(clone).utf8.count <= budget { lo = mid }
+            else { hi = mid - 1 }
         }
-        usage = usage.filter { !$0.history.isEmpty || !$0.events.isEmpty || !$0.teamEvents.isEmpty }
-        clone.usage = usage
-        if (canonicalJSON(clone).utf8.count) > budget { clone.usage = [] }
+        clone = snap
+        clone.usage = rebuildUsage(items, keepNewest: lo)
+        if canonicalJSON(clone).utf8.count > budget { clone.usage = [] }
         return clone
     }
 
-    static func dropOldestUsage(_ usage: inout [SyncUsage]) -> Bool {
-        var bestIdx: Int?
-        var kind = ""
-        var bestTs = Double.greatestFiniteMagnitude
-        for (idx, row) in usage.enumerated() {
-            for p in row.history where p.ts < bestTs {
-                bestTs = p.ts; bestIdx = idx; kind = "history"
+    struct UsageTrimItem {
+        var ts: Double
+        var kindOrder: Int
+        var accountId: String
+        var kind: String
+        var history: HistoryPoint?
+        var event: UsageEvent?
+    }
+
+    static func collectUsageTrimItems(_ usage: [SyncUsage]) -> [UsageTrimItem] {
+        var items: [UsageTrimItem] = []
+        for row in usage {
+            for point in row.history {
+                items.append(UsageTrimItem(ts: point.ts, kindOrder: 0, accountId: row.accountId, kind: "history", history: point, event: nil))
             }
             for ev in row.events {
-                let ts = Double(ev.timestampMs) / 1000
-                if ts < bestTs { bestTs = ts; bestIdx = idx; kind = "events" }
+                items.append(UsageTrimItem(ts: Double(ev.timestampMs) / 1000, kindOrder: 1, accountId: row.accountId, kind: "events", history: nil, event: ev))
             }
             for ev in row.teamEvents {
-                let ts = Double(ev.timestampMs) / 1000
-                if ts < bestTs { bestTs = ts; bestIdx = idx; kind = "team" }
+                items.append(UsageTrimItem(ts: Double(ev.timestampMs) / 1000, kindOrder: 2, accountId: row.accountId, kind: "team", history: nil, event: ev))
             }
         }
-        guard let idx = bestIdx else { return false }
-        if kind == "history", !usage[idx].history.isEmpty {
-            usage[idx].history.sort { $0.ts < $1.ts }
-            usage[idx].history.removeFirst()
-            return true
+        return items.sorted {
+            if $0.ts != $1.ts { return $0.ts < $1.ts }
+            if $0.kindOrder != $1.kindOrder { return $0.kindOrder < $1.kindOrder }
+            return $0.accountId < $1.accountId
         }
-        if kind == "events", !usage[idx].events.isEmpty {
-            usage[idx].events.sort { $0.timestampMs < $1.timestampMs }
-            usage[idx].events.removeFirst()
-            return true
+    }
+
+    static func rebuildUsage(_ items: [UsageTrimItem], keepNewest: Int) -> [SyncUsage] {
+        let start = max(0, items.count - max(0, keepNewest))
+        var rows: [String: SyncUsage] = [:]
+        var order: [String] = []
+        if start < items.count {
+            for item in items[start...] {
+                var row = rows[item.accountId] ?? SyncUsage(accountId: item.accountId)
+                if rows[item.accountId] == nil { order.append(item.accountId) }
+                switch item.kind {
+                case "history":
+                    if let point = item.history { row.history.append(point) }
+                case "events":
+                    if let ev = item.event { row.events.append(ev) }
+                default:
+                    if let ev = item.event { row.teamEvents.append(ev) }
+                }
+                rows[item.accountId] = row
+            }
         }
-        if kind == "team", !usage[idx].teamEvents.isEmpty {
-            usage[idx].teamEvents.sort { $0.timestampMs < $1.timestampMs }
-            usage[idx].teamEvents.removeFirst()
-            return true
+        return order.compactMap { id in
+            guard var row = rows[id] else { return nil }
+            row.history.sort { $0.ts < $1.ts }
+            row.events.sort { $0.timestampMs < $1.timestampMs }
+            row.teamEvents.sort { $0.timestampMs < $1.timestampMs }
+            return row.history.isEmpty && row.events.isEmpty && row.teamEvents.isEmpty ? nil : row
         }
-        return false
     }
 
     public static func encryptEnvelope(
@@ -938,12 +966,7 @@ public enum AccountSync {
         do {
             let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: cipher, tag: tag)
             var opened = try AES.GCM.open(box, using: key)
-            let compression = str(envelope["compression"]).trimmingCharacters(in: .whitespaces).lowercased()
-            if compression == "gzip" {
-                opened = try GzipCodec.decompress(opened)
-            } else if !compression.isEmpty {
-                throw CursorAPIError("不支持的同步压缩")
-            }
+            opened = try maybeGunzip(opened, compression: str(envelope["compression"]))
             let obj = try JSONSerialization.jsonObject(with: opened)
             guard let dict = obj as? [String: Any] else { throw CursorAPIError("同步文件内容无法解析") }
             return parseSnapshot(dict)
@@ -1080,6 +1103,17 @@ public enum AccountSync {
         applySnapshotToConfig(&cfg, mergeSnapshots(snapshotFromConfig(cfg), remote))
         cfg.syncLastAt = nowIso()
         cfg.syncLastError = ""
+    }
+
+    static func maybeGunzip(_ raw: Data, compression: String) throws -> Data {
+        let kind = compression.trimmingCharacters(in: .whitespaces).lowercased()
+        let looksGzip = raw.count >= 2 && raw[raw.startIndex] == 0x1F && raw[raw.index(after: raw.startIndex)] == 0x8B
+        if kind == "gzip" || (kind.isEmpty && looksGzip) {
+            do { return try GzipCodec.decompress(raw) }
+            catch { throw CursorAPIError("同步文件损坏") }
+        }
+        if !kind.isEmpty { throw CursorAPIError("不支持的同步压缩") }
+        return raw
     }
 
     static func str(_ value: Any?) -> String {
