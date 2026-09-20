@@ -890,6 +890,28 @@ public class FixtureTests
     }
 
     [Fact]
+    public void FormToneMatchesFlyoutSolidsAndFieldMetrics()
+    {
+        Assert.Equal(28, FormTone.FieldHeight);
+        Assert.Equal(28, FormTone.ButtonMinHeight);
+        Assert.Equal(6, FormTone.ButtonRadius);
+        Assert.Equal(246, FormTone.Light.Window.R);
+        Assert.Equal(246, FormTone.Light.Window.G);
+        Assert.Equal(248, FormTone.Light.Window.B);
+        Assert.Equal(28, FormTone.Light.Text.R);
+        Assert.Equal(0, FormTone.Light.Accent.R);
+        Assert.Equal(122, FormTone.Light.Accent.G);
+        Assert.Equal(255, FormTone.Light.Accent.B);
+        Assert.Equal(36, FormTone.Dark.Window.R);
+        Assert.Equal(36, FormTone.Dark.Window.G);
+        Assert.Equal(38, FormTone.Dark.Window.B);
+        Assert.Equal(10, FormTone.Dark.Accent.R);
+        Assert.Equal(132, FormTone.Dark.Accent.G);
+        Assert.Equal(FormTone.Light, FormTone.For(true));
+        Assert.Equal(FormTone.Dark, FormTone.For(false));
+    }
+
+    [Fact]
     public void SettingsWindowUsesPagedDesignSize()
     {
         Assert.Equal(new[] { "账户", "通知", "托盘", "同步" }, SettingsLayout.TabTitles);

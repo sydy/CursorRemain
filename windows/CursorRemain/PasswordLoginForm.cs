@@ -33,7 +33,8 @@ sealed class PasswordLoginForm : Form
         ClientSize = new Size(880, 680);
         var icon = AppWindow.CreateIcon();
         if (icon is not null) Icon = icon;
-        var cancel = new Button { Text = "取消", AutoSize = true, DialogResult = DialogResult.Cancel };
+        var cancel = UiChrome.Button("取消");
+        cancel.DialogResult = DialogResult.Cancel;
         var bar = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
@@ -48,6 +49,7 @@ sealed class PasswordLoginForm : Form
         Controls.Add(_web);
         Controls.Add(bar);
         CancelButton = cancel;
+        UiChrome.Apply(this);
         _poll.Tick += async (_, _) => await TickAsync();
         Load += async (_, _) => await StartAsync();
         FormClosed += (_, _) => _poll.Stop();
