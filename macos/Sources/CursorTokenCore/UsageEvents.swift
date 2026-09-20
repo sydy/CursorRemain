@@ -859,8 +859,8 @@ public enum UsageEvents {
         }
         let list = cents / 100.0 * rate
         if list <= 1e-9 || cny <= 0 { return "—" }
-        let zhe = min(99.9, max(0, cny / list * 10.0))
-        return String(format: "%.1f折", locale: Locale(identifier: "en_US_POSIX"), zhe)
+        let zhe = min(99.99, max(0, cny / list * 10.0))
+        return String(format: "%.2f折", locale: Locale(identifier: "en_US_POSIX"), zhe)
     }
 
     public static func formatEventDiscount(_ ev: UsageEvent, amount: Double? = nil, rate: Double) -> String {

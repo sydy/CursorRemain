@@ -578,8 +578,8 @@ public static partial class UsageEvents
             return "—";
         var list = cents / 100.0 * rate;
         if (list <= 1e-9 || cny <= 0) return "—";
-        var zhe = Math.Clamp(cny / list * 10.0, 0, 99.9);
-        return zhe.ToString("0.0", CultureInfo.InvariantCulture) + "折";
+        var zhe = Math.Clamp(cny / list * 10.0, 0, 99.99);
+        return zhe.ToString("0.00", CultureInfo.InvariantCulture) + "折";
     }
 
     public static string FormatEventDiscount(UsageEvent ev, double? amount, double rate)

@@ -54,7 +54,7 @@ sealed class ReportForm : Form
         Padding = new Padding(16),
     };
     static readonly int[] ModelMinWidths = [160, 72, 72, 72, 56, 56, 48];
-    static readonly int[] DetailMinWidths = [110, 100, 56, 140, 64, 72, 72, 56, 48];
+    static readonly int[] DetailMinWidths = [110, 100, 56, 140, 64, 72, 72, 48];
     List<UsageEvent> _all = [];
     bool _syncing;
     bool _teamScope;
@@ -102,9 +102,8 @@ sealed class ReportForm : Form
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 8 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 18 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 8 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 10 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 10 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "discount", HeaderText = "折扣", FillWeight = 9 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
         var filters = new FlowLayoutPanel
@@ -472,7 +471,6 @@ sealed class ReportForm : Form
                 UsageParser.FormatTokenCount(ev.Tokens),
                 UsageEvents.FormatCost(ev),
                 UsageEvents.FormatEventCny(ev),
-                UsageEvents.FormatEventDiscount(ev, null, report.UsdCnyRate),
                 ev.IsHeadless ? "是" : "否");
         }
         _grid.ResumeLayout();

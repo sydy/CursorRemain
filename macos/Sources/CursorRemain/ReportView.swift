@@ -365,9 +365,6 @@ struct ReportRootView: View {
                 TableColumn("Token") { ev in Text(UsageParser.formatTokenCount(Double(ev.tokens))) }
                 TableColumn("费用") { ev in Text(UsageEvents.formatCost(ev)) }
                 TableColumn("实付") { ev in Text(UsageEvents.formatEventCny(ev)) }
-                TableColumn("折扣") { ev in
-                    Text(UsageEvents.formatEventDiscount(ev, rate: store.report.usdCnyRate))
-                }
                 TableColumn("云端") { ev in Text(ev.isHeadless ? "是" : "否") }
             }
         }
