@@ -59,7 +59,7 @@ static class UiChrome
 
     public static Button Button(string text, UiButtonKind kind = UiButtonKind.Secondary)
     {
-        var btn = new Button
+        var btn = new FlatButton
         {
             Text = text,
             AutoSize = false,
@@ -196,17 +196,22 @@ static class UiChrome
         return bar;
     }
 
+    internal const string FieldRowTag = "field-row";
+
+    internal static int FieldPx(int dpi) => UiLayout.ScalePx(FormTone.FieldHeight, dpi);
+
     public static FieldFrame Frame(Control inner, int height = 0)
     {
         if (inner is TextBox box)
             box.BorderStyle = BorderStyle.None;
-        inner.Dock = DockStyle.Fill;
         inner.Margin = Padding.Empty;
+        var multiline = inner is TextBox { Multiline: true };
+        inner.Dock = multiline ? DockStyle.Fill : DockStyle.None;
         var panel = new FieldFrame
         {
-            BackColor = ColorOf(Tone.Stroke),
-            Padding = new Padding(1),
-            Height = height > 0 ? height : Math.Max(inner.Height, FormTone.FieldHeight) + 2,
+            BackColor = ColorOf(Tone.Field),
+            Padding = Padding.Empty,
+            Height = height > 0 ? height : FormTone.FieldHeight,
             Dock = DockStyle.Top,
             Margin = new Padding(0, 2, 0, 8),
         };
@@ -335,7 +340,7 @@ static class UiChrome
         var pal = Tone;
         btn.FlatStyle = FlatStyle.Flat;
         btn.UseVisualStyleBackColor = false;
-        btn.FlatAppearance.BorderSize = 1;
+        btn.FlatAppearance.BorderSize = 0;
         switch (kind)
         {
             case UiButtonKind.Primary:
@@ -360,32 +365,61 @@ static class UiChrome
                 btn.FlatAppearance.MouseDownBackColor = ColorOf(pal.ButtonHover);
                 break;
         }
-        AttachRound(btn, FormTone.ButtonRadius);
     }
 
     static void StyleInput(Control control, FormTone.Palette pal, int dpi)
     {
         var field = ColorOf(pal.Field);
         var text = ColorOf(pal.Text);
-        var h = UiLayout.ScalePx(FormTone.FieldHeight, dpi);
+        var h = FieldPx(dpi);
+        var font = control.FindForm()?.Font;
+        if (font is not null) control.Font = font;
         switch (control)
         {
             case TextBox box:
-                box.BorderStyle = BorderStyle.FixedSingle;
+                var framed = box.Parent is FieldFrame;
+                box.BorderStyle = BorderStyle.None;
                 box.BackColor = field;
                 box.ForeColor = text;
-                if (!box.Multiline)
-                    box.MinimumSize = new Size(box.MinimumSize.Width, h);
                 box.HandleCreated -= ThemeTextScroll;
                 box.HandleCreated += ThemeTextScroll;
                 if (box.IsHandleCreated) ThemeTextScroll(box, EventArgs.Empty);
+                if (!box.Multiline)
+                {
+                    if (framed)
+                    {
+                        box.MinimumSize = Size.Empty;
+                        box.MaximumSize = Size.Empty;
+                        box.Dock = DockStyle.None;
+                        if (box.Parent is FieldFrame frame)
+                            frame.Relayout();
+                    }
+                    else
+                    {
+                        box.MinimumSize = new Size(box.MinimumSize.Width, h);
+                        box.Height = h;
+                        CenterEdit(box);
+                    }
+                }
                 break;
             case ComboBox combo:
                 combo.FlatStyle = FlatStyle.Flat;
                 combo.BackColor = field;
                 combo.ForeColor = text;
                 combo.IntegralHeight = false;
-                combo.Height = Math.Max(combo.Height, h);
+                if (combo.Parent is FieldFrame host)
+                {
+                    combo.Dock = DockStyle.Fill;
+                    combo.MaximumSize = Size.Empty;
+                    host.Relayout();
+                }
+                else
+                {
+                    combo.MinimumSize = new Size(combo.MinimumSize.Width, h);
+                    combo.MaximumSize = new Size(0, h);
+                    combo.Height = h;
+                    FitComboItem(combo);
+                }
                 if (combo.IsHandleCreated) NativeTheme.Strip(combo.Handle);
                 break;
             case NumericUpDown spin:
@@ -393,6 +427,7 @@ static class UiChrome
                 spin.BackColor = field;
                 spin.ForeColor = text;
                 spin.MinimumSize = new Size(spin.MinimumSize.Width, h);
+                spin.Height = h;
                 spin.HandleCreated -= ThemeSpin;
                 spin.HandleCreated += ThemeSpin;
                 if (spin.IsHandleCreated) ThemeSpin(spin, EventArgs.Empty);
@@ -404,17 +439,51 @@ static class UiChrome
                 picker.CalendarTitleForeColor = text;
                 picker.CalendarTrailingForeColor = ColorOf(pal.Secondary);
                 picker.MinimumSize = new Size(picker.MinimumSize.Width, h);
+                picker.Height = h;
                 if (picker.IsHandleCreated) NativeTheme.Strip(picker.Handle);
                 break;
         }
     }
 
+    static void FitComboItem(ComboBox combo)
+    {
+        var inner = Math.Max(16, combo.Height - 6);
+        if (combo.ItemHeight != inner)
+            combo.ItemHeight = inner;
+    }
+
+    const int EmSetRect = 0x00B3;
+
+    static void CenterEdit(TextBox box)
+    {
+        void ApplyRect(object? sender, EventArgs e)
+        {
+            if (!box.IsHandleCreated || box.IsDisposed || box.Multiline || box.ClientSize.Height <= 1) return;
+            var fontH = TextRenderer.MeasureText("Ag", box.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height;
+            var top = Math.Max(0, (box.ClientSize.Height - fontH) / 2);
+            var rc = new RECT
+            {
+                Left = 6,
+                Top = top,
+                Right = Math.Max(8, box.ClientSize.Width - 4),
+                Bottom = box.ClientSize.Height - top,
+            };
+            _ = SendMessage(box.Handle, EmSetRect, IntPtr.Zero, ref rc);
+        }
+        box.HandleCreated -= ApplyRect;
+        box.HandleCreated += ApplyRect;
+        box.Resize -= ApplyRect;
+        box.Resize += ApplyRect;
+        box.FontChanged -= ApplyRect;
+        box.FontChanged += ApplyRect;
+        if (box.IsHandleCreated) ApplyRect(box, EventArgs.Empty);
+    }
+
     static void StyleTabs(TabControl tabs, FormTone.Palette pal, int dpi)
     {
         tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-        tabs.SizeMode = TabSizeMode.Fixed;
-        tabs.ItemSize = new Size(UiLayout.ScalePx(FormTone.TabItemWidth, dpi), UiLayout.ScalePx(FormTone.TabItemHeight, dpi));
-        tabs.Padding = new Point(20, 8);
+        tabs.SizeMode = tabs is FlatTabControl ? TabSizeMode.Normal : TabSizeMode.Fixed;
+        tabs.Padding = new Point(16, 7);
         tabs.BackColor = ColorOf(pal.Window);
         foreach (TabPage page in tabs.TabPages)
         {
@@ -422,8 +491,12 @@ static class UiChrome
             page.BackColor = ColorOf(pal.Window);
             page.ForeColor = ColorOf(pal.Text);
         }
-        if (tabs is FlatTabControl)
+        if (tabs is FlatTabControl flat)
+        {
+            flat.FitItems(dpi);
             return;
+        }
+        tabs.ItemSize = new Size(UiLayout.ScalePx(FormTone.TabItemWidth, dpi), UiLayout.ScalePx(FormTone.TabItemHeight, dpi));
         tabs.DrawItem -= DrawTab;
         tabs.DrawItem += DrawTab;
     }
@@ -504,7 +577,21 @@ static class UiChrome
                 label.BackColor = Color.Transparent;
                 break;
             case FieldFrame frame:
-                frame.BackColor = ColorOf(pal.Stroke);
+                frame.BackColor = ColorOf(pal.Field);
+                if (frame.Controls.Count == 1 && frame.Controls[0] is not TextBox { Multiline: true })
+                {
+                    var h = FieldPx(dpi);
+                    frame.Height = h;
+                    frame.MinimumSize = new Size(0, h);
+                    frame.MaximumSize = new Size(0, h);
+                    frame.Relayout();
+                }
+                break;
+            case TableLayoutPanel table when Equals(table.Tag, FieldRowTag):
+                table.BackColor = window;
+                table.ForeColor = text;
+                if (table.ColumnStyles.Count > 0)
+                    table.ColumnStyles[0].Width = UiLayout.ScalePx(FormTone.LabelColumn, dpi);
                 break;
             case SplitContainer split:
                 split.BackColor = ColorOf(pal.Hairline);
@@ -521,30 +608,13 @@ static class UiChrome
             ApplyTree(child, pal, dpi);
     }
 
-    static void AttachRound(Control control, int radius)
-    {
-        void ApplyRegion(object? sender, EventArgs e)
-        {
-            if (control.IsDisposed || control.Width <= 0 || control.Height <= 0) return;
-            var d = Math.Max(2, UiLayout.ScalePx(radius, control.DeviceDpi) * 2);
-            var hrgn = CreateRoundRectRgn(0, 0, control.Width + 1, control.Height + 1, d, d);
-            if (hrgn == IntPtr.Zero) return;
-            var region = Region.FromHrgn(hrgn);
-            DeleteObject(hrgn);
-            var old = control.Region;
-            control.Region = region;
-            old?.Dispose();
-        }
-        control.Resize -= ApplyRegion;
-        control.Resize += ApplyRegion;
-        if (control.IsHandleCreated) ApplyRegion(control, EventArgs.Empty);
-        else control.HandleCreated += ApplyRegion;
-    }
-
     internal static GraphicsPath RoundRect(Rectangle bounds, int radius)
+        => RoundRect(new RectangleF(bounds.X, bounds.Y, bounds.Width, bounds.Height), radius);
+
+    internal static GraphicsPath RoundRect(RectangleF bounds, float radius)
     {
         var path = new GraphicsPath();
-        var d = Math.Max(2, Math.Min(radius * 2, Math.Min(bounds.Width, bounds.Height)));
+        var d = Math.Max(2f, Math.Min(radius * 2f, Math.Min(bounds.Width, bounds.Height)));
         path.AddArc(bounds.X, bounds.Y, d, d, 180, 90);
         path.AddArc(bounds.Right - d, bounds.Y, d, d, 270, 90);
         path.AddArc(bounds.Right - d, bounds.Bottom - d, d, d, 0, 90);
@@ -569,11 +639,15 @@ static class UiChrome
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
 
-    [DllImport("gdi32.dll")]
-    static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref RECT lParam);
 
-    [DllImport("gdi32.dll")]
-    static extern bool DeleteObject(IntPtr hObject);
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
 }
 
 static class NativeTheme
@@ -710,7 +784,80 @@ static class NativeTheme
     }
 }
 
-sealed class FieldFrame : Panel;
+sealed class FieldFrame : Panel
+{
+    public FieldFrame()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        UpdateStyles();
+    }
+
+    public void Relayout() => LayoutInner();
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        if (Controls.Count == 1 && Controls[0] is TextBox { Multiline: true })
+            return base.GetPreferredSize(proposedSize);
+        var h = UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96);
+        var w = proposedSize.Width > 0 ? proposedSize.Width : Math.Max(Width, 80);
+        return new Size(w, h);
+    }
+
+    protected override void OnControlAdded(ControlEventArgs e)
+    {
+        base.OnControlAdded(e);
+        LayoutInner();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        LayoutInner();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        LayoutInner();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(BackColor);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.None;
+        using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
+        g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+    }
+
+    void LayoutInner()
+    {
+        if (Controls.Count != 1) return;
+        var inner = Controls[0];
+        if (inner is TextBox { Multiline: true } or ComboBox)
+        {
+            inner.Dock = DockStyle.Fill;
+            inner.Margin = Padding.Empty;
+            if (inner is ComboBox combo)
+            {
+                var innerH = Math.Max(16, ClientSize.Height - 6);
+                if (combo.ItemHeight != innerH)
+                    combo.ItemHeight = innerH;
+            }
+            return;
+        }
+        inner.Dock = DockStyle.None;
+        inner.Margin = Padding.Empty;
+        var padX = 6;
+        var line = Math.Max(inner.Font.Height + 2, inner.PreferredSize.Height);
+        inner.Size = new Size(Math.Max(8, ClientSize.Width - padX * 2), line);
+        inner.Location = new Point(padX, Math.Max(0, (ClientSize.Height - inner.Height) / 2));
+    }
+}
 
 sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
 {
@@ -754,11 +901,27 @@ sealed class FlatTabControl : TabControl
     public FlatTabControl()
     {
         DrawMode = TabDrawMode.OwnerDrawFixed;
-        SizeMode = TabSizeMode.Fixed;
+        SizeMode = TabSizeMode.Normal;
+        Multiline = false;
         ItemSize = new Size(FormTone.TabItemWidth, FormTone.TabItemHeight);
-        Padding = new Point(20, 8);
+        Padding = new Point(16, 7);
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
         UpdateStyles();
+    }
+
+    public void FitItems(int dpi)
+    {
+        SizeMode = TabSizeMode.Normal;
+        var h = UiLayout.ScalePx(FormTone.TabItemHeight, dpi);
+        if (ItemSize.Height != h)
+            ItemSize = new Size(FormTone.TabItemWidth, h);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        FitItems(DeviceDpi > 0 ? DeviceDpi : 96);
+        Invalidate();
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
@@ -792,36 +955,34 @@ sealed class FlatTabControl : TabControl
         var pal = UiChrome.Tone;
         var window = UiChrome.ColorOf(pal.Window);
         var text = UiChrome.ColorOf(pal.Text);
+        var secondary = UiChrome.ColorOf(pal.Secondary);
         var accent = UiChrome.ColorOf(pal.Accent);
-        e.Graphics.Clear(window);
-        var headerH = TabCount > 0 ? GetTabRect(0).Bottom : 0;
-        using (var line = new SolidBrush(UiChrome.ColorOf(pal.Hairline)))
-            e.Graphics.FillRectangle(line, 0, headerH, Width, 1);
+        var hair = UiChrome.ColorOf(pal.Hairline);
+        var g = e.Graphics;
+        g.Clear(window);
+        var headerH = TabCount > 0 ? GetTabRect(0).Bottom : UiLayout.ScalePx(FormTone.TabItemHeight, DeviceDpi);
+        using (var line = new SolidBrush(hair))
+            g.FillRectangle(line, 0, Math.Max(0, headerH - 1), Width, 1);
+        var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
         for (var i = 0; i < TabCount; i++)
         {
             var bounds = GetTabRect(i);
             var selected = i == SelectedIndex;
-            var chip = new Rectangle(bounds.X + 4, bounds.Y + 6, Math.Max(8, bounds.Width - 8), Math.Max(8, bounds.Height - 10));
-            if (selected || i == _hover)
+            var label = TabPages[i].Text;
+            if (!selected && i == _hover)
             {
-                e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                using var chipPath = UiChrome.RoundRect(chip, 6);
-                using var bg = new SolidBrush(UiChrome.ColorOf(selected ? pal.Button : pal.ButtonHover));
-                e.Graphics.FillPath(bg, chipPath);
-                if (selected)
-                {
-                    using var underline = new SolidBrush(accent);
-                    e.Graphics.FillRectangle(underline, chip.Left + 10, chip.Bottom - 3, Math.Max(8, chip.Width - 20), 2);
-                }
+                using var hover = new SolidBrush(UiChrome.ColorOf(pal.Header));
+                g.FillRectangle(hover, bounds.X, bounds.Y, bounds.Width, Math.Max(1, bounds.Height - 1));
             }
-            using var tabFont = selected ? new Font(Font, FontStyle.Bold) : null;
-            TextRenderer.DrawText(
-                e.Graphics,
-                TabPages[i].Text,
-                tabFont ?? Font,
-                chip,
-                selected ? text : UiChrome.ColorOf(pal.Secondary),
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            TextRenderer.DrawText(g, label, Font, bounds, selected ? text : secondary, flags);
+            if (selected)
+            {
+                var textW = TextRenderer.MeasureText(g, label, Font, bounds.Size, flags).Width;
+                var underlineW = Math.Max(16, Math.Min(bounds.Width - 8, textW));
+                var underlineX = bounds.X + Math.Max(0, (bounds.Width - underlineW) / 2);
+                using var underline = new SolidBrush(accent);
+                g.FillRectangle(underline, underlineX, headerH - 2, underlineW, 2);
+            }
         }
     }
 
@@ -851,7 +1012,24 @@ sealed class FlatCombo : ComboBox
         NativeTheme.Strip(Handle);
         BackColor = UiChrome.ColorOf(UiChrome.Tone.Field);
         ForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
-        ItemHeight = Math.Max(16, UiLayout.ScalePx(FormTone.FieldHeight, DeviceDpi) - 8);
+        ItemHeight = Math.Max(16, Height - 6);
+    }
+
+    protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+    {
+        var want = Parent is FieldFrame frame && frame.ClientSize.Height > 1
+            ? frame.ClientSize.Height
+            : UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96);
+        height = want;
+        base.SetBoundsCore(x, y, width, height, specified);
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        var inner = Math.Max(16, Height - 6);
+        if (ItemHeight != inner)
+            ItemHeight = inner;
     }
 
     protected override void OnDropDown(EventArgs e)
@@ -903,8 +1081,11 @@ sealed class FlatCombo : ComboBox
         var field = UiChrome.ColorOf(pal.Field);
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var text = UiChrome.ColorOf(pal.Secondary);
-        using (var pen = new Pen(stroke))
+        if (Parent is not FieldFrame)
+        {
+            using var pen = new Pen(stroke);
             g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        }
         var fallbackLeft = Width - Math.Max(20, UiLayout.ScalePx(20, DeviceDpi));
         var arrow = NativeTheme.ComboButton(Handle, fallbackLeft, Height, Width);
         using (var br = new SolidBrush(field))
@@ -976,6 +1157,85 @@ sealed class FlatSpin : NumericUpDown
             g.DrawLines(pen, new[] { new Point(cx - 3, cy + 1), new Point(cx, cy - 2), new Point(cx + 3, cy + 1) });
         else
             g.DrawLines(pen, new[] { new Point(cx - 3, cy - 1), new Point(cx, cy + 2), new Point(cx + 3, cy - 1) });
+    }
+}
+
+sealed class FlatButton : Button
+{
+    public FlatButton()
+    {
+        FlatStyle = FlatStyle.Flat;
+        FlatAppearance.BorderSize = 0;
+        UseVisualStyleBackColor = false;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        UpdateStyles();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs pevent) { }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        var pal = UiChrome.Tone;
+        var window = Parent?.BackColor ?? UiChrome.ColorOf(pal.Window);
+        using (var clear = new SolidBrush(window))
+            g.FillRectangle(clear, ClientRectangle);
+
+        var hover = Enabled && ClientRectangle.Contains(PointToClient(MousePosition));
+        var down = hover && (MouseButtons & MouseButtons.Left) != 0;
+        var fill = !Enabled
+            ? window
+            : down ? FlatAppearance.MouseDownBackColor
+            : hover ? FlatAppearance.MouseOverBackColor
+            : BackColor;
+        var stroke = Enabled ? FlatAppearance.BorderColor : UiChrome.ColorOf(pal.Hairline);
+        var text = Enabled ? ForeColor : UiChrome.ColorOf(pal.Secondary);
+        var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi);
+        var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1f, Width - 1f), Math.Max(1f, Height - 1f));
+        using var path = UiChrome.RoundRect(bounds, radius);
+        using (var br = new SolidBrush(fill))
+            g.FillPath(br, path);
+        using (var pen = new Pen(stroke, 1f))
+            g.DrawPath(pen, path);
+        TextRenderer.DrawText(
+            g,
+            Text ?? "",
+            Font,
+            ClientRectangle,
+            text,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        base.OnMouseEnter(e);
+        Invalidate();
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        base.OnMouseLeave(e);
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        Invalidate();
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        Invalidate();
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        base.OnEnabledChanged(e);
+        Invalidate();
     }
 }
 

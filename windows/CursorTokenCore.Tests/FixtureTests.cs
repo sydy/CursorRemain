@@ -1005,6 +1005,7 @@ public class FixtureTests
         Assert.Equal(SparklineCopy.EmptyHint, "刷新几次后显示近日消耗");
         Assert.Equal(28, FlyoutLayout.ToolButtonHeight);
         Assert.Equal(20, SettingsLayout.PagePadding);
+        Assert.Equal(10, SettingsLayout.StackGap);
         Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
         Assert.Equal(16, FlyoutLayout.ToolButtonIcon);
