@@ -1105,11 +1105,14 @@ public enum AccountSync {
         cfg.syncLastError = ""
     }
 
+    static func looksLikeGzip(_ raw: Data) -> Bool {
+        raw.starts(with: [0x1f, 0x8b] as [UInt8])
+    }
+
     static func maybeGunzip(_ raw: Data, compression: String) throws -> Data {
         let kind = compression.trimmingCharacters(in: .whitespaces).lowercased()
-        let looksGzip = raw.count >= 2 && raw[raw.startIndex] == 0x1F && raw[raw.index(after: raw.startIndex)] == 0x8B
-        if kind == "gzip" || (kind.isEmpty && looksGzip) {
-            do { return try GzipCodec.decompress(raw) }
+        if kind == "gzip" || (kind.isEmpty && looksLikeGzip(raw)) {
+            do { return try GzipCodec.decompress(Data(raw)) }
             catch { throw CursorAPIError("同步文件损坏") }
         }
         if !kind.isEmpty { throw CursorAPIError("不支持的同步压缩") }

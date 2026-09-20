@@ -16,6 +16,7 @@ enum GzipCodec {
     }
 
     static func decompress(_ data: Data) throws -> Data {
+        let data = Data(data)
         guard data.count >= 18, data[0] == 0x1f, data[1] == 0x8b, data[2] == 0x08 else {
             throw CursorAPIError("同步文件损坏")
         }
