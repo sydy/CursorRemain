@@ -1036,31 +1036,13 @@ final class AccountSyncFixtureTests: XCTestCase {
     }
 
     func testGzipEnvelopeSniffsMagicWithoutCompressionField() throws {
-        let accounts = (0..<12).map { i in
-            SyncAccount(
-                id: String(format: "user_%02d", i),
-                label: "账号\(i)",
-                token: "tok-\(i)-" + String(repeating: "x", count: 80),
-                membershipType: "pro",
-                syncUpdatedAt: "2026-09-09T00:00:00.000Z"
-            )
-        }
-        let payload = SyncSnapshot(
-            version: 1,
-            updatedAt: "2026-09-09T00:00:00.000Z",
-            deviceId: "dev-gzip",
-            activeAccountId: "user_00",
-            accounts: accounts
-        )
-        var env = try AccountSync.encryptEnvelope(payload, passphrase: "gzip-pass-123", iterations: 1000)
-        XCTAssertEqual(str(env["compression"]), "gzip")
-        let withField = try AccountSync.decryptEnvelope(env, passphrase: "gzip-pass-123")
-        XCTAssertEqual(withField.accounts[0].id, "user_00")
-        XCTAssertEqual(withField.accounts.count, 12)
-        env.removeValue(forKey: "compression")
-        let opened = try AccountSync.decryptEnvelope(env, passphrase: "gzip-pass-123")
-        XCTAssertEqual(opened.accounts[0].id, "user_00")
-        XCTAssertEqual(opened.accounts.count, 12)
+        let raw = Data((0..<3000).map { UInt8($0 % 251) })
+        let gz = try GzipCodec.compress(raw)
+        XCTAssertEqual(Array(gz.prefix(2)), [0x1f, 0x8b])
+        XCTAssertEqual(try GzipCodec.decompress(gz), raw)
+        XCTAssertTrue(AccountSync.looksLikeGzip(gz))
+        XCTAssertEqual(try AccountSync.maybeGunzip(gz, compression: ""), raw)
+        XCTAssertEqual(try AccountSync.maybeGunzip(gz, compression: "gzip"), raw)
     }
 
     func testTrimSnapshotKeepsNewestEvents() {

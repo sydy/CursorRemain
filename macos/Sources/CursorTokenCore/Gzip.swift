@@ -37,21 +37,25 @@ enum GzipCodec {
         }
         if flags & 0x02 != 0 { offset += 2 }
         guard data.count >= offset + 8 else { throw CursorAPIError("同步文件损坏") }
+        let tail = [UInt8](data.suffix(4))
+        let isize = Int(UInt32(tail[0]) | UInt32(tail[1]) << 8 | UInt32(tail[2]) << 16 | UInt32(tail[3]) << 24)
         let payload = data.subdata(in: offset..<(data.count - 8))
-        return try inflate(payload)
+        return try inflate(payload, destHint: isize)
     }
 
     static func deflate(_ data: Data) throws -> Data {
         try transcode(data, encode: true)
     }
 
-    static func inflate(_ data: Data) throws -> Data {
-        try transcode(data, encode: false)
+    static func inflate(_ data: Data, destHint: Int = 0) throws -> Data {
+        try transcode(data, encode: false, destHint: destHint)
     }
 
-    static func transcode(_ data: Data, encode: Bool) throws -> Data {
-        var destCap = encode ? max(64, data.count + 64 + data.count / 4) : max(256, data.count * 8)
-        for _ in 0..<6 {
+    static func transcode(_ data: Data, encode: Bool, destHint: Int = 0) throws -> Data {
+        var destCap = encode
+            ? max(64, data.count + 64 + data.count / 4)
+            : max(4096, max(destHint, data.count * 16))
+        for _ in 0..<8 {
             var dest = Data(count: destCap)
             let written: Int = dest.withUnsafeMutableBytes { destPtr in
                 data.withUnsafeBytes { srcPtr in
@@ -64,6 +68,11 @@ enum GzipCodec {
                 }
             }
             if written > 0 {
+                let truncated = written == destCap && (destHint <= 0 || written < destHint)
+                if truncated {
+                    destCap *= 2
+                    continue
+                }
                 dest.count = written
                 return dest
             }
