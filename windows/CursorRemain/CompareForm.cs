@@ -68,23 +68,32 @@ sealed class CompareForm : Form
             });
         }
 
-        var toolbar = new FlowLayoutPanel
+        var actions = new FlowLayoutPanel
         {
             AutoSize = true,
-            WrapContents = true,
-            Dock = DockStyle.Top,
-            Padding = new Padding(0, 0, 0, 4),
+            WrapContents = false,
+            Margin = new Padding(0),
         };
-        toolbar.Controls.Add(_syncBtn);
-        toolbar.Controls.Add(_exportBtn);
-        toolbar.Controls.Add(_status);
+        actions.Controls.Add(_syncBtn);
+        actions.Controls.Add(_exportBtn);
+        var toolbar = new TableLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            Margin = new Padding(0, 0, 0, 4),
+        };
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.Controls.Add(_status, 0, 0);
+        toolbar.Controls.Add(actions, 1, 0);
 
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            Padding = new Padding(16),
+            Padding = new Padding(20),
         };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));

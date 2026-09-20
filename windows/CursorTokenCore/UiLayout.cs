@@ -109,6 +109,7 @@ public static class SettingsLayout
     public const int DesignHeight = 680;
     public const int MinWidth = 480;
     public const int MinHeight = 420;
+    public const int PagePadding = 20;
 
     public const string AccountTab = "账户";
     public const string NotifyTab = "通知";
@@ -228,11 +229,11 @@ public static class FlyoutLayout
     public const int CardPadding = 10;
     public const int CardGap = 8;
     public const int BarHeight = 5;
-    public const int ToolButtonHeight = 24;
+    public const int ToolButtonHeight = 28;
     public const int ToolButtonGap = 6;
     public const int ToolButtonPadX = 8;
     public const int ToolButtonPadY = 5;
-    public const int ToolButtonIcon = 14;
+    public const int ToolButtonIcon = 16;
     public const int ToolButtonIconGap = 4;
 
     /// <summary>

@@ -998,10 +998,11 @@ public class FixtureTests
         Assert.Equal(8, FlyoutLayout.CardGap);
         Assert.Equal(5, FlyoutLayout.BarHeight);
         Assert.Equal(SparklineCopy.EmptyHint, "刷新几次后显示近日消耗");
-        Assert.Equal(24, FlyoutLayout.ToolButtonHeight);
+        Assert.Equal(28, FlyoutLayout.ToolButtonHeight);
+        Assert.Equal(20, SettingsLayout.PagePadding);
         Assert.Equal(6, FlyoutLayout.ToolButtonGap);
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
-        Assert.Equal(14, FlyoutLayout.ToolButtonIcon);
+        Assert.Equal(16, FlyoutLayout.ToolButtonIcon);
         Assert.True(FlyoutLayout.LeftWidth + FlyoutLayout.Padding * 2 + FlyoutLayout.ColumnGap < FlyoutLayout.Width);
         // 复制/刷新/报表/对比/设置 五颗带文字胶囊按内容宽度靠右，不摊满底栏。
         const int labeledPill = 56;

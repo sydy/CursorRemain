@@ -17,7 +17,7 @@ enum FlyoutLayout {
     static let cardPadding: CGFloat = 10
     static let cardGap: CGFloat = 8
     static let barHeight: CGFloat = 5
-    static let toolButtonHeight: CGFloat = 24
+    static let toolButtonHeight: CGFloat = 28
     static let toolButtonGap: CGFloat = 6
 }
 
