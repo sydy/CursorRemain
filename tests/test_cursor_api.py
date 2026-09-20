@@ -434,7 +434,18 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("FlatStyle.Flat", win_chrome)
         self.assertIn("EnableHeadersVisualStyles = false", win_chrome)
         self.assertIn("UiButtonKind.Primary", win_chrome)
+        self.assertIn("class HintBlock", win_chrome)
+        self.assertIn("class KpiStrip", win_chrome)
+        self.assertIn("了解更多", win_chrome)
+        self.assertIn("Segoe UI Variable", win_chrome)
+        self.assertIn("public static Label Heading", win_chrome)
         self.assertIn("public static class FormTone", win_tone)
+        self.assertIn("其他导入方式", win_settings)
+        self.assertIn("成本与渠道", win_settings)
+        self.assertIn("KpiStrip", win_report)
+        self.assertIn("MiddleRight", win_report)
+        self.assertIn("MiddleRight", win_compare)
+        self.assertIn("public const int PagePadding = 20", win_layout)
         self.assertIn("UiChrome.Install", win_prog)
         self.assertIn("UiChrome.Apply", win_settings)
         self.assertIn("UiChrome.Apply", win_report)
@@ -617,7 +628,7 @@ class SourceGuardTests(unittest.TestCase):
             "static let cornerRadius: CGFloat = 16",
             "static let leftWidth: CGFloat = 176",
             "static let ringSize: CGFloat = 148",
-            "static let toolButtonHeight: CGFloat = 24",
+            "static let toolButtonHeight: CGFloat = 28",
             "static let toolButtonGap: CGFloat = 6",
         ):
             self.assertIn(snippet, mac_flyout)
@@ -627,13 +638,15 @@ class SourceGuardTests(unittest.TestCase):
             "public const int CornerRadius = 16",
             "public const int LeftWidth = 176",
             "public const int RingSize = 148",
-            "public const int ToolButtonHeight = 24",
+            "public const int ToolButtonHeight = 28",
             "public const int ToolButtonGap = 6",
         ):
             self.assertIn(snippet, win_layout)
         self.assertIn("DrawGauge", win_flyout)
         self.assertIn("DrawCard", win_flyout)
         self.assertIn("DashboardLinkLabel", win_flyout)
+        self.assertIn("UiChrome.UiFont", win_flyout)
+        self.assertIn("IconFont(11f)", win_flyout)
         self.assertIn("toolButton", mac_flyout)
         self.assertIn("var toolBar: some View", mac_flyout)
         self.assertIn(".fixedSize()", mac_flyout)

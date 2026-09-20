@@ -9,7 +9,7 @@ sealed class SettingsForm : Form
     {
         ColumnCount = 1,
         Dock = DockStyle.Fill,
-        Padding = new Padding(12, 12, 12, 8),
+        Padding = new Padding(SettingsLayout.PagePadding, 16, SettingsLayout.PagePadding, 12),
     };
     readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     readonly TextBox _token = new()
@@ -25,20 +25,12 @@ sealed class SettingsForm : Form
     readonly TextBox _actualCny = new() { Width = 80 };
     readonly ComboBox _channel = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     readonly TextBox _cnyRate = new() { Width = 80 };
-    readonly Label _spendHint = new()
-    {
-        Text = "月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。",
-        AutoSize = true,
-        ForeColor = Color.DimGray,
-        Margin = new Padding(0, 0, 0, 8),
-    };
-    readonly Label _actualHint = new()
-    {
-        Text = "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。",
-        AutoSize = true,
-        ForeColor = Color.DimGray,
-        Margin = new Padding(0, 0, 0, 8),
-    };
+    readonly HintBlock _spendHint = UiChrome.Hint(
+        "月费填 0 则按套餐预填。",
+        "月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。");
+    readonly HintBlock _actualHint = UiChrome.Hint(
+        "仅当前账号，填折合月费。",
+        "仅当前账号，填折合月费。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。");
     readonly TextBox _thresholds = new() { Width = 180 };
     readonly CheckBox _notify = new() { Text = "启用用量通知", AutoSize = true, Margin = new Padding(0, 6, 0, 4) };
     readonly CheckBox _exhaust = new() { Text = "启用耗尽风险通知", AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
@@ -47,26 +39,17 @@ sealed class SettingsForm : Form
     readonly CheckBox _autoUpdate = new() { Text = "自动检查并安装更新", AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _updateVersion = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _updateStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 4) };
-    readonly Label _updateHint = new()
-    {
-        Text = "对照 GitHub 正式版（v*）。打包版会下载替换后重启；本机有 .NET 8 Desktop Runtime 时下不含运行时的轻量包。开发运行则打开下载页。",
-        AutoSize = true,
-        ForeColor = Color.DimGray,
-        Margin = new Padding(0, 0, 0, 8),
-    };
+    readonly HintBlock _updateHint = UiChrome.Hint(
+        "对照 GitHub 正式版（v*）自动更新。",
+        "对照 GitHub 正式版（v*）。打包版会下载替换后重启；本机有 .NET 8 Desktop Runtime 时下不含运行时的轻量包。开发运行则打开下载页。");
     readonly Button _checkUpdate = ActionButton("检查更新");
     readonly TextBox _cloudEmail = new() { Width = 220 };
     readonly TextBox _cloudPassword = new() { Width = 220, UseSystemPasswordChar = true };
     readonly Label _cloudAccount = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _syncStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
-    readonly Label _syncHint = new()
-    {
-        Text = "登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。",
-        AutoSize = true,
-        ForeColor = Color.DimGray,
-        MaximumSize = new Size(520, 0),
-        Margin = new Padding(0, 4, 0, 8),
-    };
+    readonly HintBlock _syncHint = UiChrome.Hint(
+        "登录密码就是加密密钥，服务器看不到 Token。",
+        "登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。");
     readonly FlowLayoutPanel _cloudAuth = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly FlowLayoutPanel _cloudActions = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly TableLayoutPanel _cloudEmailRow;
@@ -100,15 +83,13 @@ sealed class SettingsForm : Form
         FlowDirection = FlowDirection.LeftToRight,
         Margin = new Padding(0, 0, 0, 4),
     };
-    readonly Label _addCaption = Caption("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）");
+    readonly Label _addCaption = UiChrome.Heading("添加账号");
     readonly Label _status = new() { AutoSize = true, Margin = new Padding(0, 4, 0, 4) };
-    readonly Label _hint = new()
-    {
-        Text = "可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。Windows 还可从 Cursor 应用或 Firefox 导入。",
-        AutoSize = true,
-        ForeColor = Color.DimGray,
-        Margin = new Padding(0, 4, 0, 8),
-    };
+    readonly HintBlock _hint = UiChrome.Hint(
+        "可粘贴 Token 或邮箱密码，多行逐个添加。",
+        "可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。Windows 还可从 Cursor 应用或 Firefox 导入。");
+    readonly Button _cloudMore = ActionButton("更多");
+    readonly Button _importMore = ActionButton("其他导入方式");
     AppConfig _cfg;
     readonly Action<AppConfig> _onSaved;
     readonly Func<string?, Task<ImportResult>> _import;
@@ -147,25 +128,39 @@ sealed class SettingsForm : Form
         _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
         _cloudPasswordRow = FieldRow("密码", _cloudPassword);
         _cloudAuth.Controls.AddRange([_cloudLogin, _cloudRegister]);
-        _cloudActions.Controls.AddRange([_syncNow, _cloudLogout, _cloudChangePassword, _cloudDelete, _syncExport, _syncImport]);
+        _cloudActions.Controls.AddRange([_syncNow, _cloudMore]);
+        var importMenu = new ContextMenuStrip();
+        importMenu.Items.Add("Firefox 登录", null, (_, _) => ff.PerformClick());
+        importMenu.Items.Add("仅导入 Cookie", null, (_, _) => cookie.PerformClick());
+        _importMore.Click += (_, _) => importMenu.Show(_importMore, new Point(0, _importMore.Height));
+        var cloudMenu = new ContextMenuStrip();
+        cloudMenu.Items.Add("退出登录", null, (_, _) => _cloudLogout.PerformClick());
+        cloudMenu.Items.Add("修改密码", null, (_, _) => _cloudChangePassword.PerformClick());
+        cloudMenu.Items.Add("注销账号", null, (_, _) => _cloudDelete.PerformClick());
+        cloudMenu.Items.Add(new ToolStripSeparator());
+        cloudMenu.Items.Add("导出…", null, (_, _) => _syncExport.PerformClick());
+        cloudMenu.Items.Add("导入…", null, (_, _) => _syncImport.PerformClick());
+        _cloudMore.Click += (_, _) => cloudMenu.Show(_cloudMore, new Point(0, _cloudMore.Height));
         _tabs.TabPages.AddRange([
             MakeTab(SettingsLayout.AccountTab,
-                Caption("当前账号"),
+                UiChrome.Heading("当前账号"),
                 _accounts,
                 Flow(rename, del, login),
                 FieldRow("账号类型", _kind),
                 _tempFields,
                 _endAt,
+                UiChrome.Heading("成本与渠道"),
                 FieldRow("渠道", _channel),
                 FieldRow("实际成本（人民币）", _actualCny),
                 _actualHint,
                 _addCaption,
+                new Label { Text = "每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 6) },
                 _token,
-                Flow(cur, add, ff, cookie),
+                Flow(cur, add, _importMore),
                 _status,
                 _hint),
             MakeTab(SettingsLayout.NotifyTab,
-                Caption("刷新与通知"),
+                UiChrome.Heading("刷新与通知"),
                 FieldRow("刷新间隔（分钟）", _interval),
                 FieldRow("月费（美元）", _planUsd),
                 FieldRow("美元兑人民币", _cnyRate),
@@ -174,17 +169,17 @@ sealed class SettingsForm : Form
                 _notify,
                 _exhaust),
             MakeTab(SettingsLayout.TrayTab,
-                Caption("托盘与启动"),
+                UiChrome.Heading("托盘与启动"),
                 FieldRow("托盘图标", _mode),
                 _auto,
-                Caption("更新"),
+                UiChrome.Heading("更新"),
                 _autoUpdate,
                 _updateVersion,
                 Flow(_checkUpdate),
                 _updateStatus,
                 _updateHint),
             MakeTab(SettingsLayout.SyncTab,
-                Caption("云同步"),
+                UiChrome.Heading("云同步"),
                 _cloudAccount,
                 _cloudEmailRow,
                 _cloudPasswordRow,
@@ -301,8 +296,10 @@ sealed class SettingsForm : Form
     void WrapText()
     {
         var inner = Math.Max(200, ClientSize.Width - 56);
-        foreach (var label in new[] { _addCaption, _status, _hint, _actualHint, _syncStatus, _syncHint, _endAt, _spendHint })
+        foreach (var label in new[] { _addCaption, _status, _syncStatus, _endAt })
             label.MaximumSize = new Size(inner, 0);
+        foreach (var hint in new[] { _hint, _actualHint, _syncHint, _spendHint, _updateHint })
+            hint.SetInnerWidth(inner);
     }
 
     void RenameActive()
@@ -357,7 +354,7 @@ sealed class SettingsForm : Form
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
             Dock = DockStyle.Top,
-            Padding = new Padding(8),
+            Padding = new Padding(12),
         };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var child in children)
@@ -365,13 +362,6 @@ sealed class SettingsForm : Form
         page.Controls.Add(body);
         return page;
     }
-
-    static Label Caption(string text) => new()
-    {
-        Text = text,
-        AutoSize = true,
-        Margin = new Padding(0, 8, 0, 4),
-    };
 
     static FlowLayoutPanel LabeledSpin(string label, Control field, string? suffix = null)
     {
@@ -523,6 +513,7 @@ sealed class SettingsForm : Form
             _cloudChangePassword.Visible = cfg.CloudLoggedIn;
             _cloudDelete.Visible = cfg.CloudLoggedIn;
             _syncNow.Visible = cfg.CloudLoggedIn;
+            _cloudMore.Visible = cfg.CloudLoggedIn;
             _syncStatus.Text = SyncStatusText(cfg);
             WriteKindFrom(cfg.ActiveAccount);
         }

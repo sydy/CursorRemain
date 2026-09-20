@@ -73,6 +73,26 @@ static class UiChrome
         return btn;
     }
 
+    public static Label Heading(string text) => new()
+    {
+        Text = text,
+        AutoSize = true,
+        Font = UiFont(11f, FontStyle.Bold),
+        Margin = new Padding(0, 12, 0, 6),
+    };
+
+    public static Button MenuButton(string text, params (string Title, EventHandler Handler)[] items)
+    {
+        var btn = Button(text);
+        var menu = new ContextMenuStrip();
+        foreach (var item in items)
+            menu.Items.Add(item.Title, null, item.Handler);
+        btn.Click += (_, _) => menu.Show(btn, new Point(0, btn.Height));
+        return btn;
+    }
+
+    public static HintBlock Hint(string summary, string detail) => new(summary, detail);
+
     public static void Apply(Form form)
     {
         var pal = Tone;
@@ -255,6 +275,8 @@ static class UiChrome
                 box.BackColor = window;
                 box.FlatStyle = FlatStyle.Standard;
                 return;
+            case LinkLabel:
+                return;
             case Label label:
                 if (label.ForeColor == Color.DimGray || label.ForeColor.ToArgb() == secondary.ToArgb())
                     label.ForeColor = secondary;
@@ -297,4 +319,101 @@ static class UiChrome
 
     [DllImport("gdi32.dll")]
     static extern bool DeleteObject(IntPtr hObject);
+}
+
+sealed class HintBlock : TableLayoutPanel
+{
+    readonly Label _summary;
+    readonly Label _detail;
+    readonly LinkLabel _toggle;
+    bool _open;
+
+    public HintBlock(string summary, string detail)
+    {
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        ColumnCount = 1;
+        Dock = DockStyle.Fill;
+        Margin = new Padding(0, 0, 0, 8);
+        _summary = new Label
+        {
+            Text = summary,
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+            Margin = new Padding(0, 0, 0, 2),
+        };
+        _detail = new Label
+        {
+            Text = detail,
+            AutoSize = true,
+            ForeColor = Color.DimGray,
+            Visible = false,
+            Margin = new Padding(0, 0, 0, 2),
+        };
+        _toggle = new LinkLabel
+        {
+            Text = "了解更多",
+            AutoSize = true,
+            Margin = new Padding(0, 0, 0, 0),
+            LinkBehavior = LinkBehavior.HoverUnderline,
+        };
+        _toggle.LinkClicked += (_, _) =>
+        {
+            _open = !_open;
+            _detail.Visible = _open;
+            _toggle.Text = _open ? "收起" : "了解更多";
+        };
+        Controls.Add(_summary);
+        Controls.Add(_detail);
+        Controls.Add(_toggle);
+    }
+
+    public void SetInnerWidth(int width)
+    {
+        var inner = Math.Max(160, width);
+        _summary.MaximumSize = new Size(inner, 0);
+        _detail.MaximumSize = new Size(inner, 0);
+    }
+}
+
+sealed class KpiStrip : FlowLayoutPanel
+{
+    public KpiStrip()
+    {
+        AutoSize = true;
+        WrapContents = true;
+        Margin = new Padding(0, 4, 0, 0);
+    }
+
+    public void Bind(params (string Label, string Value)[] items)
+    {
+        SuspendLayout();
+        Controls.Clear();
+        foreach (var (label, value) in items)
+        {
+            if (string.IsNullOrWhiteSpace(value)) continue;
+            var box = new TableLayoutPanel
+            {
+                AutoSize = true,
+                ColumnCount = 1,
+                Margin = new Padding(0, 0, 20, 8),
+            };
+            box.Controls.Add(new Label
+            {
+                Text = label,
+                AutoSize = true,
+                ForeColor = Color.DimGray,
+                Margin = new Padding(0),
+            });
+            box.Controls.Add(new Label
+            {
+                Text = value,
+                AutoSize = true,
+                Font = UiChrome.UiFont(11f, FontStyle.Bold),
+                Margin = new Padding(0, 2, 0, 0),
+            });
+            Controls.Add(box);
+        }
+        ResumeLayout();
+    }
 }

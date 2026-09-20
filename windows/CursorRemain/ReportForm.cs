@@ -38,7 +38,8 @@ sealed class ReportForm : Form
         Checked = false,
     };
     readonly Label _status = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(8, 8, 0, 0) };
-    readonly Label _kpi = new() { AutoSize = true, Margin = new Padding(0, 8, 0, 8) };
+    readonly KpiStrip _kpi = new();
+    readonly Label _mix = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 8) };
     readonly UsageChartPanel _chart = new();
     readonly DataGridView _models = MakeGrid();
     readonly DataGridView _grid = MakeGrid();
@@ -51,7 +52,7 @@ sealed class ReportForm : Form
         Dock = DockStyle.Fill,
         ColumnCount = 1,
         RowCount = 6,
-        Padding = new Padding(16),
+        Padding = new Padding(20),
     };
     static readonly int[] ModelMinWidths = [160, 72, 72, 72, 56, 56, 48];
     static readonly int[] DetailMinWidths = [110, 100, 56, 140, 64, 72, 72, 48];
@@ -90,20 +91,20 @@ sealed class ReportForm : Form
         _model.SelectedIndex = 0;
 
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 36 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 16 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "discount", HeaderText = "折扣", FillWeight = 10 });
-        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "次数", FillWeight = 10 });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 16, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "discount", HeaderText = "折扣", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "count", HeaderText = "次数", FillWeight = 10, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
         _models.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "date", HeaderText = "日期 (本地时间)", FillWeight = 15 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "user", HeaderText = "用户", FillWeight = 14 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 8 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "model", HeaderText = "模型", FillWeight = 18 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 8 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "tokens", HeaderText = "Token", FillWeight = 8, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cost", HeaderText = "费用", FillWeight = 12, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cny", HeaderText = "实付", FillWeight = 12, DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight } });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "cloud", HeaderText = "云端", FillWeight = 8 });
 
         var filters = new FlowLayoutPanel
@@ -121,9 +122,35 @@ sealed class ReportForm : Form
         filters.Controls.Add(Tag("来源", _cloud));
         filters.Controls.Add(Tag("开始日期", _startDate));
         filters.Controls.Add(Tag("结束日期", _endDate));
-        filters.Controls.Add(_syncBtn);
-        filters.Controls.Add(_exportBtn);
-        filters.Controls.Add(_status);
+        var actions = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            WrapContents = false,
+            Margin = new Padding(12, 4, 0, 4),
+        };
+        actions.Controls.Add(_syncBtn);
+        actions.Controls.Add(_exportBtn);
+        actions.Controls.Add(_status);
+        var toolbar = new TableLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            Margin = new Padding(0),
+        };
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        toolbar.Controls.Add(filters, 0, 0);
+        toolbar.Controls.Add(actions, 1, 0);
+        var summary = new TableLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            Margin = new Padding(0),
+        };
+        summary.Controls.Add(_kpi, 0, 0);
+        summary.Controls.Add(_mix, 0, 1);
 
         _root.ColumnStyles.Clear();
         _root.RowStyles.Clear();
@@ -134,8 +161,8 @@ sealed class ReportForm : Form
         _root.RowStyles.Add(new RowStyle(SizeType.Absolute, DesignModelRow));
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        _root.Controls.Add(filters, 0, 0);
-        _root.Controls.Add(_kpi, 0, 1);
+        _root.Controls.Add(toolbar, 0, 0);
+        _root.Controls.Add(summary, 0, 1);
         _root.Controls.Add(_chart, 0, 2);
         var modelWrap = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
         modelWrap.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -232,7 +259,7 @@ sealed class ReportForm : Form
     void WrapKpi()
     {
         var inner = Math.Max(200, ClientSize.Width - _root.Padding.Horizontal - 8);
-        _kpi.MaximumSize = new Size(inner, 0);
+        _mix.MaximumSize = new Size(inner, 0);
         _status.MaximumSize = new Size(Math.Max(160, inner / 2), 0);
     }
 
@@ -441,10 +468,16 @@ sealed class ReportForm : Form
         var mix = $"套餐内 {report.IncludedCount} · 免费 {report.FreeCount} · 按需 {report.OnDemandCount}";
         mix += $"    First-party {report.FirstPartyCount} · API {report.ApiCount} · Grok Bot {report.GrokBotCount}";
         if (report.HeadlessCount > 0) mix += $" · 云端 {report.HeadlessCount}";
-        var cost = report.HasCost ? $"    费用 {UsageParser.FormatUsdCents(report.TotalCents)}" : "";
         var discount = UsageEvents.FormatDiscount(report.TotalCny, report.TotalCents, report.UsdCnyRate);
-        var discountKpi = discount == "—" ? "" : $"    折扣 {discount}";
-        _kpi.Text = $"请求 {report.EventCount}    Token {UsageParser.FormatTokenCount(report.TotalTokens)}    {mix}{cost}{QuotaKpi()}{SpendKpi(report)}{discountKpi}";
+        var quota = QuotaKpi();
+        var spend = SpendKpi(report).Trim();
+        _kpi.Bind(
+            ("请求", report.EventCount.ToString(CultureInfo.InvariantCulture)),
+            ("Token", UsageParser.FormatTokenCount(report.TotalTokens)),
+            ("费用", report.HasCost ? UsageParser.FormatUsdCents(report.TotalCents) : ""),
+            ("折扣", discount == "—" ? "" : discount),
+            ("企业额度（展示）", quota.Length == 0 ? "" : quota.Replace("企业额度（展示）", "", StringComparison.Ordinal).Trim()));
+        _mix.Text = string.IsNullOrWhiteSpace(spend) ? mix : mix + "    " + spend;
         _chart.Bind(report.Events);
         _root.PerformLayout();
 

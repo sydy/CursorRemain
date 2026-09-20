@@ -216,14 +216,14 @@ sealed class FlyoutForm : Form
         var caption = error || _usage is null
             ? StatusText.FormatFlyoutError(_error)
             : StatusText.FormatPlanCaption(_usage.MembershipType, _accountLabel);
-        using var planFont = UiFont(9f);
+        using var planFont = UiChrome.UiFont(9f);
         var planTop = gauge.Bottom + 10 * s;
         var planSize = g.MeasureString(caption, planFont, (int)box.Width);
         var planRect = new RectangleF(box.X, planTop, box.Width, Math.Min(planSize.Height + 4, 42 * s));
         DrawString(g, caption, planFont, pal.Secondary, planRect, StringAlignment.Center);
 
         var link = UsageParser.DashboardLinkLabel(_usage);
-        using var linkFont = UiFont(8.25f);
+        using var linkFont = UiChrome.UiFont(9f);
         var linkSize = g.MeasureString(link, linkFont);
         var linkRect = new RectangleF(
             box.X + (box.Width - linkSize.Width) / 2,
@@ -253,10 +253,10 @@ sealed class FlyoutForm : Form
             g.DrawArc(pen, ring, -90, progress * 360);
         }
 
-        using var capFont = UiFont(8.25f);
-        using var numFont = UiFont(unlimited ? 16f : 21f, FontStyle.Bold);
-        using var pctFont = UiFont(11f, FontStyle.Bold);
-        using var pillFont = UiFont(8f);
+        using var capFont = UiChrome.UiFont(8.25f);
+        using var numFont = UiChrome.UiFont(unlimited ? 16f : 21f, FontStyle.Bold);
+        using var pctFont = UiChrome.UiFont(11f, FontStyle.Bold);
+        using var pillFont = UiChrome.UiFont(8.25f);
         var cx = box.X + box.Width / 2;
         var cy = box.Y + box.Height / 2;
         DrawString(g, "剩余", capFont, pal.Secondary, new RectangleF(box.X, cy - 36 * s, box.Width, 16 * s), StringAlignment.Center, StringAlignment.Center);
@@ -290,8 +290,8 @@ sealed class FlyoutForm : Form
     {
         var y = box.Y;
         var error = _usage is null && _error is { Length: > 0 };
-        using var capFont = UiFont(8.25f);
-        using var valueFont = UiFont(8.25f, FontStyle.Bold);
+        using var capFont = UiChrome.UiFont(8.25f);
+        using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
         var barH = Px(FlyoutLayout.BarHeight);
 
         if (_usage is { } usage && !error)
@@ -416,8 +416,8 @@ sealed class FlyoutForm : Form
             ("compare", "\uE9F9", "对比"),
             ("settings", "\uE713", StatusText.FlyoutSettingsTitle(_error)),
         };
-        using var font = UiFont(8f);
-        using var iconFont = IconFont(8f);
+        using var font = UiChrome.UiFont(9f);
+        using var iconFont = IconFont(11f);
         using var measure = new StringFormat(StringFormat.GenericTypographic);
         var hasIcon = iconFont is not null;
         var sizes = new (float Width, float Height)[items.Length];
@@ -521,9 +521,6 @@ sealed class FlyoutForm : Form
         if (text.Contains("耗尽") || text.Contains("紧张")) return Color.FromArgb(231, 76, 60);
         return pal.Secondary;
     }
-
-    static Font UiFont(float pt, FontStyle style = FontStyle.Regular)
-        => new("Segoe UI", Math.Max(7f, pt), style, GraphicsUnit.Point);
 
     static Font? IconFont(float pt)
     {
