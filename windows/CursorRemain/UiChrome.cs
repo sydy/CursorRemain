@@ -78,7 +78,7 @@ static class UiChrome
         Text = text,
         AutoSize = true,
         Font = UiFont(11f, FontStyle.Bold),
-        Margin = new Padding(0, 12, 0, 6),
+        Margin = new Padding(0, 8, 0, 4),
     };
 
     public static Button MenuButton(string text, params (string Title, EventHandler Handler)[] items)
@@ -100,6 +100,7 @@ static class UiChrome
         form.BackColor = ColorOf(pal.Window);
         form.ForeColor = ColorOf(pal.Text);
         ApplyTree(form, pal, form.DeviceDpi);
+        ApplyTitleBar(form);
     }
 
     public static void StyleGrid(DataGridView grid)
@@ -221,6 +222,8 @@ static class UiChrome
             page.BackColor = ColorOf(pal.Window);
             page.ForeColor = ColorOf(pal.Text);
         }
+        if (tabs is FlatTabControl)
+            return;
         tabs.DrawItem -= DrawTab;
         tabs.DrawItem += DrawTab;
     }
@@ -275,7 +278,11 @@ static class UiChrome
                 box.BackColor = window;
                 box.FlatStyle = FlatStyle.Standard;
                 return;
-            case LinkLabel:
+            case LinkLabel link:
+                link.LinkColor = ColorOf(pal.Accent);
+                link.ActiveLinkColor = ColorOf(pal.AccentHover);
+                link.VisitedLinkColor = ColorOf(pal.Accent);
+                link.BackColor = Color.Transparent;
                 return;
             case Label label:
                 if (label.ForeColor == Color.DimGray || label.ForeColor.ToArgb() == secondary.ToArgb())
@@ -314,11 +321,71 @@ static class UiChrome
         else control.HandleCreated += ApplyRegion;
     }
 
+    static void ApplyTitleBar(Form form)
+    {
+        void Apply()
+        {
+            var dark = AppsUseLightTheme() ? 0 : 1;
+            _ = DwmSetWindowAttribute(form.Handle, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int));
+        }
+        if (form.IsHandleCreated) Apply();
+        else form.HandleCreated += (_, _) => Apply();
+    }
+
+    const int DwmwaUseImmersiveDarkMode = 20;
+
+    [DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
     [DllImport("gdi32.dll")]
     static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
 
     [DllImport("gdi32.dll")]
     static extern bool DeleteObject(IntPtr hObject);
+}
+
+sealed class FlatTabControl : TabControl
+{
+    public FlatTabControl()
+    {
+        DrawMode = TabDrawMode.OwnerDrawFixed;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
+        UpdateStyles();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(UiChrome.ColorOf(UiChrome.Tone.Window));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var pal = UiChrome.Tone;
+        var window = UiChrome.ColorOf(pal.Window);
+        var header = UiChrome.ColorOf(pal.Header);
+        var text = UiChrome.ColorOf(pal.Text);
+        var accent = UiChrome.ColorOf(pal.Accent);
+        e.Graphics.Clear(window);
+        for (var i = 0; i < TabCount; i++)
+        {
+            var bounds = GetTabRect(i);
+            var selected = i == SelectedIndex;
+            using (var bg = new SolidBrush(selected ? window : header))
+                e.Graphics.FillRectangle(bg, bounds);
+            if (selected)
+            {
+                using var underline = new SolidBrush(accent);
+                e.Graphics.FillRectangle(underline, bounds.Left + 8, bounds.Bottom - 2, Math.Max(8, bounds.Width - 16), 2);
+            }
+            TextRenderer.DrawText(
+                e.Graphics,
+                TabPages[i].Text,
+                Font,
+                bounds,
+                text,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        }
+    }
 }
 
 sealed class HintBlock : TableLayoutPanel
