@@ -981,7 +981,7 @@ public class FixtureTests
         Assert.Equal(8, FlyoutLayout.ToolButtonPadX);
         Assert.Equal(14, FlyoutLayout.ToolButtonIcon);
         Assert.True(FlyoutLayout.LeftWidth + FlyoutLayout.Padding * 2 + FlyoutLayout.ColumnGap < FlyoutLayout.Width);
-        // 复制/刷新/报表/对比/设置 五颗带文字胶囊铺在整行底栏。
+        // 复制/刷新/报表/对比/设置 五颗带文字胶囊按内容宽度靠右，不摊满底栏。
         const int labeledPill = 56;
         Assert.True(FlyoutLayout.Width - FlyoutLayout.Padding * 2 >= 5 * labeledPill + 4 * FlyoutLayout.ToolButtonGap);
     }
@@ -1009,7 +1009,7 @@ public class FixtureTests
     }
 
     [Fact]
-    public void FlyoutToolButtonsSizeToLabelAndShareTheBar()
+    public void FlyoutToolButtonsSizeToLabelAndPackTrailing()
     {
         var shortBtn = FlyoutLayout.ToolButtonSize(16, 12, hasIcon: true, scale: 1);
         var longBtn = FlyoutLayout.ToolButtonSize(32, 12, hasIcon: true, scale: 1);
@@ -1022,29 +1022,34 @@ public class FixtureTests
 
         var sizes = new[] { shortBtn, shortBtn, shortBtn, shortBtn, shortBtn };
         var bar = FlyoutLayout.Width - FlyoutLayout.Padding * 2f;
+        var packed = 5 * shortBtn.Width + 4 * FlyoutLayout.ToolButtonGap;
         var (width, height, frames) = FlyoutLayout.ArrangeToolButtons(sizes, bar, FlyoutLayout.ToolButtonGap);
         Assert.Equal(5, frames.Length);
-        Assert.Equal(bar, width, 2);
-        Assert.Equal(0, frames[0].X, 3);
+        Assert.Equal(packed, width, 2);
+        Assert.True(packed < bar);
+        Assert.Equal(bar - packed, frames[0].X, 2);
         Assert.Equal(bar, frames[^1].X + frames[^1].Width, 2);
         Assert.True(height >= FlyoutLayout.ToolButtonHeight);
         for (var i = 0; i < frames.Length; i++)
         {
-            Assert.True(frames[i].Width >= shortBtn.Width - 0.01f);
+            Assert.Equal(shortBtn.Width, frames[i].Width, 2);
             if (i > 0)
                 Assert.Equal(frames[i - 1].X + frames[i - 1].Width + FlyoutLayout.ToolButtonGap, frames[i].X, 2);
         }
 
         var mixed = FlyoutLayout.ArrangeToolButtons(
             new[] { shortBtn, longBtn, shortBtn, longBtn, shortBtn }, bar, FlyoutLayout.ToolButtonGap);
-        Assert.Equal(bar, mixed.Width, 2);
-        Assert.True(mixed.Frames[1].Width > mixed.Frames[0].Width);
+        Assert.True(mixed.Width < bar);
+        Assert.Equal(shortBtn.Width, mixed.Frames[0].Width, 2);
+        Assert.Equal(longBtn.Width, mixed.Frames[1].Width, 2);
+        Assert.Equal(bar, mixed.Frames[^1].X + mixed.Frames[^1].Width, 2);
         Assert.True(mixed.Frames[1].Width - mixed.Frames[0].Width >= 16 - 0.01f);
 
         var fat = FlyoutLayout.ToolButtonSize(200, 12, hasIcon: true, scale: 1);
         var overflow = FlyoutLayout.ArrangeToolButtons(
             new[] { fat, fat, fat, fat, fat }, bar, FlyoutLayout.ToolButtonGap);
         Assert.Equal(bar, overflow.Width, 2);
+        Assert.Equal(0, overflow.Frames[0].X, 2);
         Assert.True(overflow.Frames.All(f => f.Width > 0));
         Assert.Equal(bar, overflow.Frames[^1].X + overflow.Frames[^1].Width, 2);
     }

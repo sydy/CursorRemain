@@ -287,8 +287,8 @@ public static class FlyoutLayout
     }
 
     /// <summary>
-    /// Pack toolbar buttons left-to-right. Each chip keeps at least its content width
-    /// and leftover space is shared so the row fills the bar. If the preferred sizes
+    /// Pack toolbar buttons at their content width, trailing like the macOS flyout.
+    /// Leftover space stays empty on the leading side. If the preferred sizes
     /// overflow, widths shrink together instead of clipping a single glyph to “…”.
     /// </summary>
     public static (float Width, float Height, ToolButtonFrame[] Frames) ArrangeToolButtons(
@@ -313,24 +313,33 @@ public static class FlyoutLayout
         var gaps = Math.Max(0f, gap) * Math.Max(0, n - 1);
         var inner = Math.Max(0f, containerWidth - gaps);
         var widths = new float[n];
+        var packed = 0f;
         if (minSum > inner && minSum > 0)
         {
             var shrink = inner / minSum;
-            for (var i = 0; i < n; i++) widths[i] = minW[i] * shrink;
+            for (var i = 0; i < n; i++)
+            {
+                widths[i] = minW[i] * shrink;
+                packed += widths[i];
+            }
         }
         else
         {
-            var extra = n > 0 ? (inner - minSum) / n : 0f;
-            for (var i = 0; i < n; i++) widths[i] = minW[i] + extra;
+            for (var i = 0; i < n; i++)
+            {
+                widths[i] = minW[i];
+                packed += widths[i];
+            }
         }
 
-        var x = 0f;
+        packed += gaps;
+        var x = Math.Max(0f, containerWidth - packed);
         for (var i = 0; i < n; i++)
         {
             frames[i] = new ToolButtonFrame(x, 0, widths[i], height);
             x += widths[i] + (i < n - 1 ? Math.Max(0f, gap) : 0f);
         }
-        return (x, height, frames);
+        return (packed, height, frames);
     }
 }
 

@@ -437,7 +437,7 @@ sealed class FlyoutForm : Form
             var fr = frames[i];
             var text = g.MeasureString(it.Label, font, int.MaxValue, measure);
             var contentW = iconSlot + iconTextGap + text.Width;
-            var rect = new RectangleF(box.X + fr.X, box.Y + Math.Max(0, (box.Height - fr.Height) / 2), fr.Width, Math.Max(box.Height, fr.Height));
+            var rect = new RectangleF(box.X + fr.X, box.Y + Math.Max(0, (box.Height - fr.Height) / 2), fr.Width, fr.Height);
             var bg = _hover == it.Id ? pal.ButtonHover : pal.Button;
             using (var path = RoundRect(rect, rect.Height / 2))
             using (var brush = new SolidBrush(bg))

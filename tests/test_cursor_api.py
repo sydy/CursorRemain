@@ -626,6 +626,8 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("DrawButtons(g, new RectangleF(pad, contentBottom + btnGap, Width - pad * 2, btnH)", win_flyout)
         self.assertIn("FlyoutLayout.ToolButtonSize", win_flyout)
         self.assertIn("FlyoutLayout.ArrangeToolButtons", win_flyout)
+        self.assertIn("containerWidth - packed", win_layout)
+        self.assertIn("Spacer(minLength: 0)", mac_flyout)
         self.assertIn("DrawFittedString", win_flyout)
         self.assertIn("StringTrimming.None", win_flyout)
         self.assertIn("public static (float Width, float Height) ToolButtonSize", win_layout)
