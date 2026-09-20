@@ -697,9 +697,9 @@
     }
   ],
   "discount_format": [
-    { "cny": 7.5, "cents": 100, "rate": 7.5, "kind": "included", "output": "10.0折" },
-    { "cny": 3.75, "cents": 100, "rate": 7.5, "kind": "included", "output": "5.0折" },
-    { "cny": 2.25, "cents": 100, "rate": 7.5, "kind": "on_demand", "output": "3.0折" },
+    { "cny": 7.5, "cents": 100, "rate": 7.5, "kind": "included", "output": "10.00折" },
+    { "cny": 3.75, "cents": 100, "rate": 7.5, "kind": "included", "output": "5.00折" },
+    { "cny": 2.25, "cents": 100, "rate": 7.5, "kind": "on_demand", "output": "3.00折" },
     { "cny": 0, "cents": 100, "rate": 7.5, "kind": "included", "output": "—" },
     { "cny": 7.5, "cents": 100, "rate": 7.5, "kind": "free", "output": "—" },
     { "cny": 7.5, "cents": 0, "rate": 7.5, "kind": "included", "output": "—" }

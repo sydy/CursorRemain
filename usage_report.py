@@ -806,8 +806,8 @@ def format_discount(cny: float, cents: float, rate: float, kind: str = "") -> st
     zhe = paid / list_cny * 10.0
     if zhe != zhe or zhe in (float("inf"), float("-inf")):
         return "—"
-    zhe = min(99.9, max(0.0, zhe))
-    return f"{zhe:.1f}折"
+    zhe = min(99.99, max(0.0, zhe))
+    return f"{zhe:.2f}折"
 
 
 def format_event_discount(event: UsageEvent, amount: float | None = None, rate: float = 0.0) -> str:
