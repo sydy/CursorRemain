@@ -11,18 +11,19 @@ sealed class SettingsForm : Form
         Dock = DockStyle.Fill,
         Padding = new Padding(SettingsLayout.PagePadding, 16, SettingsLayout.PagePadding, 12),
     };
-    readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
+    readonly TabControl _tabs = new FlatTabControl { Dock = DockStyle.Fill };
     readonly TextBox _token = new()
     {
         Multiline = true,
-        Height = 120,
-        MinimumSize = new Size(0, 120),
+        Height = 80,
+        MinimumSize = new Size(0, 72),
+        MaximumSize = new Size(0, 80),
         ScrollBars = ScrollBars.Vertical,
-        Dock = DockStyle.Fill,
+        Dock = DockStyle.Top,
     };
     readonly TextBox _interval = new() { Width = 80 };
     readonly TextBox _planUsd = new() { Width = 80 };
-    readonly TextBox _actualCny = new() { Width = 80 };
+    readonly TextBox _actualCny = new() { Width = 120 };
     readonly ComboBox _channel = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 160 };
     readonly TextBox _cnyRate = new() { Width = 80 };
     readonly HintBlock _spendHint = UiChrome.Hint(
@@ -345,7 +346,7 @@ sealed class SettingsForm : Form
         var page = new TabPage(title)
         {
             AutoScroll = true,
-            UseVisualStyleBackColor = true,
+            UseVisualStyleBackColor = false,
             Padding = new Padding(4),
         };
         var body = new TableLayoutPanel
@@ -354,7 +355,7 @@ sealed class SettingsForm : Form
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 1,
             Dock = DockStyle.Top,
-            Padding = new Padding(12),
+            Padding = new Padding(12, 8, 12, 16),
         };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var child in children)
@@ -416,11 +417,11 @@ sealed class SettingsForm : Form
         {
             AutoSize = true,
             ColumnCount = 2,
-            Dock = DockStyle.Fill,
-            Margin = new Padding(0, 6, 0, 6),
+            Dock = DockStyle.Top,
+            Margin = new Padding(0, 4, 0, 4),
         };
         row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        row.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         row.Controls.Add(new Label
         {
             Text = label,
@@ -428,7 +429,7 @@ sealed class SettingsForm : Form
             Anchor = AnchorStyles.Left,
             Margin = new Padding(0, 6, 12, 0),
         }, 0, 0);
-        field.Anchor = AnchorStyles.Left | AnchorStyles.Right;
+        field.Anchor = AnchorStyles.Left;
         field.Margin = new Padding(0, 2, 0, 2);
         row.Controls.Add(field, 1, 0);
         return row;
