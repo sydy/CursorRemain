@@ -961,13 +961,20 @@ public enum AccountSync {
         }
         #if canImport(CryptoKit)
         let key = SymmetricKey(data: try deriveKey(passphrase: passphrase, salt: salt, iterations: iterations))
-        let cipher = blob.prefix(blob.count - tagLen)
-        let tag = blob.suffix(tagLen)
+        let cipher = Data(blob.prefix(blob.count - tagLen))
+        let tag = Data(blob.suffix(tagLen))
         do {
-            let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: nonce), ciphertext: cipher, tag: tag)
+            let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: Data(nonce)), ciphertext: cipher, tag: tag)
             var opened = try AES.GCM.open(box, using: key)
             opened = try maybeGunzip(opened, compression: str(envelope["compression"]))
-            let obj = try JSONSerialization.jsonObject(with: opened)
+            let obj: Any
+            do {
+                obj = try JSONSerialization.jsonObject(with: opened)
+            } catch {
+                guard str(envelope["compression"]).isEmpty else { throw error }
+                opened = try GzipCodec.decompress(Data(opened))
+                obj = try JSONSerialization.jsonObject(with: opened)
+            }
             guard let dict = obj as? [String: Any] else { throw CursorAPIError("同步文件内容无法解析") }
             return parseSnapshot(dict)
         } catch let err as CursorAPIError {
@@ -1106,7 +1113,7 @@ public enum AccountSync {
     }
 
     static func looksLikeGzip(_ raw: Data) -> Bool {
-        raw.starts(with: [0x1f, 0x8b] as [UInt8])
+        Array(raw.prefix(2)) == [0x1f, 0x8b]
     }
 
     static func maybeGunzip(_ raw: Data, compression: String) throws -> Data {
@@ -1126,7 +1133,9 @@ public enum AccountSync {
 
     static func intValue(_ value: Any?) -> Int? {
         if let n = value as? Int { return n }
+        if let n = value as? Int64 { return Int(n) }
         if let n = value as? NSNumber { return n.intValue }
+        if let s = value as? String, let n = Int(s) { return n }
         return nil
     }
 
