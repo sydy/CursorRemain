@@ -508,7 +508,7 @@ sealed partial class TrayContext : ApplicationContext
             do
             {
                 _reconcileAgain = false;
-                var status = await CloudSync.ReconcileAsync(_config);
+                var status = await Task.Run(() => CloudSync.Reconcile(_config));
                 if (save || status.Changed)
                 {
                     try { await Task.Run(() => ConfigStore.Save(_config)); }

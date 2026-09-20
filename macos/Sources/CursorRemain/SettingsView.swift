@@ -602,6 +602,7 @@ struct SettingsRootView: View {
                     ? try CloudSync.register(email: email, password: password)
                     : try CloudSync.login(email: email, password: password)
                 CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, password: password, access: result.access, refresh: result.refresh)
+                DispatchQueue.main.async { syncStatus = "正在从云端导入账号和用量…" }
                 let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
                     store.applyConfig(cfg, refresh: status.changed)

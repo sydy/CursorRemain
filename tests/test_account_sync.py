@@ -170,6 +170,33 @@ class CryptoFixtureTests(unittest.TestCase):
         self.assertEqual(got["accounts"][0]["id"], "user_00")
         self.assertEqual(len(got["accounts"]), 12)
         self.assertEqual(got["settings"]["tray_display_mode"], "ring")
+        stripped = dict(envelope)
+        stripped.pop("compression", None)
+        got_sniff = decrypt_envelope(stripped, "gzip-pass-123")
+        self.assertEqual(got_sniff["accounts"][0]["id"], "user_00")
+        self.assertEqual(len(got_sniff["accounts"]), 12)
+
+    def test_trim_snapshot_keeps_newest_without_walking_every_record(self) -> None:
+        from account_sync import trim_snapshot_for_upload, usage_record_count
+
+        events = [
+            {"id": f"e{i}", "timestamp_ms": (i + 1) * 1000, "model": "opus", "kind": "included", "tokens": 1}
+            for i in range(800)
+        ]
+        snap = {
+            "version": 1,
+            "updated_at": "2026-09-09T00:00:00.000Z",
+            "active_account_id": "user_01A",
+            "accounts": [],
+            "deleted": [],
+            "usage": [{"account_id": "user_01A", "history": [], "events": events, "team_events": []}],
+        }
+        trimmed = trim_snapshot_for_upload(snap, budget=4000)
+        kept = (trimmed.get("usage") or [{}])[0].get("events") or []
+        self.assertGreater(len(kept), 0)
+        self.assertLess(usage_record_count(trimmed), usage_record_count(snap))
+        self.assertEqual(kept[-1]["id"], "e799")
+        self.assertTrue(all(kept[i]["timestamp_ms"] <= kept[i + 1]["timestamp_ms"] for i in range(len(kept) - 1)))
 
     def test_trim_snapshot_drops_oldest_usage(self) -> None:
         from account_sync import trim_snapshot_for_upload

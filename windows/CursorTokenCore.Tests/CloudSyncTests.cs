@@ -75,6 +75,59 @@ public class CloudSyncTests
         }
     }
 
+    [Fact]
+    public void DecryptsGzipEnvelopeWhenCompressionFieldMissing()
+    {
+        var accounts = Enumerable.Range(0, 12).Select(i => new SyncAccount
+        {
+            Id = $"user_{i:00}",
+            Label = $"账号{i}",
+            Token = "tok-" + i + "-" + new string('x', 80),
+            MembershipType = "pro",
+            SyncUpdatedAt = "2026-09-09T00:00:00.000Z",
+        }).ToList();
+        var payload = new SyncSnapshot
+        {
+            Version = 1,
+            UpdatedAt = "2026-09-09T00:00:00.000Z",
+            DeviceId = "dev-gzip",
+            ActiveAccountId = "user_00",
+            Accounts = accounts,
+        };
+        var env = AccountSync.EncryptEnvelope(payload, "gzip-pass-123", iterations: 1000);
+        Assert.Equal("gzip", env["compression"]?.ToString());
+        env.Remove("compression");
+        using var doc = JsonDocument.Parse(JsonSerializer.Serialize(env));
+        var got = AccountSync.DecryptEnvelope(doc.RootElement, "gzip-pass-123");
+        Assert.Equal("user_00", got.Accounts[0].Id);
+        Assert.Equal(12, got.Accounts.Count);
+    }
+
+    [Fact]
+    public void TrimSnapshotKeepsNewestEvents()
+    {
+        var events = Enumerable.Range(0, 800).Select(i => new UsageEvent
+        {
+            Id = $"e{i}",
+            TimestampMs = (i + 1) * 1000,
+            Model = "opus",
+            Kind = "included",
+            Tokens = 1,
+        }).ToList();
+        var snap = new SyncSnapshot
+        {
+            Version = 1,
+            UpdatedAt = "2026-09-09T00:00:00.000Z",
+            ActiveAccountId = "user_01A",
+            Usage = [new SyncUsage { AccountId = "user_01A", Events = events }],
+        };
+        var trimmed = AccountSync.TrimSnapshotForUpload(snap, 4000);
+        var kept = trimmed.Usage?.FirstOrDefault()?.Events ?? [];
+        Assert.NotEmpty(kept);
+        Assert.True(AccountSync.UsageRecordCount(trimmed) < AccountSync.UsageRecordCount(snap));
+        Assert.Equal("e799", kept[^1].Id);
+    }
+
     static AppConfig LoggedIn() => new()
     {
         SyncEnabled = true,

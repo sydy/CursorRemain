@@ -1035,6 +1035,48 @@ final class AccountSyncFixtureTests: XCTestCase {
         ], passphrase: "wrong-pass"))
     }
 
+    func testGzipEnvelopeSniffsMagicWithoutCompressionField() throws {
+        let accounts = (0..<12).map { i in
+            SyncAccount(
+                id: String(format: "user_%02d", i),
+                label: "账号\(i)",
+                token: "tok-\(i)-" + String(repeating: "x", count: 80),
+                membershipType: "pro",
+                syncUpdatedAt: "2026-09-09T00:00:00.000Z"
+            )
+        }
+        let payload = SyncSnapshot(
+            version: 1,
+            updatedAt: "2026-09-09T00:00:00.000Z",
+            deviceId: "dev-gzip",
+            activeAccountId: "user_00",
+            accounts: accounts
+        )
+        var env = try AccountSync.encryptEnvelope(payload, passphrase: "gzip-pass-123", iterations: 1000)
+        XCTAssertEqual(str(env["compression"]), "gzip")
+        env.removeValue(forKey: "compression")
+        let opened = try AccountSync.decryptEnvelope(env, passphrase: "gzip-pass-123")
+        XCTAssertEqual(opened.accounts[0].id, "user_00")
+        XCTAssertEqual(opened.accounts.count, 12)
+    }
+
+    func testTrimSnapshotKeepsNewestEvents() {
+        let events = (0..<800).map { i in
+            UsageEvent(id: "e\(i)", timestampMs: Int64((i + 1) * 1000), model: "opus", kind: "included", tokens: 1)
+        }
+        let snap = SyncSnapshot(
+            version: 1,
+            updatedAt: "2026-09-09T00:00:00.000Z",
+            activeAccountId: "user_01A",
+            usage: [SyncUsage(accountId: "user_01A", events: events)]
+        )
+        let trimmed = AccountSync.trimSnapshotForUpload(snap, budget: 4000)
+        let kept = trimmed.usage?.first?.events ?? []
+        XCTAssertFalse(kept.isEmpty)
+        XCTAssertLessThan(AccountSync.usageRecordCount(trimmed), AccountSync.usageRecordCount(snap))
+        XCTAssertEqual(kept.last?.id, "e799")
+    }
+
     private func json(_ name: String) throws -> Any { try Fixtures.json(name) }
     private func num(_ value: Any?) -> Double? {
         if value == nil || value is NSNull { return nil }

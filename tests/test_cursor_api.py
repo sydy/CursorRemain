@@ -345,6 +345,7 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("OpenCompare", win_prog)
         self.assertIn("LoginToCursor", win_prog)
         self.assertIn("在 Cursor 登录当前账号", win_prog)
+        self.assertIn("Task.Run(() => CloudSync.Reconcile(_config))", win_prog)
         self.assertIn("loginCursor", mac_menu)
         self.assertIn("在 Cursor 登录当前账号", mac_menu)
         win_auth = (root / "windows" / "CursorTokenCore" / "CursorAuth.cs").read_text(encoding="utf-8")
@@ -430,6 +431,8 @@ class SourceGuardTests(unittest.TestCase):
             self.assertIn("按需不再按官网标价另加", src)
             self.assertNotIn("按需仍按费用×汇率", src)
             self.assertIn("其他设备用新密码重新登录", src)
+            self.assertIn("正在从云端导入账号和用量", src)
+        self.assertIn("Task.Run(() => CloudSync.Reconcile(_cfg))", win_settings)
         win_compare = (root / "windows" / "CursorRemain" / "CompareForm.cs").read_text(encoding="utf-8")
         mac_compare = (root / "macos" / "Sources" / "CursorRemain" / "CompareView.swift").read_text(encoding="utf-8")
         for src in (win_compare, mac_compare):

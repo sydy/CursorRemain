@@ -817,24 +817,85 @@ public static class AccountSync
     public static SyncSnapshot TrimSnapshotForUpload(SyncSnapshot snap, int budget = SyncPlaintextBudget)
     {
         if (snap.Usage is null) return snap;
-        var usage = snap.Usage.Select(u => new SyncUsage
-        {
-            AccountId = u.AccountId,
-            History = [.. u.History],
-            Events = [.. u.Events],
-            TeamEvents = [.. u.TeamEvents],
-        }).ToList();
+        var items = CollectUsageTrimItems(snap.Usage);
         var clone = CloneSnapshot(snap);
-        clone.Usage = usage;
-        while (usage.Count > 0 && Encoding.UTF8.GetByteCount(CanonicalJson(clone)) > budget)
+        clone.Usage = RebuildUsage(items, items.Count);
+        if (Encoding.UTF8.GetByteCount(CanonicalJson(clone)) <= budget)
+            return clone;
+        var lo = 0;
+        var hi = items.Count;
+        while (lo < hi)
         {
-            if (!DropOldestUsage(usage)) break;
-            clone.Usage = usage;
+            var mid = lo + (hi - lo + 1) / 2;
+            clone = CloneSnapshot(snap);
+            clone.Usage = RebuildUsage(items, mid);
+            if (Encoding.UTF8.GetByteCount(CanonicalJson(clone)) <= budget) lo = mid;
+            else hi = mid - 1;
         }
-        clone.Usage = usage.Where(u => u.History.Count > 0 || u.Events.Count > 0 || u.TeamEvents.Count > 0).ToList();
+        clone = CloneSnapshot(snap);
+        clone.Usage = RebuildUsage(items, lo);
         if (Encoding.UTF8.GetByteCount(CanonicalJson(clone)) > budget)
             clone.Usage = [];
         return clone;
+    }
+
+    readonly record struct UsageTrimItem(double Ts, int KindOrder, string AccountId, string Kind, object Record);
+
+    static List<UsageTrimItem> CollectUsageTrimItems(IEnumerable<SyncUsage> usage)
+    {
+        var items = new List<UsageTrimItem>();
+        foreach (var row in usage)
+        {
+            foreach (var point in row.History)
+                items.Add(new UsageTrimItem(point.Ts, 0, row.AccountId, "history", point));
+            foreach (var ev in row.Events)
+                items.Add(new UsageTrimItem(ev.TimestampMs / 1000.0, 1, row.AccountId, "events", ev));
+            foreach (var ev in row.TeamEvents)
+                items.Add(new UsageTrimItem(ev.TimestampMs / 1000.0, 2, row.AccountId, "team", ev));
+        }
+        items.Sort((left, right) =>
+        {
+            var cmp = left.Ts.CompareTo(right.Ts);
+            if (cmp != 0) return cmp;
+            cmp = left.KindOrder.CompareTo(right.KindOrder);
+            if (cmp != 0) return cmp;
+            return string.CompareOrdinal(left.AccountId, right.AccountId);
+        });
+        return items;
+    }
+
+    static List<SyncUsage> RebuildUsage(List<UsageTrimItem> items, int keepNewest)
+    {
+        var start = Math.Max(0, items.Count - Math.Max(0, keepNewest));
+        var rows = new Dictionary<string, SyncUsage>(StringComparer.Ordinal);
+        var order = new List<string>();
+        for (var i = start; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (!rows.TryGetValue(item.AccountId, out var row))
+            {
+                row = new SyncUsage { AccountId = item.AccountId };
+                rows[item.AccountId] = row;
+                order.Add(item.AccountId);
+            }
+            switch (item.Kind)
+            {
+                case "history": row.History.Add((HistoryPoint)item.Record); break;
+                case "events": row.Events.Add((UsageEvent)item.Record); break;
+                default: row.TeamEvents.Add((UsageEvent)item.Record); break;
+            }
+        }
+        var rebuilt = new List<SyncUsage>();
+        foreach (var id in order)
+        {
+            var row = rows[id];
+            row.History = [.. row.History.OrderBy(p => p.Ts)];
+            row.Events = [.. row.Events.OrderBy(e => e.TimestampMs)];
+            row.TeamEvents = [.. row.TeamEvents.OrderBy(e => e.TimestampMs)];
+            if (row.History.Count > 0 || row.Events.Count > 0 || row.TeamEvents.Count > 0)
+                rebuilt.Add(row);
+        }
+        return rebuilt;
     }
 
     static SyncSnapshot CloneSnapshot(SyncSnapshot snap) => new()
@@ -850,45 +911,18 @@ public static class AccountSync
         Usage = snap.Usage,
     };
 
-    static bool DropOldestUsage(List<SyncUsage> usage)
+    static bool LooksLikeGzip(byte[] raw) => raw.Length >= 2 && raw[0] == 0x1F && raw[1] == 0x8B;
+
+    static byte[] MaybeGunzip(byte[] raw, string compression)
     {
-        SyncUsage? best = null;
-        var kind = "";
-        var bestTs = double.MaxValue;
-        foreach (var row in usage)
+        var kind = (compression ?? "").Trim().ToLowerInvariant();
+        if (kind == "gzip" || (kind.Length == 0 && LooksLikeGzip(raw)))
         {
-            foreach (var p in row.History)
-            {
-                if (p.Ts < bestTs) { bestTs = p.Ts; best = row; kind = "history"; }
-            }
-            foreach (var ev in row.Events)
-            {
-                var ts = ev.TimestampMs / 1000.0;
-                if (ts < bestTs) { bestTs = ts; best = row; kind = "events"; }
-            }
-            foreach (var ev in row.TeamEvents)
-            {
-                var ts = ev.TimestampMs / 1000.0;
-                if (ts < bestTs) { bestTs = ts; best = row; kind = "team"; }
-            }
+            try { return GzipDecompress(raw); }
+            catch { throw new CursorApiException("同步文件损坏"); }
         }
-        if (best is null) return false;
-        if (kind == "history" && best.History.Count > 0)
-        {
-            best.History = best.History.OrderBy(p => p.Ts).Skip(1).ToList();
-            return true;
-        }
-        if (kind == "events" && best.Events.Count > 0)
-        {
-            best.Events = best.Events.OrderBy(e => e.TimestampMs).Skip(1).ToList();
-            return true;
-        }
-        if (kind == "team" && best.TeamEvents.Count > 0)
-        {
-            best.TeamEvents = best.TeamEvents.OrderBy(e => e.TimestampMs).Skip(1).ToList();
-            return true;
-        }
-        return false;
+        if (kind.Length > 0) throw new CursorApiException("不支持的同步压缩");
+        return raw;
     }
 
     static byte[] GzipCompress(byte[] raw)
@@ -938,14 +972,7 @@ public static class AccountSync
         {
             throw new CursorApiException("同步口令不正确或文件已损坏");
         }
-        var compression = Str(envelope, "compression").Trim().ToLowerInvariant();
-        if (compression == "gzip")
-        {
-            try { plain = GzipDecompress(plain); }
-            catch { throw new CursorApiException("同步文件损坏"); }
-        }
-        else if (compression.Length > 0)
-            throw new CursorApiException("不支持的同步压缩");
+        plain = MaybeGunzip(plain, Str(envelope, "compression"));
         using var doc = JsonDocument.Parse(Encoding.UTF8.GetString(plain));
         return ParseSnapshot(doc.RootElement);
     }
