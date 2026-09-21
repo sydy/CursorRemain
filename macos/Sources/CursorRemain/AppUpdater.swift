@@ -197,6 +197,7 @@ enum AppUpdater {
         }
     }
 
+    @MainActor
     private static func pendingDirectory(_ store: AppStore) -> URL {
         store.settingsDirectory ?? AppPaths.configDirectory()
     }
