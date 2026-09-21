@@ -7,11 +7,14 @@ namespace CursorTokenCore;
 public static class FormTone
 {
     public const int FieldHeight = 28;
+    public const int FieldInset = 3;
     public const int ButtonMinHeight = 28;
     public const int ButtonMinWidth = 72;
     public const int LabelColumn = 160;
     public const int FieldWidthFill = 0;
     public const int FieldWidthShort = 96;
+    public const int FieldWidthDuration = 112;
+    public const int FieldDurationGap = 10;
     public const int FieldWidthMedium = 160;
     public const int FieldWidthCombo = 220;
     public const int FieldMaxWidth = 360;

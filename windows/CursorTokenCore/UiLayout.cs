@@ -140,6 +140,61 @@ public static class SettingsLayout
 }
 
 /// <summary>
+/// Windows date-picker popup metrics (design pixels at 96 DPI). Date-only
+/// popups stay on the 7-column grid. Date-time popups match macOS: month
+/// grid on the left, time wheels on the right.
+/// </summary>
+public static class CalendarLayout
+{
+    public const int Cell = 32;
+    public const int Pad = 12;
+    public const int HeaderH = 36;
+    public const int WeekH = 24;
+    public const int FootH = 36;
+    public const int TimeColW = 96;
+    public const int TimeColGap = 14;
+    public const int TimeWheelRow = 22;
+    public const int PopoverMinW = 360;
+
+    public readonly record struct Metrics(
+        int Width,
+        int Height,
+        int Pad,
+        int Cell,
+        int GridX,
+        int HeaderH,
+        int WeekH,
+        int FootH,
+        int CalW,
+        int TimeColX,
+        int TimeColW,
+        int TimeWheelRow);
+
+    public static Metrics Measure(int dpi, bool showTime, int okWidth = 0, int minWidth = 0)
+    {
+        _ = okWidth;
+        var cell = UiLayout.ScalePx(Cell, dpi);
+        var pad = UiLayout.ScalePx(Pad, dpi);
+        var header = UiLayout.ScalePx(HeaderH, dpi);
+        var week = UiLayout.ScalePx(WeekH, dpi);
+        var foot = UiLayout.ScalePx(FootH, dpi);
+        var grid = cell * 7;
+        var timeCol = showTime ? UiLayout.ScalePx(TimeColW, dpi) : 0;
+        var gap = showTime ? UiLayout.ScalePx(TimeColGap, dpi) : 0;
+        var minW = showTime ? Math.Max(minWidth, UiLayout.ScalePx(PopoverMinW, dpi)) : minWidth;
+        var content = showTime ? pad + grid + gap + timeCol + pad : pad * 2 + grid;
+        var width = Math.Max(minW, content);
+        var gridX = showTime ? pad : pad + Math.Max(0, width - pad * 2 - grid) / 2;
+        var calW = gridX + grid;
+        var timeColX = showTime ? width - pad - timeCol : 0;
+        var height = pad + header + week + cell * 6 + foot;
+        return new Metrics(
+            width, height, pad, cell, gridX, header, week, foot,
+            calW, timeColX, timeCol, UiLayout.ScalePx(TimeWheelRow, dpi));
+    }
+}
+
+/// <summary>
 /// Usage-report chart metrics shared with the macOS <c>UsageChartView</c> (design pixels at 96 DPI).
 /// </summary>
 public static class UsageChartLayout

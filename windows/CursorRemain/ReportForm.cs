@@ -23,12 +23,12 @@ sealed class ReportForm : Form
     readonly ComboBox _category = new FlatCombo();
     readonly FlatCombo _model = new();
     readonly ComboBox _cloud = new FlatCombo();
-    readonly FlatDatePicker _startDate = new()
+    readonly FlatDatePicker _startDate = new FlatDatePicker()
     {
         ShowCheckBox = true,
         Checked = false,
     };
-    readonly FlatDatePicker _endDate = new()
+    readonly FlatDatePicker _endDate = new FlatDatePicker()
     {
         ShowCheckBox = true,
         Checked = false,

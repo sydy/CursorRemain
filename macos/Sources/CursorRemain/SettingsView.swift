@@ -27,6 +27,7 @@ struct SettingsRootView: View {
     @State private var showDeleteConfirm = false
     @State private var hint = ""
     @FocusState private var tokenFocused: Bool
+    @State private var fittedBody: CGFloat = 0
     var startImport: Bool = false
     var focusToken: Bool = false
 
@@ -37,8 +38,13 @@ struct SettingsRootView: View {
             menuPage.tabItem { Label("菜单栏", systemImage: "menubar.rectangle") }.tag("menu")
             syncPage.tabItem { Label("同步", systemImage: "arrow.triangle.2.circlepath") }.tag("sync")
         }
-        .padding(20)
-        .frame(width: 540, height: pageHeight)
+        .padding(SettingsMetrics.padding)
+        .frame(width: SettingsMetrics.width, height: pageHeight)
+        .onPreferenceChange(SettingsBodyHeightKey.self) { height in
+            guard height > fittedBody + 1 else { return }
+            fittedBody = height
+            fitWindow()
+        }
         .onAppear {
             reloadFields()
             if focusToken || store.focusToken {
@@ -50,7 +56,7 @@ struct SettingsRootView: View {
                 store.pendingCursorImport = false
                 Task { await importFrom(prefer: "cursor-app") }
             }
-            SettingsWindowController.shared.resizeTo(height: pageHeight)
+            fitWindow()
         }
         .onChange(of: store.settingsReloadTick) { _ in
             reloadFields()
@@ -73,6 +79,22 @@ struct SettingsRootView: View {
         }
     }
 
+    var isTemporaryAccount: Bool {
+        AccountValidity.isTemporary(store.config.activeAccount)
+    }
+
+    var modeLabel: String {
+        switch store.config.trayDisplayMode {
+        case "number": return "纯数字"
+        case "dot": return "仅色点"
+        default: return "圆环百分比"
+        }
+    }
+
+    func fitWindow() {
+        SettingsWindowController.shared.resizeTo(height: pageHeight)
+    }
+
     func fieldCaption(_ title: String) -> some View {
         Text(title)
             .font(.subheadline)
@@ -80,18 +102,84 @@ struct SettingsRootView: View {
     }
 
     func fieldWidth<V: View>(_ view: V, max: CGFloat = 360) -> some View {
-        view.frame(maxWidth: max, alignment: .leading)
+        SettingsFieldBox(width: max) { view }
+    }
+
+    /// Menu + buttons: hug the longest title. A Picker/MenuPickerStyle inside
+    /// ScrollView inherits the field width, leaving a trailing gutter and `>`.
+    func settingsMenuPicker<Selection: Hashable>(
+        selection: Binding<Selection>,
+        current: String,
+        options: [(Selection, String)]
+    ) -> some View {
+        Menu {
+            ForEach(options, id: \.0) { value, title in
+                Button {
+                    selection.wrappedValue = value
+                } label: {
+                    if value == selection.wrappedValue {
+                        Label(title, systemImage: "checkmark")
+                    } else {
+                        Text(title)
+                    }
+                }
+            }
+        } label: {
+            SettingsFieldBox {
+                HStack(spacing: 6) {
+                    Text(current)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// Single field + popover calendar (B / B3). Avoids the system DatePicker
+    /// that expands a calendar inline inside ScrollView.
+    func settingsDateTimeField(selection: Binding<Date>) -> some View {
+        SettingsDateTimeField(selection: selection)
+    }
+
+    func settingsDurationField(days: Binding<Int>, hours: Binding<Int>) -> some View {
+        SettingsDurationField(days: days, hours: hours)
+    }
+
+    func settingsPage<V: View>(spacing: CGFloat, @ViewBuilder content: () -> V) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: spacing) {
+                    content()
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: SettingsBodyHeightKey.self, value: geo.size.height)
+                    }
+                )
+            }
+            footer
+                .padding(.top, SettingsMetrics.footerGap)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     var accountPage: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        settingsPage(spacing: 10) {
             fieldCaption("当前账号")
-            fieldWidth(Picker("账号", selection: activeBinding) {
-                ForEach(store.config.accounts, id: \.id) { acc in
-                    Text(acc.caption(isActive: acc.id == store.config.activeAccountId)).tag(acc.id)
+            settingsMenuPicker(
+                selection: activeBinding,
+                current: store.config.activeAccount?.caption(isActive: true) ?? "未选择",
+                options: store.config.accounts.map { acc in
+                    (acc.id, acc.caption(isActive: acc.id == store.config.activeAccountId))
                 }
-            }
-            .labelsHidden())
+            )
             HStack {
                 Button("重命名") { rename() }
                 Button("删除") { deleteAccount() }
@@ -99,25 +187,20 @@ struct SettingsRootView: View {
                     .disabled(importing)
             }
             fieldCaption("账号类型")
-            fieldWidth(Picker("账号类型", selection: kindBinding) {
-                Text("长期账号").tag(AccountValidity.longTerm)
-                Text("临时账号").tag(AccountValidity.temporary)
-            }
-            .labelsHidden()
-            .disabled(store.config.activeAccount == nil), max: 220)
-            if AccountValidity.isTemporary(store.config.activeAccount) {
+            settingsMenuPicker(
+                selection: kindBinding,
+                current: isTemporaryAccount ? "临时账号" : "长期账号",
+                options: [
+                    (AccountValidity.longTerm, "长期账号"),
+                    (AccountValidity.temporary, "临时账号"),
+                ]
+            )
+            .disabled(store.config.activeAccount == nil)
+            if isTemporaryAccount {
                 fieldCaption("开始时间")
-                DatePicker("开始时间", selection: startBinding, displayedComponents: [.date, .hourAndMinute])
-                    .labelsHidden()
+                settingsDateTimeField(selection: startBinding)
                 fieldCaption("有效时间")
-                HStack {
-                    Stepper(value: daysBinding, in: 0...AccountValidity.maxDays) {
-                        Text("\(store.config.activeAccount?.tempValidDays ?? 0) 天")
-                    }
-                    Stepper(value: hoursBinding, in: 0...AccountValidity.maxHours) {
-                        Text("\(store.config.activeAccount?.tempValidHours ?? 0) 小时")
-                    }
-                }
+                settingsDurationField(days: daysBinding, hours: hoursBinding)
                 Text(endCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -125,23 +208,24 @@ struct SettingsRootView: View {
             }
             Text("成本与渠道").font(.headline).padding(.top, 4)
             fieldCaption("渠道")
-            fieldWidth(Picker("渠道", selection: $channel) {
-                Text("未标").tag("")
-                Text("自费").tag(UsageEvents.channelSelfPay)
-                Text("第三方").tag(UsageEvents.channelThirdParty)
-            }
-            .labelsHidden()
-            .disabled(store.config.activeAccount == nil), max: 220)
+            settingsMenuPicker(
+                selection: $channel,
+                current: UsageEvents.channelLabel(channel),
+                options: [
+                    ("", "未标"),
+                    (UsageEvents.channelSelfPay, "自费"),
+                    (UsageEvents.channelThirdParty, "第三方"),
+                ]
+            )
+            .disabled(store.config.activeAccount == nil)
             fieldCaption("实际成本（人民币）")
-            fieldWidth(TextField("0", text: $actualCnyText), max: 160)
+            fieldWidth(TextField("0", text: $actualCnyText).textFieldStyle(.plain), max: 160)
                 .disabled(store.config.activeAccount == nil)
             Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button("添加账号") { addOpen = true }
                 .padding(.top, 8)
-            Spacer(minLength: 12)
-            footer
         }
         .sheet(isPresented: $addOpen) {
             addAccountSheet
@@ -199,36 +283,37 @@ struct SettingsRootView: View {
     }
 
     var notifyPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        settingsPage(spacing: 14) {
             Text("刷新与通知").font(.title3.bold())
             fieldCaption("刷新间隔（分钟）")
-            fieldWidth(TextField("10", text: $intervalText), max: 96)
+            fieldWidth(TextField("10", text: $intervalText).textFieldStyle(.plain), max: 96)
             fieldCaption("月费（美元）")
-            fieldWidth(TextField("20", text: $planUsdText), max: 96)
+            fieldWidth(TextField("20", text: $planUsdText).textFieldStyle(.plain), max: 96)
             fieldCaption("美元兑人民币")
-            fieldWidth(TextField("7.5", text: $cnyRateText), max: 96)
+            fieldWidth(TextField("7.5", text: $cnyRateText).textFieldStyle(.plain), max: 96)
             Text("月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             fieldCaption("告警阈值，例如 50,20,5")
-            fieldWidth(TextField("50,20,5", text: $thresholdText), max: 160)
+            fieldWidth(TextField("50,20,5", text: $thresholdText).textFieldStyle(.plain), max: 160)
             Toggle("启用用量通知", isOn: notifyBinding)
             Toggle("启用耗尽风险通知", isOn: exhaustBinding)
-            Spacer()
-            footer
         }
     }
 
     var menuPage: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        settingsPage(spacing: 14) {
             Text("菜单栏与启动").font(.title3.bold())
             fieldCaption("菜单栏图标")
-            fieldWidth(Picker("菜单栏图标", selection: modeBinding) {
-                Text("圆环百分比").tag("ring")
-                Text("纯数字").tag("number")
-                Text("仅色点").tag("dot")
-            }
-            .labelsHidden(), max: 220)
+            settingsMenuPicker(
+                selection: modeBinding,
+                current: modeLabel,
+                options: [
+                    ("ring", "圆环百分比"),
+                    ("number", "纯数字"),
+                    ("dot", "仅色点"),
+                ]
+            )
             Toggle("开机自启（下次登录生效）", isOn: autostartBinding)
             Toggle("自动检查并安装更新", isOn: autoUpdateBinding)
             Text("当前版本  \(AppUpdate.displayVersion())")
@@ -241,13 +326,11 @@ struct SettingsRootView: View {
             Text(store.updateStatus.isEmpty ? "对照 GitHub 正式版（v*）。打包版会下载替换后重启；开发运行则打开下载页。若弹出钥匙串授权，选一次「始终允许」即可，之后更新不再要登录密码。" : store.updateStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer()
-            footer
         }
     }
 
     var syncPage: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        settingsPage(spacing: 12) {
             Text("云同步").font(.title3.bold())
             if store.config.cloudLoggedIn {
                 Text("已登录  \(store.config.cloudEmail)")
@@ -288,12 +371,15 @@ struct SettingsRootView: View {
             Text(syncStatus.isEmpty ? " " : syncStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Spacer()
-            footer
         }
     }
 
-    var pageHeight: CGFloat { 740 }
+    var pageHeight: CGFloat {
+        let raw = fittedBody + SettingsMetrics.padding * 2 + SettingsMetrics.footerReserve
+        let cap = (NSScreen.main?.visibleFrame.height ?? 800) - 60
+        if fittedBody < 1 { return min(SettingsMetrics.width, cap) }
+        return min(max(raw, SettingsMetrics.minHeight), cap)
+    }
 
     var footer: some View {
         HStack {
@@ -873,6 +959,21 @@ struct SettingsRootView: View {
     }
 }
 
+private enum SettingsMetrics {
+    static let width: CGFloat = 540
+    static let padding: CGFloat = 20
+    static let footerGap: CGFloat = 12
+    static let footerReserve: CGFloat = 44
+    static let minHeight: CGFloat = 420
+}
+
+private struct SettingsBodyHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 @MainActor
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
@@ -886,7 +987,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let newH = height + chrome
         frame.origin.y += frame.height - newH
         frame.size.height = newH
-        win.setFrame(frame, display: true)
+        win.setFrame(frame, display: true, animate: true)
     }
 
     func show(store: AppStore, focusToken: Bool, startImport: Bool) {
@@ -895,7 +996,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         AppDelegate.ensureStatusItemVisible()
         if window == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 540, height: 680),
+                contentRect: NSRect(x: 0, y: 0, width: SettingsMetrics.width, height: SettingsMetrics.minHeight),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered,
                 defer: false
@@ -906,11 +1007,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window = win
         }
         let wasHidden = window?.isVisible != true
-        if window?.contentView == nil {
+        // NSWindow always installs an empty contentView; only skip rebuild
+        // when the settings hosting view is already there.
+        if window?.contentView is NSHostingView<SettingsRootView> {
+            if wasHidden {
+                store.settingsReloadTick += 1
+            }
+        } else {
             window?.contentView = NSHostingView(rootView: SettingsRootView(store: store, startImport: startImport, focusToken: focusToken))
             window?.center()
-        } else if wasHidden {
-            store.settingsReloadTick += 1
         }
         window?.makeKeyAndOrderFront(nil)
         if focusToken {

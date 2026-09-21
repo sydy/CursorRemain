@@ -893,11 +893,14 @@ public class FixtureTests
     public void FormToneMatchesFlyoutSolidsAndFieldMetrics()
     {
         Assert.Equal(28, FormTone.FieldHeight);
+        Assert.Equal(3, FormTone.FieldInset);
         Assert.Equal(28, FormTone.ButtonMinHeight);
         Assert.Equal(72, FormTone.ButtonMinWidth);
         Assert.Equal(160, FormTone.LabelColumn);
         Assert.Equal(0, FormTone.FieldWidthFill);
         Assert.Equal(96, FormTone.FieldWidthShort);
+        Assert.Equal(112, FormTone.FieldWidthDuration);
+        Assert.Equal(10, FormTone.FieldDurationGap);
         Assert.Equal(160, FormTone.FieldWidthMedium);
         Assert.Equal(220, FormTone.FieldWidthCombo);
         Assert.Equal(360, FormTone.FieldMaxWidth);
@@ -943,6 +946,45 @@ public class FixtureTests
             SettingsLayout.MinWidth, SettingsLayout.MinHeight,
             144, 1920, 1080);
         Assert.Equal((810, 1020), at150);
+    }
+
+    [Fact]
+    public void CalendarPopupFitsGridWithoutSideGap()
+    {
+        Assert.Equal(32, CalendarLayout.Cell);
+        Assert.Equal(96, CalendarLayout.TimeColW);
+        Assert.Equal(360, CalendarLayout.PopoverMinW);
+        var dateOnly = CalendarLayout.Measure(96, false);
+        Assert.Equal(12 * 2 + 32 * 7, dateOnly.Width);
+        Assert.Equal(12, dateOnly.GridX);
+        Assert.Equal(0, dateOnly.TimeColW);
+        var withTime = CalendarLayout.Measure(96, true);
+        Assert.Equal(360, withTime.Width);
+        Assert.Equal(12, withTime.GridX);
+        Assert.Equal(12 + 32 * 7, withTime.CalW);
+        Assert.Equal(360 - 12 - 96, withTime.TimeColX);
+        Assert.Equal(96, withTime.TimeColW);
+        Assert.Equal(dateOnly.Height, withTime.Height);
+        var anchored = CalendarLayout.Measure(96, true, minWidth: 400);
+        Assert.Equal(400, anchored.Width);
+        Assert.Equal(12, anchored.GridX);
+        var at150 = CalendarLayout.Measure(144, true);
+        Assert.Equal(540, at150.Width);
+        Assert.Equal(48, at150.Cell);
+        Assert.Equal(18, at150.GridX);
+    }
+
+    [Fact]
+    public void SettingsStampParsesTypedStartTime()
+    {
+        Assert.Equal("2026-09-14 10:07", SettingsStamp.Format(new DateTime(2026, 9, 14, 10, 7, 0), true));
+        Assert.Equal("2026-09-14", SettingsStamp.Format(new DateTime(2026, 9, 14, 10, 7, 0), false));
+        Assert.Equal(new DateTime(2026, 9, 14, 10, 7, 0), SettingsStamp.Parse("2026-09-14 10:07"));
+        Assert.Equal(new DateTime(2026, 9, 14, 10, 7, 8), SettingsStamp.Parse("2026-09-14 10:07:08"));
+        Assert.Equal(new DateTime(2026, 9, 14, 10, 7, 0), SettingsStamp.Parse("2026/9/14 10:7"));
+        Assert.Equal(new DateTime(2026, 9, 14), SettingsStamp.Parse("2026-09-14"));
+        Assert.Null(SettingsStamp.Parse(""));
+        Assert.Null(SettingsStamp.Parse("not-a-date"));
     }
 
     [Fact]

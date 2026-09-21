@@ -1,4 +1,5 @@
 using System.Drawing.Drawing2D;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using CursorTokenCore;
 using Microsoft.Win32;
@@ -213,6 +214,76 @@ static class UiChrome
     internal const string FieldRowTag = "field-row";
 
     internal static int FieldPx(int dpi) => UiLayout.ScalePx(FormTone.FieldHeight, dpi);
+
+    internal static void PaintFieldBox(Graphics g, int width, int height, int dpi, bool focused)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        var strokeW = focused ? 2f : 1f;
+        var radius = UiLayout.ScalePx(FormTone.ButtonRadius, dpi);
+        var box = FlyoutLayout.InnerStroke(width, height, radius, strokeW + 2f);
+        var bounds = new RectangleF(box.X, box.Y, box.Width, box.Height);
+        using var path = RoundRect(bounds, box.Radius);
+        using (var br = new SolidBrush(ColorOf(Tone.Field)))
+            g.FillPath(br, path);
+        using var pen = new Pen(focused ? ColorOf(Tone.Accent) : ColorOf(Tone.Stroke), strokeW);
+        g.DrawPath(pen, path);
+    }
+
+    internal static void PaintFieldRing(Graphics g, int width, int height, int dpi, bool focused)
+    {
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        var strokeW = focused ? 2f : 1f;
+        var radius = UiLayout.ScalePx(FormTone.ButtonRadius, dpi);
+        var box = FlyoutLayout.InnerStroke(width, height, radius, strokeW + 2f);
+        var bounds = new RectangleF(box.X, box.Y, box.Width, box.Height);
+        using var path = RoundRect(bounds, box.Radius);
+        using var pen = new Pen(focused ? ColorOf(Tone.Accent) : ColorOf(Tone.Stroke), strokeW);
+        g.DrawPath(pen, path);
+    }
+
+    internal static void ApplyRoundRegion(Control control, int radius)
+    {
+        if (!control.IsHandleCreated || control.Width <= 1 || control.Height <= 1) return;
+        var d = FlyoutLayout.RoundRegionDiameter(radius);
+        var (right, bottom) = FlyoutLayout.RoundRegionExtent(control.Width, control.Height);
+        var hrgn = CreateRoundRectRgn(0, 0, right, bottom, d, d);
+        if (hrgn == IntPtr.Zero) return;
+        var region = Region.FromHrgn(hrgn);
+        DeleteObject(hrgn);
+        var old = control.Region;
+        control.Region = region;
+        old?.Dispose();
+    }
+
+    internal static void ApplyRingRegion(Control control, int radius, int inset)
+    {
+        if (!control.IsHandleCreated || control.Width <= 1 || control.Height <= 1) return;
+        var hole = Math.Max(2, inset);
+        if (control.Width <= hole * 2 || control.Height <= hole * 2) return;
+        var d = FlyoutLayout.RoundRegionDiameter(radius);
+        var dIn = FlyoutLayout.RoundRegionDiameter(Math.Max(1, radius - hole));
+        var (right, bottom) = FlyoutLayout.RoundRegionExtent(control.Width, control.Height);
+        var outer = CreateRoundRectRgn(0, 0, right, bottom, d, d);
+        var inner = CreateRoundRectRgn(hole, hole, right - hole, bottom - hole, dIn, dIn);
+        var dest = CreateRectRgn(0, 0, 0, 0);
+        if (outer == IntPtr.Zero || inner == IntPtr.Zero || dest == IntPtr.Zero)
+        {
+            if (outer != IntPtr.Zero) DeleteObject(outer);
+            if (inner != IntPtr.Zero) DeleteObject(inner);
+            if (dest != IntPtr.Zero) DeleteObject(dest);
+            return;
+        }
+        CombineRgn(dest, outer, inner, RgnDiff);
+        DeleteObject(outer);
+        DeleteObject(inner);
+        var region = Region.FromHrgn(dest);
+        DeleteObject(dest);
+        var old = control.Region;
+        control.Region = region;
+        old?.Dispose();
+    }
 
     public static FieldFrame Frame(Control inner, int height = 0)
     {
@@ -464,12 +535,27 @@ static class UiChrome
                 picker.CalendarTitleBackColor = ColorOf(pal.Header);
                 picker.CalendarTitleForeColor = text;
                 picker.CalendarTrailingForeColor = ColorOf(pal.Secondary);
+                picker.ApplyTheme();
                 if (picker.Parent is FieldFrame dateHost)
                     dateHost.Relayout();
                 else
                 {
                     picker.MinimumSize = new Size(picker.MinimumSize.Width, h);
                     picker.Height = h;
+                }
+                break;
+            case FlatUnitField unit:
+                unit.ApplyTheme();
+                if (unit.Parent is FieldFrame unitHost)
+                {
+                    unitHost.Width = UiLayout.ScalePx(FormTone.FieldWidthDuration, dpi);
+                    unitHost.Height = h;
+                    unitHost.Relayout();
+                }
+                else
+                {
+                    unit.MinimumSize = new Size(unit.MinimumSize.Width, h);
+                    unit.Height = h;
                 }
                 break;
         }
@@ -569,7 +655,7 @@ static class UiChrome
             case TabControl tabs:
                 StyleTabs(tabs, pal, dpi);
                 break;
-            case TextBox or ComboBox or NumericUpDown or DateTimePicker or FlatDatePicker:
+            case TextBox or ComboBox or NumericUpDown or DateTimePicker or FlatDatePicker or FlatUnitField:
                 StyleInput(parent, pal, dpi);
                 return;
             case CheckBox box:
@@ -667,6 +753,20 @@ static class UiChrome
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref RECT lParam);
+
+    const int RgnDiff = 4;
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
+
+    [DllImport("gdi32.dll")]
+    static extern IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+    [DllImport("gdi32.dll")]
+    static extern int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int nCombineMode);
+
+    [DllImport("gdi32.dll")]
+    static extern bool DeleteObject(IntPtr hObject);
 
     [StructLayout(LayoutKind.Sequential)]
     struct RECT
@@ -861,15 +961,134 @@ static class NativeTheme
     }
 }
 
+sealed class FieldStrokeLayer : Control
+{
+    const int WsExTransparent = 0x00000020;
+
+    public FieldStrokeLayer()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
+        UpdateStyles();
+        TabStop = false;
+        Enabled = false;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.ExStyle |= WsExTransparent;
+            return cp;
+        }
+    }
+
+    public void SyncShape()
+    {
+        if (!IsHandleCreated || Width <= 1 || Height <= 1) return;
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        UiChrome.ApplyRingRegion(this, UiLayout.ScalePx(FormTone.ButtonRadius, dpi), UiLayout.ScalePx(FormTone.FieldInset, dpi));
+        Invalidate();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        SyncShape();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        SyncShape();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(UiChrome.ColorOf(UiChrome.Tone.Field));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var parent = Parent as FieldFrame;
+        UiChrome.PaintFieldRing(e.Graphics, Width, Height, DeviceDpi > 0 ? DeviceDpi : 96, parent?.Active ?? false);
+    }
+}
+
 sealed class FieldFrame : Panel
 {
+    readonly FieldStrokeLayer _stroke = new();
+    bool _active;
+    bool _held;
+
     public FieldFrame()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw | ControlStyles.UserPaint, true);
         UpdateStyles();
+        _stroke.Dock = DockStyle.None;
+        Controls.Add(_stroke);
+    }
+
+    public bool Active
+    {
+        get => _active;
+        set
+        {
+            if (_active == value) return;
+            _active = value;
+            Invalidate();
+            _stroke.Invalidate();
+        }
+    }
+
+    public bool Held
+    {
+        get => _held;
+        set
+        {
+            _held = value;
+            RefreshActive();
+        }
     }
 
     public void Relayout() => LayoutInner();
+
+    void RefreshActive() => Active = _held || ContainsFocus;
+
+    void WatchFocus(Control? control)
+    {
+        if (control is null) return;
+        control.GotFocus -= OnChildFocus;
+        control.GotFocus += OnChildFocus;
+        control.LostFocus -= OnChildBlur;
+        control.LostFocus += OnChildBlur;
+        control.ControlAdded -= OnNestedAdded;
+        control.ControlAdded += OnNestedAdded;
+        if (control is ComboBox combo)
+        {
+            combo.DropDown -= OnComboDropDown;
+            combo.DropDown += OnComboDropDown;
+            combo.DropDownClosed -= OnComboClosed;
+            combo.DropDownClosed += OnComboClosed;
+        }
+        foreach (Control child in control.Controls)
+            WatchFocus(child);
+    }
+
+    void OnNestedAdded(object? sender, ControlEventArgs e) => WatchFocus(e.Control);
+    void OnChildFocus(object? sender, EventArgs e) => Active = true;
+    void OnComboDropDown(object? sender, EventArgs e) => Active = true;
+    void OnChildBlur(object? sender, EventArgs e) => QueueRefresh();
+    void OnComboClosed(object? sender, EventArgs e) => QueueRefresh();
+
+    void QueueRefresh()
+    {
+        if (!IsHandleCreated || IsDisposed) return;
+        BeginInvoke(() =>
+        {
+            if (!IsDisposed) RefreshActive();
+        });
+    }
 
     protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
     {
@@ -883,7 +1102,7 @@ sealed class FieldFrame : Panel
 
     public override Size GetPreferredSize(Size proposedSize)
     {
-        if (Controls.Count == 1 && Controls[0] is TextBox { Multiline: true })
+        if (Content() is TextBox { Multiline: true })
             return base.GetPreferredSize(proposedSize);
         var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
         var h = UiChrome.FieldPx(dpi);
@@ -895,13 +1114,22 @@ sealed class FieldFrame : Panel
 
     protected override void OnControlAdded(ControlEventArgs e)
     {
+        if (e.Control is not null and not FieldStrokeLayer) WatchFocus(e.Control);
         base.OnControlAdded(e);
+        LayoutInner();
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        SyncShape();
         LayoutInner();
     }
 
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        SyncShape();
         LayoutInner();
     }
 
@@ -919,51 +1147,55 @@ sealed class FieldFrame : Panel
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.AntiAlias;
-        var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi > 0 ? DeviceDpi : 96);
-        var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1f, Width - 1f), Math.Max(1f, Height - 1f));
-        using var path = UiChrome.RoundRect(bounds, radius);
-        using (var br = new SolidBrush(UiChrome.ColorOf(UiChrome.Tone.Field)))
-            g.FillPath(br, path);
-        using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Field));
-        g.DrawPath(pen, path);
+        UiChrome.PaintFieldBox(e.Graphics, Width, Height, DeviceDpi > 0 ? DeviceDpi : 96, _active);
+    }
+
+    void SyncShape()
+    {
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        UiChrome.ApplyRoundRegion(this, UiLayout.ScalePx(FormTone.ButtonRadius, dpi));
+    }
+
+    Control? Content()
+    {
+        foreach (Control child in Controls)
+        {
+            if (child is not FieldStrokeLayer)
+                return child;
+        }
+        return null;
     }
 
     void LayoutInner()
     {
-        if (Controls.Count != 1) return;
-        var inner = Controls[0];
-        if (inner is NumericUpDown spin)
+        if (Padding != Padding.Empty)
+            Padding = Padding.Empty;
+        var inner = Content();
+        if (inner is null) return;
+        inner.Dock = DockStyle.None;
+        inner.Margin = Padding.Empty;
+        var box = ClientRectangle;
+        if (inner is NumericUpDown or FlatDigitBox or FlatUnitField or TextBox { Multiline: true } or ComboBox or FlatDatePicker)
         {
-            inner.Dock = DockStyle.None;
-            inner.Margin = Padding.Empty;
-            var inset = 1;
-            var w = Math.Max(8, Width - inset * 2);
-            var h = Math.Max(8, Math.Min(spin.PreferredSize.Height, Height - inset * 2));
-            inner.Bounds = new Rectangle(inset, Math.Max(inset, (Height - h) / 2), w, h);
-            return;
-        }
-        if (inner is TextBox { Multiline: true } or ComboBox or FlatDatePicker)
-        {
-            inner.Dock = DockStyle.None;
-            inner.Margin = Padding.Empty;
-            var inset = inner is ComboBox ? 3 : 1;
-            inner.Bounds = new Rectangle(inset, inset, Math.Max(8, Width - inset * 2), Math.Max(8, Height - inset * 2));
+            inner.Bounds = new Rectangle(box.X, box.Y, Math.Max(8, box.Width), Math.Max(8, box.Height));
             if (inner is ComboBox combo)
             {
                 var innerH = Math.Max(16, inner.Height - 6);
                 if (combo.ItemHeight != innerH)
                     combo.ItemHeight = innerH;
             }
-            return;
         }
-        inner.Dock = DockStyle.None;
-        inner.Margin = Padding.Empty;
-        var padX = 6;
-        var line = Math.Max(inner.Font.Height + 2, inner.PreferredSize.Height);
-        inner.Size = new Size(Math.Max(8, ClientSize.Width - padX * 2), line);
-        inner.Location = new Point(padX, Math.Max(0, (ClientSize.Height - inner.Height) / 2));
+        else
+        {
+            var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+            var padX = UiLayout.ScalePx(6, dpi);
+            var line = Math.Max(inner.Font.Height + 2, inner.PreferredSize.Height);
+            inner.Size = new Size(Math.Max(8, box.Width - padX * 2), line);
+            inner.Location = new Point(box.X + padX, box.Y + Math.Max(0, (box.Height - line) / 2));
+        }
+        _stroke.Bounds = box;
+        _stroke.BringToFront();
+        _stroke.SyncShape();
     }
 }
 
@@ -1403,22 +1635,12 @@ sealed class FlatCombo : ComboBox
     {
         if (!IsHandleCreated || Width <= 1 || Height <= 1) return;
         using var g = Graphics.FromHwnd(Handle);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         var pal = UiChrome.Tone;
         var field = UiChrome.ColorOf(pal.Field);
-        var stroke = UiChrome.ColorOf(pal.Stroke);
         var text = UiChrome.ColorOf(pal.Secondary);
-        using (var cover = new SolidBrush(field))
-        {
-            g.FillRectangle(cover, 0, 0, Width, 3);
-            g.FillRectangle(cover, 0, Height - 3, Width, 3);
-            g.FillRectangle(cover, 0, 0, 3, Height);
-            g.FillRectangle(cover, Width - 3, 0, 3, Height);
-        }
         if (Parent is not FieldFrame)
-        {
-            using var pen = new Pen(stroke);
-            g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-        }
+            UiChrome.PaintFieldBox(g, Width, Height, DeviceDpi > 0 ? DeviceDpi : 96, Focused || DroppedDown);
         var fallbackLeft = Width - Math.Max(20, UiLayout.ScalePx(20, DeviceDpi));
         var arrow = NativeTheme.ComboButton(Handle, fallbackLeft, Height, Width);
         using (var br = new SolidBrush(field))
@@ -1468,7 +1690,7 @@ sealed class FlatSpin : NumericUpDown
 
     Control? NativeButtons => Controls.Cast<Control>().FirstOrDefault(c => c.GetType().Name == "UpDownButtons");
     TextBox? Edit => Controls.OfType<TextBox>().FirstOrDefault();
-    int SpinWidth() => Math.Max(18, UiLayout.ScalePx(18, DeviceDpi > 0 ? DeviceDpi : 96));
+    int SpinWidth() => Math.Max(22, UiLayout.ScalePx(22, DeviceDpi > 0 ? DeviceDpi : 96));
     Rectangle SpinBox() => new(Math.Max(0, Width - SpinWidth()), 0, SpinWidth() + 1, Height);
     Rectangle UpBox()
     {
@@ -1487,6 +1709,7 @@ sealed class FlatSpin : NumericUpDown
         if (buttons is null) return;
         buttons.Visible = false;
         buttons.Enabled = false;
+        buttons.TabStop = false;
         buttons.SetBounds(-32000, -32000, 0, 0);
     }
 
@@ -1501,14 +1724,21 @@ sealed class FlatSpin : NumericUpDown
         edit.TextAlign = HorizontalAlignment.Center;
         var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
         var spinW = SpinWidth();
-        var padX = UiLayout.ScalePx(6, dpi);
+        var padX = UiLayout.ScalePx(8, dpi);
         var fontH = Math.Max(edit.Font.Height + 2, TextRenderer.MeasureText("8", edit.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height);
         var h = Math.Min(Math.Max(8, fontH), Math.Max(8, Height - 2));
-        var editW = Math.Max(8, Width - spinW - padX - 2);
+        var editW = Math.Max(8, Width - spinW - padX);
         edit.MaximumSize = Size.Empty;
         edit.Bounds = new Rectangle(padX, Math.Max(0, (Height - h) / 2), editW, h);
         if (edit.IsHandleCreated) NativeTheme.Strip(edit.Handle);
         UiChrome.CenterEdit(edit, 0);
+    }
+
+    protected override void OnControlAdded(ControlEventArgs e)
+    {
+        base.OnControlAdded(e);
+        HideNativeButtons();
+        FitEdit();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -1523,6 +1753,7 @@ sealed class FlatSpin : NumericUpDown
             edit.ForeColor = ForeColor;
         }
         FitEdit();
+        BeginInvoke(FitEdit);
     }
 
     protected override void OnLayout(LayoutEventArgs e)
@@ -1625,7 +1856,11 @@ sealed class FlatSpin : NumericUpDown
         }
         try { base.WndProc(ref m); }
         catch (InvalidOperationException) { }
-        if (m.Msg == WmPaint) PaintChrome();
+        if (m.Msg == WmPaint)
+        {
+            HideNativeButtons();
+            PaintChrome();
+        }
     }
 
     void PaintChrome()
@@ -1664,11 +1899,11 @@ sealed class FlatSpin : NumericUpDown
             g.FillRectangle(br, down);
         }
         var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
-        DrawChevron(g, up, text, up: true, dpi);
-        DrawChevron(g, down, text, up: false, dpi);
+        DrawSpinChevron(g, up, text, up: true, dpi);
+        DrawSpinChevron(g, down, text, up: false, dpi);
     }
 
-    static void DrawChevron(Graphics g, Rectangle area, Color color, bool up, int dpi)
+    internal static void DrawSpinChevron(Graphics g, Rectangle area, Color color, bool up, int dpi)
     {
         var s = Math.Max(3, UiLayout.ScalePx(3, dpi));
         var cx = area.X + area.Width / 2;
@@ -1678,6 +1913,221 @@ sealed class FlatSpin : NumericUpDown
             g.DrawLines(pen, new[] { new Point(cx - s, cy + s - 1), new Point(cx, cy - s + 1), new Point(cx + s, cy + s - 1) });
         else
             g.DrawLines(pen, new[] { new Point(cx - s, cy - s + 1), new Point(cx, cy + s - 1), new Point(cx + s, cy - s + 1) });
+    }
+}
+
+sealed class FlatDigitBox : Control
+{
+    readonly TextBox _edit = new()
+    {
+        BorderStyle = BorderStyle.None,
+        TextAlign = HorizontalAlignment.Center,
+        Margin = Padding.Empty,
+    };
+    readonly System.Windows.Forms.Timer _repeat = new() { Interval = 360 };
+    int _value;
+    int _min;
+    int _max = 23;
+    int _press;
+    int _hover;
+
+    public event EventHandler? ValueChanged;
+
+    public FlatDigitBox()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        UpdateStyles();
+        _edit.Text = "0";
+        _edit.KeyDown += OnEditKeyDown;
+        _edit.LostFocus += (_, _) => Commit();
+        Controls.Add(_edit);
+        _repeat.Tick += (_, _) =>
+        {
+            if (_press == 0) { _repeat.Stop(); return; }
+            Step(_press);
+            _repeat.Interval = 70;
+        };
+        TabStop = true;
+        Cursor = Cursors.IBeam;
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _repeat.Dispose();
+        base.Dispose(disposing);
+    }
+
+    public int Minimum
+    {
+        get => _min;
+        set { _min = value; Value = _value; }
+    }
+
+    public int Maximum
+    {
+        get => _max;
+        set { _max = value; Value = _value; }
+    }
+
+    public int Value
+    {
+        get => _value;
+        set
+        {
+            var next = Math.Clamp(value, _min, _max);
+            if (next == _value && _edit.Text == next.ToString()) return;
+            _value = next;
+            _edit.Text = next.ToString();
+            ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    int Dpi() => DeviceDpi > 0 ? DeviceDpi : 96;
+    int SpinWidth() => Math.Max(22, UiLayout.ScalePx(22, Dpi()));
+    Rectangle SpinBox() => new(Math.Max(0, Width - SpinWidth()), 0, SpinWidth(), Height);
+    Rectangle UpBox()
+    {
+        var box = SpinBox();
+        return new Rectangle(box.X, box.Y, box.Width, box.Height / 2);
+    }
+    Rectangle DownBox()
+    {
+        var box = SpinBox();
+        return new Rectangle(box.X, box.Y + box.Height / 2, box.Width, box.Height - box.Height / 2);
+    }
+
+    void FitEdit()
+    {
+        var padX = UiLayout.ScalePx(8, Dpi());
+        var fontH = Math.Max(_edit.Font.Height + 2, TextRenderer.MeasureText("8", _edit.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height);
+        var h = Math.Min(Math.Max(8, fontH), Math.Max(8, Height - 2));
+        _edit.Bounds = new Rectangle(padX, Math.Max(0, (Height - h) / 2), Math.Max(8, Width - SpinWidth() - padX), h);
+        _edit.BackColor = UiChrome.ColorOf(UiChrome.Tone.Field);
+        _edit.ForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
+        if (_edit.IsHandleCreated) NativeTheme.Strip(_edit.Handle);
+        UiChrome.CenterEdit(_edit, 0);
+    }
+
+    void Commit()
+    {
+        if (int.TryParse(_edit.Text, out var n))
+            Value = n;
+        else
+            _edit.Text = _value.ToString();
+    }
+
+    void Step(int dir) => Value = _value + dir;
+
+    void OnEditKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Up) { Step(1); e.Handled = true; }
+        else if (e.KeyCode == Keys.Down) { Step(-1); e.Handled = true; }
+        else if (e.KeyCode == Keys.Enter) { Commit(); e.Handled = true; }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        BackColor = UiChrome.ColorOf(UiChrome.Tone.Field);
+        ForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
+        FitEdit();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        FitEdit();
+        Invalidate();
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        FitEdit();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Parent is FieldFrame
+            ? UiChrome.ColorOf(UiChrome.Tone.Field)
+            : Parent?.BackColor ?? UiChrome.ColorOf(UiChrome.Tone.Window));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var pal = UiChrome.Tone;
+        var field = UiChrome.ColorOf(pal.Field);
+        var text = UiChrome.ColorOf(pal.Secondary);
+        var hover = UiChrome.ColorOf(pal.ButtonHover);
+        using (var br = new SolidBrush(field))
+            g.FillRectangle(br, SpinBox());
+        if (_hover == 1 || _press == 1)
+        {
+            using var br = new SolidBrush(hover);
+            g.FillRectangle(br, UpBox());
+        }
+        if (_hover == -1 || _press == -1)
+        {
+            using var br = new SolidBrush(hover);
+            g.FillRectangle(br, DownBox());
+        }
+        FlatSpin.DrawSpinChevron(g, UpBox(), text, up: true, Dpi());
+        FlatSpin.DrawSpinChevron(g, DownBox(), text, up: false, Dpi());
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        var next = UpBox().Contains(e.Location) ? 1 : DownBox().Contains(e.Location) ? -1 : 0;
+        if (next != _hover)
+        {
+            _hover = next;
+            Invalidate();
+        }
+        Cursor = next != 0 ? Cursors.Hand : Cursors.IBeam;
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = 0;
+        EndRepeat();
+        Cursor = Cursors.Default;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        Focus();
+        if (UpBox().Contains(e.Location)) { BeginRepeat(1); return; }
+        if (DownBox().Contains(e.Location)) { BeginRepeat(-1); return; }
+        _edit.Focus();
+        _edit.SelectAll();
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        EndRepeat();
+        base.OnMouseUp(e);
+    }
+
+    void BeginRepeat(int dir)
+    {
+        Step(dir);
+        _press = dir;
+        _repeat.Interval = 360;
+        _repeat.Start();
+        Invalidate();
+    }
+
+    void EndRepeat()
+    {
+        _press = 0;
+        _repeat.Stop();
+        Invalidate();
     }
 }
 
@@ -1824,13 +2274,190 @@ sealed class FlatCheck : CheckBox
     }
 }
 
+sealed class FlatUnitField : Control
+{
+    readonly TextBox _edit = new()
+    {
+        BorderStyle = BorderStyle.None,
+        Margin = Padding.Empty,
+    };
+    decimal _value;
+    decimal _min;
+    decimal _max = 999;
+    string _unit = "";
+    bool _syncing;
+
+    public event EventHandler? ValueChanged;
+
+    public FlatUnitField()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        UpdateStyles();
+        _edit.Text = "0";
+        _edit.LostFocus += (_, _) => Commit();
+        _edit.KeyDown += OnEditKeyDown;
+        Controls.Add(_edit);
+        TabStop = true;
+        Cursor = Cursors.IBeam;
+    }
+
+    public string Unit
+    {
+        get => _unit;
+        set
+        {
+            _unit = value ?? "";
+            FitEdit();
+            Invalidate();
+        }
+    }
+
+    public decimal Minimum
+    {
+        get => _min;
+        set { _min = value; Value = _value; }
+    }
+
+    public decimal Maximum
+    {
+        get => _max;
+        set { _max = value; Value = _value; }
+    }
+
+    public decimal Value
+    {
+        get => _value;
+        set
+        {
+            var next = Math.Clamp(value, _min, _max);
+            if (next == _value && _edit.Text == Format(next)) return;
+            _value = next;
+            _syncing = true;
+            _edit.Text = Format(next);
+            _syncing = false;
+            ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void ApplyTheme()
+    {
+        var pal = UiChrome.Tone;
+        BackColor = UiChrome.ColorOf(pal.Field);
+        ForeColor = UiChrome.ColorOf(pal.Text);
+        _edit.BackColor = BackColor;
+        _edit.ForeColor = Enabled ? ForeColor : UiChrome.ColorOf(pal.Secondary);
+        if (_edit.IsHandleCreated) NativeTheme.Strip(_edit.Handle);
+        FitEdit();
+    }
+
+    static string Format(decimal value) => ((int)value).ToString(CultureInfo.InvariantCulture);
+
+    int Dpi() => DeviceDpi > 0 ? DeviceDpi : 96;
+
+    int UnitWidth()
+    {
+        if (_unit.Length == 0) return 0;
+        return TextRenderer.MeasureText(_unit, Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
+    }
+
+    void FitEdit()
+    {
+        var pad = UiLayout.ScalePx(SettingsFieldChromePad(), Dpi());
+        var gap = UiLayout.ScalePx(6, Dpi());
+        var unitW = UnitWidth();
+        var fontH = Math.Max(_edit.Font.Height + 2, TextRenderer.MeasureText("8", _edit.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height);
+        var h = Math.Min(Math.Max(8, fontH), Math.Max(8, Height - 2));
+        _edit.Bounds = new Rectangle(pad, Math.Max(0, (Height - h) / 2), Math.Max(8, Width - pad * 2 - unitW - gap), h);
+        UiChrome.CenterEdit(_edit, 0);
+        Invalidate();
+    }
+
+    static int SettingsFieldChromePad() => 8;
+
+    void Commit()
+    {
+        if (_syncing) return;
+        if (int.TryParse(_edit.Text.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n)
+            || int.TryParse(_edit.Text.Trim(), NumberStyles.Integer, CultureInfo.CurrentCulture, out n))
+            Value = n;
+        else
+            _edit.Text = Format(_value);
+    }
+
+    void OnEditKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Enter) return;
+        Commit();
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        _edit.Enabled = Enabled;
+        ApplyTheme();
+        base.OnEnabledChanged(e);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        ApplyTheme();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        FitEdit();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        FitEdit();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        _edit.Font = Font;
+        base.OnFontChanged(e);
+        FitEdit();
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        e.Graphics.Clear(Parent is FieldFrame
+            ? UiChrome.ColorOf(UiChrome.Tone.Field)
+            : Parent?.BackColor ?? UiChrome.ColorOf(UiChrome.Tone.Window));
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var pal = UiChrome.Tone;
+        var unit = UiChrome.ColorOf(Enabled ? pal.Secondary : pal.Hairline);
+        var gap = UiLayout.ScalePx(6, Dpi());
+        var unitW = UnitWidth();
+        var box = new Rectangle(_edit.Right + gap, 0, Math.Max(unitW, 8), Height);
+        TextRenderer.DrawText(g, _unit, Font, box, unit,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding | TextFormatFlags.SingleLine);
+    }
+}
+
 sealed class FlatDatePicker : Control
 {
+    readonly TextBox _edit = new()
+    {
+        BorderStyle = BorderStyle.None,
+        Margin = Padding.Empty,
+    };
     DateTime _value = DateTime.Now;
     DateTime _min = new(2000, 1, 1);
     DateTime _max = new(2100, 1, 1);
     bool _checked = true;
     bool _hover;
+    bool _syncing;
     Form? _popup;
 
     public event EventHandler? ValueChanged;
@@ -1839,10 +2466,12 @@ sealed class FlatDatePicker : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
         UpdateStyles();
-        Cursor = Cursors.Hand;
         CustomFormat = "yyyy-MM-dd";
         Height = FormTone.FieldHeight;
         TabStop = true;
+        _edit.LostFocus += (_, _) => CommitDraft();
+        _edit.KeyDown += OnEditKeyDown;
+        Controls.Add(_edit);
     }
 
     public string CustomFormat { get; set; }
@@ -1873,6 +2502,8 @@ sealed class FlatDatePicker : Control
         {
             if (_checked == value) return;
             _checked = value;
+            SyncDraft();
+            FitEdit();
             Invalidate();
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -1884,14 +2515,30 @@ sealed class FlatDatePicker : Control
         set
         {
             var next = Clamp(value);
-            if (next == _value) return;
+            if (next == _value)
+            {
+                SyncDraft();
+                return;
+            }
             _value = next;
+            SyncDraft();
             Invalidate();
             ValueChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
-    public override string Text => ShowCheckBox && !Checked ? "" : _value.ToString(CustomFormat);
+    public override string Text => ShowCheckBox && !Checked ? "" : SettingsStamp.Format(_value, NeedsTime());
+
+    public void ApplyTheme()
+    {
+        var pal = UiChrome.Tone;
+        BackColor = UiChrome.ColorOf(pal.Field);
+        ForeColor = UiChrome.ColorOf(pal.Text);
+        _edit.BackColor = BackColor;
+        _edit.ForeColor = Enabled && (!ShowCheckBox || Checked) ? ForeColor : UiChrome.ColorOf(pal.Secondary);
+        if (_edit.IsHandleCreated) NativeTheme.Strip(_edit.Handle);
+        FitEdit();
+    }
 
     bool NeedsTime()
     {
@@ -1907,7 +2554,9 @@ sealed class FlatDatePicker : Control
         return value;
     }
 
-    int ButtonWidth() => Math.Max(22, UiLayout.ScalePx(28, DeviceDpi > 0 ? DeviceDpi : 96));
+    int Dpi() => DeviceDpi > 0 ? DeviceDpi : 96;
+
+    int ButtonWidth() => Math.Max(22, UiLayout.ScalePx(28, Dpi()));
 
     Rectangle ButtonBox()
     {
@@ -1917,8 +2566,96 @@ sealed class FlatDatePicker : Control
 
     Rectangle CheckBox()
     {
-        var size = Math.Max(12, UiLayout.ScalePx(14, DeviceDpi > 0 ? DeviceDpi : 96));
+        var size = Math.Max(12, UiLayout.ScalePx(14, Dpi()));
         return new Rectangle(8, Math.Max(0, (Height - size) / 2), size, size);
+    }
+
+    void FitEdit()
+    {
+        var pad = UiLayout.ScalePx(8, Dpi());
+        var left = ShowCheckBox ? CheckBox().Right + 8 : pad;
+        var right = ButtonBox().X;
+        var fontH = Math.Max(_edit.Font.Height + 2, TextRenderer.MeasureText("8", _edit.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height);
+        var h = Math.Min(Math.Max(8, fontH), Math.Max(8, Height - 2));
+        var open = !ShowCheckBox || Checked;
+        _edit.Visible = open;
+        _edit.Enabled = Enabled && open;
+        _edit.Bounds = new Rectangle(left, Math.Max(0, (Height - h) / 2), Math.Max(8, right - left - 4), h);
+        UiChrome.CenterEdit(_edit, 0);
+    }
+
+    void SyncDraft()
+    {
+        if (_syncing) return;
+        _syncing = true;
+        _edit.Text = ShowCheckBox && !Checked ? "不限" : SettingsStamp.Format(_value, NeedsTime());
+        _syncing = false;
+    }
+
+    void CommitDraft()
+    {
+        if (_syncing || (ShowCheckBox && !Checked)) return;
+        if (SettingsStamp.Parse(_edit.Text) is { } date)
+        {
+            if (!NeedsTime()) date = date.Date;
+            Value = date;
+        }
+        else
+            SyncDraft();
+    }
+
+    void OnEditKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode == Keys.Enter)
+        {
+            CommitDraft();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+        else if (e.KeyCode == Keys.F4 || (e.KeyCode == Keys.Down && e.Alt))
+        {
+            ShowCalendar();
+            e.Handled = true;
+        }
+    }
+
+    void SyncFrame(bool on)
+    {
+        if (Parent is FieldFrame frame) frame.Held = on;
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        _edit.Enabled = Enabled && (!ShowCheckBox || Checked);
+        ApplyTheme();
+        base.OnEnabledChanged(e);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        SyncDraft();
+        ApplyTheme();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        FitEdit();
+        Invalidate();
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        base.OnLayout(levent);
+        FitEdit();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        _edit.Font = Font;
+        base.OnFontChanged(e);
+        FitEdit();
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
@@ -1935,28 +2672,18 @@ sealed class FlatDatePicker : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var pal = UiChrome.Tone;
         var field = UiChrome.ColorOf(pal.Field);
-        var text = UiChrome.ColorOf(pal.Text);
         var secondary = UiChrome.ColorOf(pal.Secondary);
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var accent = UiChrome.ColorOf(pal.Accent);
-        var button = _hover ? UiChrome.ColorOf(pal.ButtonHover) : UiChrome.ColorOf(pal.Button);
         var bounds = ClientRectangle;
-        if (Parent is not FieldFrame)
-        {
-            var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi);
-            using var path = UiChrome.RoundRect(new RectangleF(0.5f, 0.5f, Math.Max(1f, Width - 1f), Math.Max(1f, Height - 1f)), radius);
-            using (var br = new SolidBrush(field))
-                g.FillPath(br, path);
-            using (var pen = new Pen(stroke))
-                g.DrawPath(pen, path);
-        }
-        else
+        if (Parent is FieldFrame)
         {
             using var br = new SolidBrush(field);
             g.FillRectangle(br, bounds);
         }
+        else
+            UiChrome.PaintFieldBox(g, Width, Height, Dpi(), Focused || _popup is { IsDisposed: false });
 
-        var x = 8;
         if (ShowCheckBox)
         {
             var box = CheckBox();
@@ -1979,41 +2706,60 @@ sealed class FlatDatePicker : Control
                     new Point(box.Right - 3, box.Y + 3),
                 });
             }
-            x = box.Right + 8;
+            if (!Checked)
+            {
+                var left = box.Right + 8;
+                TextRenderer.DrawText(g, "不限", Font, new Rectangle(left, 0, Math.Max(8, ButtonBox().X - left - 4), Height), secondary,
+                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+            }
         }
 
         var btn = ButtonBox();
-        using (var br = new SolidBrush(button))
-            g.FillRectangle(br, btn);
-        using (var split = new Pen(stroke))
-            g.DrawLine(split, btn.X, 4, btn.X, Height - 4);
-        var cx = btn.X + btn.Width / 2;
-        var cy = btn.Y + btn.Height / 2;
-        using (var chevron = new Pen(Enabled ? text : secondary, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
-            g.DrawLines(chevron, new[] { new Point(cx - 5, cy - 1), new Point(cx, cy + 4), new Point(cx + 5, cy - 1) });
-
-        var faded = !Enabled || (ShowCheckBox && !Checked);
-        var label = ShowCheckBox && !Checked ? "不限" : _value.ToString(CustomFormat);
-        var textRect = new Rectangle(x, 0, Math.Max(8, btn.X - x - 6), Height);
-        TextRenderer.DrawText(
-            g,
-            label,
-            Font,
-            textRect,
-            faded ? secondary : text,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        if (_hover)
+        {
+            using var br = new SolidBrush(UiChrome.ColorOf(pal.ButtonHover));
+            g.FillEllipse(br, Inset(btn, 4));
+        }
+        DrawCalendarIcon(g, btn, Enabled ? secondary : UiChrome.ColorOf(pal.Hairline));
     }
 
-    protected override void OnMouseEnter(EventArgs e)
+    static Rectangle Inset(Rectangle box, int pad) =>
+        new(box.X + pad, box.Y + pad, Math.Max(4, box.Width - pad * 2), Math.Max(4, box.Height - pad * 2));
+
+    void DrawCalendarIcon(Graphics g, Rectangle box, Color color)
     {
-        _hover = true;
-        Invalidate();
-        base.OnMouseEnter(e);
+        using var icon = UiChrome.IconFont(11f);
+        if (icon is not null)
+        {
+            TextRenderer.DrawText(g, "\uE787", icon, box, color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            return;
+        }
+        var inner = Inset(box, Math.Max(6, box.Width / 4));
+        using var pen = new Pen(color, 1.2f);
+        g.DrawRectangle(pen, inner);
+        g.DrawLine(pen, inner.X, inner.Y + 3, inner.Right, inner.Y + 3);
+        using var br = new SolidBrush(color);
+        g.FillRectangle(br, inner.X + 2, inner.Y + 6, 2, 2);
+        g.FillRectangle(br, inner.X + 6, inner.Y + 6, 2, 2);
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        var next = ButtonBox().Contains(e.Location);
+        if (next != _hover)
+        {
+            _hover = next;
+            Invalidate();
+        }
+        Cursor = next || (ShowCheckBox && CheckBox().Contains(e.Location)) ? Cursors.Hand : Cursors.IBeam;
+        base.OnMouseMove(e);
     }
 
     protected override void OnMouseLeave(EventArgs e)
     {
         _hover = false;
+        Cursor = Cursors.IBeam;
         Invalidate();
         base.OnMouseLeave(e);
     }
@@ -2027,9 +2773,12 @@ sealed class FlatDatePicker : Control
             Checked = !Checked;
             return;
         }
-        if (ShowCheckBox && !Checked)
-            Checked = true;
-        ShowCalendar();
+        if (ButtonBox().Contains(e.Location))
+        {
+            if (ShowCheckBox && !Checked)
+                Checked = true;
+            ShowCalendar();
+        }
         base.OnMouseDown(e);
     }
 
@@ -2049,6 +2798,7 @@ sealed class FlatDatePicker : Control
             ShowTime = NeedsTime(),
             Hour = stamp.Hour,
             Minute = stamp.Minute,
+            MinPopupWidth = Width,
         };
         var popup = new Form
         {
@@ -2058,20 +2808,37 @@ sealed class FlatDatePicker : Control
             MinimizeBox = false,
             MaximizeBox = false,
             ControlBox = false,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            AutoScaleMode = AutoScaleMode.None,
+            AutoSize = false,
             Padding = Padding.Empty,
             Text = "",
             BackColor = UiChrome.ColorOf(UiChrome.Tone.Window),
         };
+        view.Location = Point.Empty;
         view.DatePicked += date =>
         {
             Value = date;
-            if (!popup.IsDisposed) popup.Close();
+            if (!view.ShowTime && !popup.IsDisposed) popup.Close();
         };
         popup.Controls.Add(view);
         var armed = false;
-        popup.Shown += (_, _) => armed = true;
+        void PlacePopup()
+        {
+            view.FitToDpi();
+            popup.ClientSize = view.Size;
+            var origin = PointToScreen(new Point(0, Height + 2));
+            var work = Screen.FromControl(this).WorkingArea;
+            var size = popup.Size;
+            var x = Math.Min(origin.X, work.Right - size.Width);
+            var y = origin.Y + size.Height > work.Bottom ? origin.Y - Height - size.Height - 2 : origin.Y;
+            popup.Location = new Point(Math.Max(work.Left, x), Math.Max(work.Top, y));
+        }
+        popup.Shown += (_, _) =>
+        {
+            armed = true;
+            PlacePopup();
+            SyncFrame(true);
+        };
         popup.Deactivate += (_, _) =>
         {
             if (!armed || popup.IsDisposed) return;
@@ -2080,23 +2847,18 @@ sealed class FlatDatePicker : Control
         popup.FormClosed += (_, _) =>
         {
             if (ReferenceEquals(_popup, popup)) _popup = null;
+            SyncFrame(false);
         };
         popup.Paint += (_, e) =>
         {
             using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
             e.Graphics.DrawRectangle(pen, 0, 0, popup.ClientSize.Width - 1, popup.ClientSize.Height - 1);
         };
-        var origin = PointToScreen(new Point(0, Height + 2));
-        var work = Screen.FromControl(this).WorkingArea;
-        popup.Location = origin;
         _popup = popup;
         var owner = FindForm();
         if (owner is not null) popup.Show(owner);
         else popup.Show();
-        var size = popup.Size;
-        var x = Math.Min(origin.X, work.Right - size.Width);
-        var y = origin.Y + size.Height > work.Bottom ? origin.Y - Height - size.Height - 2 : origin.Y;
-        popup.Location = new Point(Math.Max(work.Left, x), Math.Max(work.Top, y));
+        PlacePopup();
     }
 
     protected override void OnHandleDestroyed(EventArgs e)
@@ -2111,19 +2873,16 @@ sealed class FlatMonthView : Control
 {
     static readonly string[] Weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 
-    readonly FlatSpin _hours = new() { Minimum = 0, Maximum = 23, DecimalPlaces = 0 };
-    readonly FlatSpin _minutes = new() { Minimum = 0, Maximum = 59, DecimalPlaces = 0 };
-    readonly FieldFrame _hourFrame;
-    readonly FieldFrame _minFrame;
-    readonly Label _hourLbl = new() { Text = "时", AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
-    readonly Label _minLbl = new() { Text = "分", AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
-    readonly Button _ok = UiChrome.Button("确定", UiButtonKind.Primary);
     DateTime _month;
     DateTime _selected;
     DateTime _min = new(2000, 1, 1);
     DateTime _max = new(2100, 1, 1);
+    CalendarLayout.Metrics _metrics = CalendarLayout.Measure(96, false);
     int _hover = -1;
+    int _hour;
+    int _minute;
     bool _showTime;
+    int _minPopupWidth;
 
     public event Action<DateTime>? DatePicked;
 
@@ -2133,21 +2892,7 @@ sealed class FlatMonthView : Control
         UpdateStyles();
         _selected = DateTime.Today;
         _month = new DateTime(_selected.Year, _selected.Month, 1);
-        _hourFrame = UiChrome.Frame(_hours);
-        _minFrame = UiChrome.Frame(_minutes);
-        foreach (var frame in new[] { _hourFrame, _minFrame })
-        {
-            frame.Dock = DockStyle.None;
-            frame.Margin = Padding.Empty;
-        }
-        _ok.Margin = Padding.Empty;
-        _ok.Click += (_, _) => Pick(Stamp());
-        Controls.AddRange([_hourFrame, _hourLbl, _minFrame, _minLbl, _ok]);
-        foreach (var child in TimeParts())
-            child.Visible = false;
     }
-
-    Control[] TimeParts() => [_hourFrame, _hourLbl, _minFrame, _minLbl, _ok];
 
     public bool ShowTime
     {
@@ -2155,26 +2900,29 @@ sealed class FlatMonthView : Control
         set
         {
             _showTime = value;
-            foreach (var child in TimeParts())
-                child.Visible = value;
             Fit();
         }
     }
 
     public int Hour
     {
-        get => (int)_hours.Value;
-        set => _hours.Value = Math.Clamp(value, 0, 23);
+        get => _hour;
+        set => _hour = Math.Clamp(value, 0, 23);
     }
 
     public int Minute
     {
-        get => (int)_minutes.Value;
-        set => _minutes.Value = Math.Clamp(value, 0, 59);
+        get => _minute;
+        set => _minute = Math.Clamp(value, 0, 59);
     }
 
     public DateTime MinDate { get => _min; set { _min = value.Date; Invalidate(); } }
     public DateTime MaxDate { get => _max; set { _max = value.Date; Invalidate(); } }
+    public int MinPopupWidth
+    {
+        get => _minPopupWidth;
+        set { _minPopupWidth = Math.Max(0, value); Fit(); }
+    }
 
     public DateTime Selected
     {
@@ -2187,12 +2935,13 @@ sealed class FlatMonthView : Control
         }
     }
 
-    int Cell() => UiLayout.ScalePx(32, DeviceDpi > 0 ? DeviceDpi : 96);
-    int Pad() => UiLayout.ScalePx(12, DeviceDpi > 0 ? DeviceDpi : 96);
-    int HeaderH() => UiLayout.ScalePx(36, DeviceDpi > 0 ? DeviceDpi : 96);
-    int WeekH() => UiLayout.ScalePx(24, DeviceDpi > 0 ? DeviceDpi : 96);
-    int FootH() => UiLayout.ScalePx(36, DeviceDpi > 0 ? DeviceDpi : 96);
-    int TimeH() => _showTime ? UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96) + Pad() / 2 : 0;
+    int Dpi() => DeviceDpi > 0 ? DeviceDpi : 96;
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var m = CalendarLayout.Measure(Dpi(), _showTime, 0, _minPopupWidth);
+        return new Size(m.Width, m.Height);
+    }
 
     protected override void OnHandleCreated(EventArgs e)
     {
@@ -2200,95 +2949,82 @@ sealed class FlatMonthView : Control
         Fit();
     }
 
+    internal void FitToDpi() => Fit();
+
     DateTime Stamp() => _selected.Date.AddHours(Hour).AddMinutes(Minute);
 
     void Pick(DateTime value) => DatePicked?.Invoke(value);
 
     void Fit()
     {
-        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
-        StyleTime(dpi);
-        var cell = Cell();
-        var pad = Pad();
-        Width = Math.Max(pad * 2 + cell * 7, TimeRowWidth(dpi));
-        Height = pad + HeaderH() + WeekH() + cell * 6 + FootH() + TimeH();
-        LayoutTime(dpi);
-    }
-
-    void StyleTime(int dpi)
-    {
-        var pal = UiChrome.Tone;
-        var secondary = UiChrome.ColorOf(pal.Secondary);
-        var window = UiChrome.ColorOf(pal.Window);
-        var h = UiChrome.FieldPx(dpi);
-        var w = UiLayout.ScalePx(FormTone.FieldWidthShort, dpi);
-        foreach (var frame in new[] { _hourFrame, _minFrame })
-        {
-            frame.Size = new Size(w, h);
-            frame.Relayout();
-        }
-        var labelW = UiLayout.ScalePx(20, dpi);
-        foreach (var label in new[] { _hourLbl, _minLbl })
-        {
-            label.ForeColor = secondary;
-            label.BackColor = window;
-            label.Font = Font;
-            label.Size = new Size(labelW, h);
-        }
-        UiChrome.SizeToText(_ok, dpi);
-        if (_ok.Height != h)
-            _ok.Height = h;
-    }
-
-    int TimeRowWidth(int dpi)
-    {
-        if (!_showTime) return 0;
-        var pad = Pad();
-        var gap = UiLayout.ScalePx(8, dpi);
-        return pad + _hourFrame.Width + gap + _hourLbl.Width + gap
-            + _minFrame.Width + gap + _minLbl.Width + gap + _ok.Width + pad;
-    }
-
-    void LayoutTime(int dpi)
-    {
-        if (!_showTime) return;
-        var pad = Pad();
-        var gap = UiLayout.ScalePx(8, dpi);
-        var h = UiChrome.FieldPx(dpi);
-        var y = Height - TimeH() + Math.Max(0, (TimeH() - h) / 2);
-        var x = pad;
-        _hourFrame.SetBounds(x, y, _hourFrame.Width, h);
-        x = _hourFrame.Right + gap;
-        _hourLbl.SetBounds(x, y, _hourLbl.Width, h);
-        x = _hourLbl.Right + gap;
-        _minFrame.SetBounds(x, y, _minFrame.Width, h);
-        x = _minFrame.Right + gap;
-        _minLbl.SetBounds(x, y, _minLbl.Width, h);
-        _ok.SetBounds(Width - pad - _ok.Width, y + Math.Max(0, (h - _ok.Height) / 2), _ok.Width, _ok.Height);
+        _metrics = CalendarLayout.Measure(Dpi(), _showTime, 0, _minPopupWidth);
+        Width = _metrics.Width;
+        Height = _metrics.Height;
+        Invalidate();
     }
 
     Rectangle NavBox(bool next)
     {
-        var pad = Pad();
-        var size = UiLayout.ScalePx(24, DeviceDpi > 0 ? DeviceDpi : 96);
-        var y = pad + (HeaderH() - size) / 2;
+        var m = _metrics;
+        var size = UiLayout.ScalePx(24, Dpi());
+        var y = m.Pad + (m.HeaderH - size) / 2;
+        var right = _showTime ? m.CalW : Width;
         return next
-            ? new Rectangle(Width - pad - size, y, size, size)
-            : new Rectangle(pad, y, size, size);
+            ? new Rectangle(right - m.Pad - size, y, size, size)
+            : _showTime
+                ? new Rectangle(right - m.Pad - size * 2 - 8, y, size, size)
+                : new Rectangle(m.Pad, y, size, size);
     }
 
     Rectangle DayBox(int index)
     {
-        var cell = Cell();
-        var pad = Pad();
-        var top = pad + HeaderH() + WeekH();
-        return new Rectangle(pad + index % 7 * cell, top + index / 7 * cell, cell, cell);
+        var m = _metrics;
+        var top = m.Pad + m.HeaderH + m.WeekH;
+        return new Rectangle(m.GridX + index % 7 * m.Cell, top + index / 7 * m.Cell, m.Cell, m.Cell);
     }
 
     Rectangle TodayBox()
     {
-        var pad = Pad();
-        return new Rectangle(pad, Height - FootH() - TimeH(), Width - pad * 2, FootH() - pad / 2);
+        var m = _metrics;
+        var width = _showTime ? Math.Max(8, m.CalW - m.Pad) : Width - m.Pad * 2;
+        return new Rectangle(m.Pad, Height - m.FootH, width, m.FootH - m.Pad / 2);
+    }
+
+    Rectangle TimeColumn()
+    {
+        var m = _metrics;
+        return new Rectangle(m.TimeColX, m.Pad, m.TimeColW, Height - m.Pad * 2);
+    }
+
+    Rectangle Divider()
+    {
+        var m = _metrics;
+        return new Rectangle(m.CalW + (m.TimeColX - m.CalW) / 2, m.Pad, 1, Height - m.Pad * 2);
+    }
+
+    Rectangle TimeTitleBox()
+    {
+        var col = TimeColumn();
+        return new Rectangle(col.X, col.Y, col.Width, _metrics.WeekH);
+    }
+
+    Rectangle WheelBox(bool hour)
+    {
+        var m = _metrics;
+        var col = TimeColumn();
+        var row = m.TimeWheelRow;
+        var blockH = row * 3;
+        var top = col.Y + TimeTitleBox().Height + Math.Max(0, (col.Height - TimeTitleBox().Height - blockH) / 2);
+        var w = Math.Max(28, (col.Width - 12) / 2);
+        var x = hour ? col.X : col.Right - w;
+        return new Rectangle(x, top, w, blockH);
+    }
+
+    Rectangle WheelRow(bool hour, int slot)
+    {
+        var box = WheelBox(hour);
+        var h = Math.Max(1, box.Height / 3);
+        return new Rectangle(box.X, box.Y + slot * h, box.Width, h);
     }
 
     DateTime FirstGridDay()
@@ -2314,18 +3050,23 @@ sealed class FlatMonthView : Control
         using (var bg = new SolidBrush(window))
             g.FillRectangle(bg, ClientRectangle);
 
-        var pad = Pad();
+        var m = _metrics;
         var title = $"{_month.Year}年{_month.Month}月";
-        TextRenderer.DrawText(g, title, UiChrome.UiFont(10f, FontStyle.Bold), new Rectangle(0, pad, Width, HeaderH()), text,
-            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        var titleBox = _showTime
+            ? new Rectangle(m.GridX, m.Pad, Math.Max(8, m.CalW - m.GridX - UiLayout.ScalePx(64, Dpi())), m.HeaderH)
+            : new Rectangle(0, m.Pad, Width, m.HeaderH);
+        var titleAlign = _showTime
+            ? TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+            : TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter;
+        TextRenderer.DrawText(g, title, UiChrome.UiFont(10f, FontStyle.Bold), titleBox, text,
+            titleAlign | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         DrawArrow(g, NavBox(false), text, left: true);
         DrawArrow(g, NavBox(true), text, left: false);
 
-        var weekTop = pad + HeaderH();
-        var cell = Cell();
+        var weekTop = m.Pad + m.HeaderH;
         for (var i = 0; i < 7; i++)
         {
-            var box = new Rectangle(pad + i * cell, weekTop, cell, WeekH());
+            var box = new Rectangle(m.GridX + i * m.Cell, weekTop, m.Cell, m.WeekH);
             TextRenderer.DrawText(g, Weekdays[i], Font, box, secondary,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         }
@@ -2363,7 +3104,55 @@ sealed class FlatMonthView : Control
         var todayOn = _hover == 42;
         TextRenderer.DrawText(g, "今天  " + today.ToString("M月d日"), UiChrome.UiFont(9f), foot, todayOn ? accent : secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+
+        if (_showTime)
+        {
+            using (var pen = new Pen(UiChrome.ColorOf(pal.Hairline)))
+                g.DrawLine(pen, Divider().X, Divider().Y, Divider().X, Divider().Bottom);
+            TextRenderer.DrawText(g, "时间", UiChrome.UiFont(8.25f), TimeTitleBox(), secondary,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            DrawWheel(g, hour: true, text, accent, onAccent, hover);
+            var colon = new Rectangle(WheelBox(true).Right, WheelBox(true).Y, Math.Max(8, WheelBox(false).X - WheelBox(true).Right), WheelBox(true).Height);
+            TextRenderer.DrawText(g, ":", Font, colon, secondary,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+            DrawWheel(g, hour: false, text, accent, onAccent, hover);
+        }
     }
+
+    void DrawWheel(Graphics g, bool hour, Color text, Color accent, Color onAccent, Color hover)
+    {
+        var current = hour ? Hour : Minute;
+        var span = hour ? 24 : 60;
+        for (var slot = 0; slot < 3; slot++)
+        {
+            var box = WheelRow(hour, slot);
+            var value = WrapClock(current + slot - 1, span);
+            var selected = slot == 1;
+            var id = WheelHit(hour, slot);
+            if (!selected && _hover == id)
+            {
+                using var path = UiChrome.RoundRect(box, 6);
+                using var br = new SolidBrush(hover);
+                g.FillPath(br, path);
+            }
+            if (selected)
+            {
+                using var br = new SolidBrush(accent);
+                using var path = UiChrome.RoundRect(new RectangleF(box.X + 4, box.Y + 2, Math.Max(8, box.Width - 8), Math.Max(8, box.Height - 4)), 6);
+                g.FillPath(br, path);
+            }
+            TextRenderer.DrawText(g, value.ToString("00"), Font, box, selected ? onAccent : text,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+    }
+
+    static int WrapClock(int value, int span)
+    {
+        var n = value % span;
+        return n < 0 ? n + span : n;
+    }
+
+    static int WheelHit(bool hour, int slot) => hour ? 50 + slot : 60 + slot;
 
     static Rectangle Inset(Rectangle box, int pad) =>
         new(box.X + pad, box.Y + pad, Math.Max(4, box.Width - pad * 2), Math.Max(4, box.Height - pad * 2));
@@ -2412,26 +3201,55 @@ sealed class FlatMonthView : Control
         {
             var today = DateTime.Today;
             if (today < _min || today > _max) return;
-            if (_showTime)
-            {
-                Selected = today;
-                return;
-            }
-            Pick(today);
+            Selected = today;
+            Pick(_showTime ? Stamp() : today);
             return;
         }
+        if (_showTime && TryStepWheel(e.Location))
+            return;
         var hit = Hit(e.Location);
         if (hit is >= 0 and < 42)
         {
             var day = DayAt(hit);
             if (day < _min || day > _max) return;
-            if (_showTime)
-            {
-                Selected = day;
-                return;
-            }
-            Pick(day);
+            Selected = day;
+            Pick(_showTime ? Stamp() : day);
         }
+    }
+
+    bool TryStepWheel(Point pt)
+    {
+        foreach (var hour in new[] { true, false })
+        {
+            if (WheelRow(hour, 0).Contains(pt))
+            {
+                StepClock(hour, -1);
+                return true;
+            }
+            if (WheelRow(hour, 2).Contains(pt))
+            {
+                StepClock(hour, 1);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void StepClock(bool hour, int delta)
+    {
+        if (hour) Hour = WrapClock(Hour + delta, 24);
+        else Minute = WrapClock(Minute + delta, 60);
+        Invalidate();
+        Pick(Stamp());
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        if (!_showTime) return;
+        var hour = WheelBox(true).Contains(e.Location);
+        var minute = WheelBox(false).Contains(e.Location);
+        if (!hour && !minute) return;
+        StepClock(hour, e.Delta > 0 ? -1 : 1);
     }
 
     void Shift(int months)
@@ -2445,6 +3263,14 @@ sealed class FlatMonthView : Control
     int Hit(Point pt)
     {
         if (TodayBox().Contains(pt)) return 42;
+        if (_showTime)
+        {
+            foreach (var hour in new[] { true, false })
+            {
+                if (WheelRow(hour, 0).Contains(pt)) return WheelHit(hour, 0);
+                if (WheelRow(hour, 2).Contains(pt)) return WheelHit(hour, 2);
+            }
+        }
         for (var i = 0; i < 42; i++)
             if (DayBox(i).Contains(pt)) return i;
         return -1;

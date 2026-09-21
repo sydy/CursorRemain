@@ -65,15 +65,15 @@ sealed class SettingsForm : Form
     readonly Button _syncImport = ActionButton("导入…");
     readonly ComboBox _accounts = new FlatCombo();
     readonly ComboBox _kind = new FlatCombo { Width = 220 };
-    readonly FlatDatePicker _startAt = new()
+    readonly FlatDatePicker _startAt = new FlatDatePicker()
     {
         CustomFormat = "yyyy-MM-dd HH:mm",
         Width = 180,
         MinDate = new DateTime(2000, 1, 1),
         MaxDate = new DateTime(2100, 1, 1),
     };
-    readonly NumericUpDown _days = new FlatSpin { Minimum = 0, Maximum = AccountValidity.MaxDays, Width = 72 };
-    readonly NumericUpDown _hours = new FlatSpin { Minimum = 0, Maximum = AccountValidity.MaxHours, Width = 72 };
+    readonly FlatUnitField _days = new FlatUnitField { Unit = "天", Minimum = 0, Maximum = AccountValidity.MaxDays };
+    readonly FlatUnitField _hours = new FlatUnitField { Unit = "小时", Minimum = 0, Maximum = AccountValidity.MaxHours };
     readonly Label _endAt = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
     readonly Panel _endAtRow;
     readonly Panel _startRow;
@@ -545,7 +545,7 @@ sealed class SettingsForm : Form
 
     static bool HoldsSpin(Control control)
     {
-        if (control is NumericUpDown) return true;
+        if (control is NumericUpDown or FlatUnitField) return true;
         foreach (Control child in control.Controls)
             if (HoldsSpin(child)) return true;
         return false;
@@ -700,28 +700,14 @@ sealed class SettingsForm : Form
         };
         var days = UiChrome.Frame(_days);
         var hours = UiChrome.Frame(_hours);
-        days.Width = FormTone.FieldWidthShort;
-        hours.Width = FormTone.FieldWidthShort;
-        days.Margin = new Padding(0, 2, 8, 2);
-        hours.Margin = new Padding(0, 2, 8, 2);
+        days.Dock = DockStyle.None;
+        hours.Dock = DockStyle.None;
+        days.Width = FormTone.FieldWidthDuration;
+        hours.Width = FormTone.FieldWidthDuration;
+        days.Margin = new Padding(0, 0, FormTone.FieldDurationGap, 0);
+        hours.Margin = Padding.Empty;
         row.Controls.Add(days);
-        row.Controls.Add(new Label
-        {
-            Text = "天",
-            AutoSize = false,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Size = new Size(20, FormTone.FieldHeight),
-            Margin = new Padding(0, 2, 8, 2),
-        });
         row.Controls.Add(hours);
-        row.Controls.Add(new Label
-        {
-            Text = "小时",
-            AutoSize = false,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Size = new Size(40, FormTone.FieldHeight),
-            Margin = new Padding(0, 2, 0, 2),
-        });
         return row;
     }
 

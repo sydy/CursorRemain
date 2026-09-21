@@ -24,6 +24,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.store = store
         statusItem = StatusItemController(store: store)
         store.start()
+        if ProcessInfo.processInfo.arguments.contains(where: {
+            $0.compare("--settings", options: .caseInsensitive) == .orderedSame
+        }) {
+            store.openSettings()
+        }
         AppLog.log("swift menubar status item installed")
         Task { @MainActor in
             self.statusItem?.ensureVisible()
