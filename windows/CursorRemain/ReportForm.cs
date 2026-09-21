@@ -23,12 +23,12 @@ sealed class ReportForm : Form
     readonly ComboBox _category = new FlatCombo();
     readonly FlatCombo _model = new();
     readonly ComboBox _cloud = new FlatCombo();
-    readonly DateTimePicker _startDate = new FlatDatePicker
+    readonly FlatDatePicker _startDate = new()
     {
         ShowCheckBox = true,
         Checked = false,
     };
-    readonly DateTimePicker _endDate = new FlatDatePicker
+    readonly FlatDatePicker _endDate = new()
     {
         ShowCheckBox = true,
         Checked = false,
@@ -260,6 +260,14 @@ sealed class ReportForm : Form
         _cloud.Width = UiLayout.ScalePx(120, dpi);
         _startDate.Width = UiLayout.ScalePx(118, dpi);
         _endDate.Width = UiLayout.ScalePx(118, dpi);
+        var fieldH = UiChrome.FieldPx(dpi);
+        foreach (Control tag in _filterBar.Controls)
+        {
+            if (tag is not FlowLayoutPanel row || row.Controls.Count == 0) continue;
+            if (row.Controls[0] is not Label cap) continue;
+            cap.Height = fieldH;
+            cap.Width = TextRenderer.MeasureText(cap.Text, Font).Width + 4;
+        }
         UiChrome.Equalize(dpi, _syncBtn, _exportBtn);
         _kpi.ValuePt = wide ? 13f : 12f;
         _kpi.ItemGap = wide ? 40 : 28;
@@ -443,9 +451,11 @@ sealed class ReportForm : Form
         row.Controls.Add(new Label
         {
             Text = label,
-            AutoSize = true,
+            AutoSize = false,
+            Height = FormTone.FieldHeight,
+            Width = TextRenderer.MeasureText(label, UiChrome.UiFont()).Width + 4,
             TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0, 8, 6, 0),
+            Margin = new Padding(0, 2, 6, 2),
         });
         field.Margin = new Padding(0, 2, 0, 2);
         row.Controls.Add(field);
@@ -582,7 +592,7 @@ sealed class ReportForm : Form
         if (_scope.SelectedIndex != 0) _scope.SelectedIndex = 0;
     }
 
-    static void ApplyDatePicker(DateTimePicker picker, string raw)
+    static void ApplyDatePicker(FlatDatePicker picker, string raw)
     {
         var date = UsageEvents.SanitizeReportDate(raw);
         if (date.Length == 0)

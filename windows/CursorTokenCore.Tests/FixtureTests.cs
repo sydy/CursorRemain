@@ -896,6 +896,11 @@ public class FixtureTests
         Assert.Equal(28, FormTone.ButtonMinHeight);
         Assert.Equal(72, FormTone.ButtonMinWidth);
         Assert.Equal(160, FormTone.LabelColumn);
+        Assert.Equal(0, FormTone.FieldWidthFill);
+        Assert.Equal(96, FormTone.FieldWidthShort);
+        Assert.Equal(160, FormTone.FieldWidthMedium);
+        Assert.Equal(220, FormTone.FieldWidthCombo);
+        Assert.Equal(360, FormTone.FieldMaxWidth);
         Assert.Equal(12, FormTone.ButtonPadX);
         Assert.Equal(84, FormTone.TabItemWidth);
         Assert.Equal(34, FormTone.TabItemHeight);
@@ -920,6 +925,14 @@ public class FixtureTests
     public void SettingsWindowUsesPagedDesignSize()
     {
         Assert.Equal(new[] { "账户", "通知", "托盘", "同步" }, SettingsLayout.TabTitles);
+        Assert.Equal("\uE77B", SettingsLayout.TabGlyph(SettingsLayout.AccountTab));
+        Assert.Equal("\uEA8F", SettingsLayout.TabGlyph(SettingsLayout.NotifyTab));
+        Assert.Equal("\uE7C4", SettingsLayout.TabGlyph(SettingsLayout.TrayTab));
+        Assert.Equal("\uE895", SettingsLayout.TabGlyph(SettingsLayout.SyncTab));
+        Assert.Equal(112, SettingsLayout.NavWidth);
+        Assert.Equal(128, SettingsLayout.FitExtra);
+        Assert.Equal(440, SettingsLayout.AddDialogWidth);
+        Assert.Equal(668, SettingsLayout.WindowsDesignWidth);
         var at100 = UiLayout.FitWindow(
             SettingsLayout.DesignWidth, SettingsLayout.DesignHeight,
             SettingsLayout.MinWidth, SettingsLayout.MinHeight,

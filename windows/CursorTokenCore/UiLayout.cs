@@ -109,16 +109,34 @@ public static class SettingsLayout
     public const int DesignHeight = 680;
     public const int MinWidth = 480;
     public const int MinHeight = 420;
+    public const int NavWidth = 112;
+    public const int WindowsDesignWidth = DesignWidth + 128;
+    public const int WindowsMinWidth = MinWidth + 128;
     public const int PagePadding = 20;
     /// <summary>Vertical air between a full-width combo and the action buttons under it.</summary>
     public const int StackGap = 10;
+    public const int FitExtra = 128;
+    public const int AddDialogWidth = 440;
 
     public const string AccountTab = "账户";
     public const string NotifyTab = "通知";
     public const string TrayTab = "托盘";
     public const string SyncTab = "同步";
+    public const string AccountGlyph = "\uE77B";
+    public const string NotifyGlyph = "\uEA8F";
+    public const string TrayGlyph = "\uE7C4";
+    public const string SyncGlyph = "\uE895";
 
     public static readonly string[] TabTitles = [AccountTab, NotifyTab, TrayTab, SyncTab];
+
+    public static string TabGlyph(string title) => title switch
+    {
+        AccountTab => AccountGlyph,
+        NotifyTab => NotifyGlyph,
+        TrayTab => TrayGlyph,
+        SyncTab => SyncGlyph,
+        _ => "",
+    };
 }
 
 /// <summary>

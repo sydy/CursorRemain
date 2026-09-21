@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct SettingsRootView: View {
     @ObservedObject var store: AppStore
     @State private var extraOpen = false
+    @State private var addOpen = false
+    @State private var tab = "account"
     @State private var importing = false
     @State private var tokenText = ""
     @State private var intervalText = "10"
@@ -29,29 +31,35 @@ struct SettingsRootView: View {
     var focusToken: Bool = false
 
     var body: some View {
-        TabView {
-            accountPage.tabItem { Label("账户", systemImage: "person.circle") }
-            notifyPage.tabItem { Label("通知", systemImage: "bell") }
-            menuPage.tabItem { Label("菜单栏", systemImage: "menubar.rectangle") }
-            syncPage.tabItem { Label("同步", systemImage: "arrow.triangle.2.circlepath") }
+        TabView(selection: $tab) {
+            accountPage.tabItem { Label("账户", systemImage: "person.circle") }.tag("account")
+            notifyPage.tabItem { Label("通知", systemImage: "bell") }.tag("notify")
+            menuPage.tabItem { Label("菜单栏", systemImage: "menubar.rectangle") }.tag("menu")
+            syncPage.tabItem { Label("同步", systemImage: "arrow.triangle.2.circlepath") }.tag("sync")
         }
         .padding(20)
-        .frame(width: 540, height: 680)
+        .frame(width: 540, height: pageHeight)
         .onAppear {
             reloadFields()
             if focusToken || store.focusToken {
+                addOpen = true
                 tokenFocused = true
             }
             if startImport || store.pendingCursorImport {
+                addOpen = true
                 store.pendingCursorImport = false
                 Task { await importFrom(prefer: "cursor-app") }
             }
+            SettingsWindowController.shared.resizeTo(height: pageHeight)
         }
         .onChange(of: store.settingsReloadTick) { _ in
             reloadFields()
         }
         .onChange(of: store.focusToken) { focused in
-            if focused { tokenFocused = true }
+            if focused {
+                addOpen = true
+                tokenFocused = true
+            }
         }
         .onChange(of: store.pendingCursorImport) { pending in
             if pending {
@@ -65,30 +73,44 @@ struct SettingsRootView: View {
         }
     }
 
+    func fieldCaption(_ title: String) -> some View {
+        Text(title)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+    }
+
+    func fieldWidth<V: View>(_ view: V, max: CGFloat = 360) -> some View {
+        view.frame(maxWidth: max, alignment: .leading)
+    }
+
     var accountPage: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("当前账号").font(.headline)
-            Picker("账号", selection: activeBinding) {
+            fieldCaption("当前账号")
+            fieldWidth(Picker("账号", selection: activeBinding) {
                 ForEach(store.config.accounts, id: \.id) { acc in
                     Text(acc.caption(isActive: acc.id == store.config.activeAccountId)).tag(acc.id)
                 }
             }
-            .labelsHidden()
+            .labelsHidden())
             HStack {
                 Button("重命名") { rename() }
                 Button("删除") { deleteAccount() }
                 Button("登录到 Cursor") { Task { await loginToCursor() } }
                     .disabled(importing)
             }
-            Picker("账号类型", selection: kindBinding) {
+            fieldCaption("账号类型")
+            fieldWidth(Picker("账号类型", selection: kindBinding) {
                 Text("长期账号").tag(AccountValidity.longTerm)
                 Text("临时账号").tag(AccountValidity.temporary)
             }
-            .disabled(store.config.activeAccount == nil)
+            .labelsHidden()
+            .disabled(store.config.activeAccount == nil), max: 220)
             if AccountValidity.isTemporary(store.config.activeAccount) {
+                fieldCaption("开始时间")
                 DatePicker("开始时间", selection: startBinding, displayedComponents: [.date, .hourAndMinute])
+                    .labelsHidden()
+                fieldCaption("有效时间")
                 HStack {
-                    Text("有效时间")
                     Stepper(value: daysBinding, in: 0...AccountValidity.maxDays) {
                         Text("\(store.config.activeAccount?.tempValidDays ?? 0) 天")
                     }
@@ -102,21 +124,36 @@ struct SettingsRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             Text("成本与渠道").font(.headline).padding(.top, 4)
-            Picker("渠道", selection: $channel) {
+            fieldCaption("渠道")
+            fieldWidth(Picker("渠道", selection: $channel) {
                 Text("未标").tag("")
                 Text("自费").tag(UsageEvents.channelSelfPay)
                 Text("第三方").tag(UsageEvents.channelThirdParty)
             }
-            .disabled(store.config.activeAccount == nil)
-            HStack {
-                Text("实际成本（人民币）")
-                TextField("0", text: $actualCnyText).frame(width: 72)
-            }
-            .disabled(store.config.activeAccount == nil)
+            .labelsHidden()
+            .disabled(store.config.activeAccount == nil), max: 220)
+            fieldCaption("实际成本（人民币）")
+            fieldWidth(TextField("0", text: $actualCnyText), max: 160)
+                .disabled(store.config.activeAccount == nil)
             Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("添加账号（每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示）").font(.headline).padding(.top, 8)
+            Button("添加账号") { addOpen = true }
+                .padding(.top, 8)
+            Spacer(minLength: 12)
+            footer
+        }
+        .sheet(isPresented: $addOpen) {
+            addAccountSheet
+        }
+    }
+
+    var addAccountSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("添加账号").font(.headline)
+            Text("每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             TextEditor(text: $tokenText)
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 88, maxHeight: 120)
@@ -127,6 +164,8 @@ struct SettingsRootView: View {
                     .disabled(importing)
                 Button("添加") { Task { await addPastedAccounts() } }
                     .disabled(importing)
+                Spacer()
+                Button("完成") { addOpen = false }
             }
             Text("可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。")
                 .font(.caption)
@@ -154,33 +193,25 @@ struct SettingsRootView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer()
-            footer
         }
+        .padding(20)
+        .frame(width: 440)
     }
 
     var notifyPage: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("刷新与通知").font(.title3.bold())
-            HStack {
-                Text("刷新间隔（分钟）")
-                TextField("10", text: $intervalText).frame(width: 72)
-            }
-            HStack {
-                Text("月费（美元）")
-                TextField("20", text: $planUsdText).frame(width: 72)
-            }
-            HStack {
-                Text("美元兑人民币")
-                TextField("7.5", text: $cnyRateText).frame(width: 72)
-            }
+            fieldCaption("刷新间隔（分钟）")
+            fieldWidth(TextField("10", text: $intervalText), max: 96)
+            fieldCaption("月费（美元）")
+            fieldWidth(TextField("20", text: $planUsdText), max: 96)
+            fieldCaption("美元兑人民币")
+            fieldWidth(TextField("7.5", text: $cnyRateText), max: 96)
             Text("月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            HStack {
-                Text("告警阈值，例如 50,20,5")
-                TextField("50,20,5", text: $thresholdText).frame(width: 160)
-            }
+            fieldCaption("告警阈值，例如 50,20,5")
+            fieldWidth(TextField("50,20,5", text: $thresholdText), max: 160)
             Toggle("启用用量通知", isOn: notifyBinding)
             Toggle("启用耗尽风险通知", isOn: exhaustBinding)
             Spacer()
@@ -191,13 +222,14 @@ struct SettingsRootView: View {
     var menuPage: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("菜单栏与启动").font(.title3.bold())
-            Picker("菜单栏图标", selection: modeBinding) {
+            fieldCaption("菜单栏图标")
+            fieldWidth(Picker("菜单栏图标", selection: modeBinding) {
                 Text("圆环百分比").tag("ring")
                 Text("纯数字").tag("number")
                 Text("仅色点").tag("dot")
             }
+            .labelsHidden(), max: 220)
             Toggle("开机自启（下次登录生效）", isOn: autostartBinding)
-            Text("更新").font(.headline).padding(.top, 8)
             Toggle("自动检查并安装更新", isOn: autoUpdateBinding)
             Text("当前版本  \(AppUpdate.displayVersion())")
                 .font(.caption)
@@ -260,6 +292,8 @@ struct SettingsRootView: View {
             footer
         }
     }
+
+    var pageHeight: CGFloat { 740 }
 
     var footer: some View {
         HStack {
@@ -844,6 +878,16 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
     private weak var store: AppStore?
+
+    func resizeTo(height: CGFloat) {
+        guard let win = window else { return }
+        let chrome = win.frame.height - win.contentLayoutRect.height
+        var frame = win.frame
+        let newH = height + chrome
+        frame.origin.y += frame.height - newH
+        frame.size.height = newH
+        win.setFrame(frame, display: true)
+    }
 
     func show(store: AppStore, focusToken: Bool, startImport: Bool) {
         self.store = store

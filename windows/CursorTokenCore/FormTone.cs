@@ -10,6 +10,11 @@ public static class FormTone
     public const int ButtonMinHeight = 28;
     public const int ButtonMinWidth = 72;
     public const int LabelColumn = 160;
+    public const int FieldWidthFill = 0;
+    public const int FieldWidthShort = 96;
+    public const int FieldWidthMedium = 160;
+    public const int FieldWidthCombo = 220;
+    public const int FieldMaxWidth = 360;
     public const int ButtonRadius = 6;
     public const int ButtonPadX = 12;
     public const int TabItemWidth = 84;

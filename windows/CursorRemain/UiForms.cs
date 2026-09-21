@@ -9,9 +9,9 @@ sealed class SettingsForm : Form
     {
         ColumnCount = 1,
         Dock = DockStyle.Fill,
-        Padding = new Padding(SettingsLayout.PagePadding, 16, SettingsLayout.PagePadding, 12),
+        Padding = Padding.Empty,
     };
-    readonly TabControl _tabs = new FlatTabControl { Dock = DockStyle.Fill };
+    readonly FlatTabHost _tabs = new();
     readonly TextBox _token = new()
     {
         Multiline = true,
@@ -31,11 +31,11 @@ sealed class SettingsForm : Form
         "仅当前账号。短期号请买价÷天数×30。",
         "仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。");
     readonly TextBox _thresholds = new() { Width = 180 };
-    readonly CheckBox _notify = new FlatCheck { Text = "启用用量通知", Margin = new Padding(0, 6, 0, 4) };
-    readonly CheckBox _exhaust = new FlatCheck { Text = "启用耗尽风险通知", Margin = new Padding(0, 4, 0, 4) };
+    readonly CheckBox _notify = new FlatCheck { Text = "启用用量通知", Margin = Padding.Empty };
+    readonly CheckBox _exhaust = new FlatCheck { Text = "启用耗尽风险通知", Margin = Padding.Empty };
     readonly ComboBox _mode = new FlatCombo { Width = 200 };
-    readonly CheckBox _auto = new FlatCheck { Text = "开机自启", Margin = new Padding(0, 6, 0, 8) };
-    readonly CheckBox _autoUpdate = new FlatCheck { Text = "自动检查并安装更新", Margin = new Padding(0, 4, 0, 4) };
+    readonly CheckBox _auto = new FlatCheck { Text = "开机自启", Margin = Padding.Empty };
+    readonly CheckBox _autoUpdate = new FlatCheck { Text = "自动检查并安装更新", Margin = Padding.Empty };
     readonly Label _updateVersion = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
     readonly Label _updateStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 4) };
     readonly HintBlock _updateHint = UiChrome.Hint(
@@ -51,8 +51,10 @@ sealed class SettingsForm : Form
         "登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。");
     readonly FlowLayoutPanel _cloudAuth = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly FlowLayoutPanel _cloudActions = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
-    readonly TableLayoutPanel _cloudEmailRow;
-    readonly TableLayoutPanel _cloudPasswordRow;
+    readonly Panel _cloudAuthRow;
+    readonly Panel _cloudActionsRow;
+    readonly Panel _cloudEmailRow;
+    readonly Panel _cloudPasswordRow;
     readonly Button _cloudLogin = ActionButton("登录", UiButtonKind.Primary);
     readonly Button _cloudRegister = ActionButton("注册");
     readonly Button _cloudLogout = ActionButton("退出登录");
@@ -63,26 +65,40 @@ sealed class SettingsForm : Form
     readonly Button _syncImport = ActionButton("导入…");
     readonly ComboBox _accounts = new FlatCombo();
     readonly ComboBox _kind = new FlatCombo { Width = 220 };
-    readonly DateTimePicker _startAt = new FlatDatePicker
+    readonly FlatDatePicker _startAt = new()
     {
-        Format = DateTimePickerFormat.Custom,
         CustomFormat = "yyyy-MM-dd HH:mm",
         Width = 180,
-        ShowUpDown = true,
         MinDate = new DateTime(2000, 1, 1),
         MaxDate = new DateTime(2100, 1, 1),
     };
     readonly NumericUpDown _days = new FlatSpin { Minimum = 0, Maximum = AccountValidity.MaxDays, Width = 72 };
     readonly NumericUpDown _hours = new FlatSpin { Minimum = 0, Maximum = AccountValidity.MaxHours, Width = 72 };
     readonly Label _endAt = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
-    readonly FlowLayoutPanel _tempFields = new()
+    readonly Panel _endAtRow;
+    readonly Panel _startRow;
+    readonly Panel _durationRow;
+    readonly Button _addToggle = ActionButton("添加账号");
+    readonly Panel _addPanel = new()
     {
         AutoSize = true,
-        WrapContents = true,
-        FlowDirection = FlowDirection.LeftToRight,
-        Margin = new Padding(0, 0, 0, 4),
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+        Dock = DockStyle.Fill,
+        Visible = true,
+        MinimumSize = Size.Empty,
+        Margin = Padding.Empty,
+        Padding = new Padding(4, 0, 4, 4),
     };
-    readonly Label _addCaption = UiChrome.Heading("添加账号");
+    readonly Label _pageStatus = new() { AutoSize = true, Visible = false, Margin = new Padding(0, 4, 0, 4) };
+    FieldFrame _tokenFrame = null!;
+    Form? _addDialog;
+    readonly Panel _footer = new()
+    {
+        Dock = DockStyle.Fill,
+        Margin = Padding.Empty,
+        AutoSize = true,
+        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+    };
     readonly Label _status = new() { AutoSize = true, Visible = false, Margin = new Padding(0, 4, 0, 4) };
     readonly HintBlock _hint = UiChrome.Hint(
         "可粘贴 Token 或邮箱密码，多行逐个添加。",
@@ -96,6 +112,7 @@ sealed class SettingsForm : Form
 
     bool _importing;
     bool _loading;
+    bool _fitting;
 
     public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate)
     {
@@ -106,8 +123,8 @@ sealed class SettingsForm : Form
         Text = AppPaths.SettingsTitle;
         var icon = AppWindow.CreateIcon();
         if (icon is not null) Icon = icon;
-        ClientSize = new Size(SettingsLayout.DesignWidth, SettingsLayout.DesignHeight);
-        MinimumSize = new Size(SettingsLayout.MinWidth, SettingsLayout.MinHeight);
+        ClientSize = new Size(SettingsLayout.WindowsDesignWidth, SettingsLayout.MinHeight);
+        MinimumSize = new Size(SettingsLayout.WindowsMinWidth, SettingsLayout.MinHeight);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -119,15 +136,17 @@ sealed class SettingsForm : Form
         var ff = ActionButton("Firefox 登录");
         var cookie = ActionButton("仅导入 Cookie");
         _kind.Items.AddRange(["长期账号", "临时账号"]);
-        _tempFields.Controls.Add(LabeledSpin("开始时间", _startAt));
-        _tempFields.Controls.Add(LabeledSpin("有效", _days, "天"));
-        _tempFields.Controls.Add(LabeledSpin("", _hours, "小时"));
+        _endAtRow = FollowRow(_endAt);
+        _startRow = FieldRow("开始时间", _startAt, FormTone.FieldWidthCombo);
+        _durationRow = FieldRow("有效时间", DurationFields());
         _channel.Items.AddRange(["未标", "自费", "第三方"]);
         _mode.Items.AddRange(["圆环百分比", "纯数字", "仅色点"]);
         _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
         _cloudPasswordRow = FieldRow("密码", _cloudPassword);
         _cloudAuth.Controls.AddRange([_cloudLogin, _cloudRegister]);
         _cloudActions.Controls.AddRange([_syncNow, _cloudMore]);
+        _cloudAuthRow = FollowRow(_cloudAuth);
+        _cloudActionsRow = FollowRow(_cloudActions);
         var importMenu = new ContextMenuStrip();
         UiChrome.StyleMenu(importMenu);
         importMenu.Items.Add("Firefox 登录", null, (_, _) => ff.PerformClick());
@@ -142,57 +161,58 @@ sealed class SettingsForm : Form
         cloudMenu.Items.Add("导出…", null, (_, _) => _syncExport.PerformClick());
         cloudMenu.Items.Add("导入…", null, (_, _) => _syncImport.PerformClick());
         _cloudMore.Click += (_, _) => cloudMenu.Show(_cloudMore, new Point(0, _cloudMore.Height));
-        var tokenFrame = UiChrome.Frame(_token, 90);
-        tokenFrame.Padding = new Padding(8, 6, 8, 6);
-        tokenFrame.MinimumSize = new Size(0, 88);
-        var accounts = UiChrome.Frame(_accounts);
-        accounts.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
-        _tabs.TabPages.AddRange([
-            MakeTab(SettingsLayout.AccountTab,
-                UiChrome.Heading("当前账号", first: true),
-                accounts,
-                ImportRow(rename, del, login),
-                FieldRow("账号类型", _kind),
-                _tempFields,
-                _endAt,
-                UiChrome.Heading("成本与渠道"),
-                FieldRow("渠道", _channel),
-                FieldRow("实际成本（人民币）", _actualCny),
-                _actualHint,
-                _addCaption,
-                tokenFrame,
-                ImportRow(cur, add, _importMore),
-                _status,
-                _hint),
-            MakeTab(SettingsLayout.NotifyTab,
-                UiChrome.Heading("刷新与通知", first: true),
-                FieldRow("刷新间隔（分钟）", _interval),
-                FieldRow("月费（美元）", _planUsd),
-                FieldRow("美元兑人民币", _cnyRate),
-                _spendHint,
-                FieldRow("告警阈值", _thresholds),
-                _notify,
-                _exhaust),
-            MakeTab(SettingsLayout.TrayTab,
-                UiChrome.Heading("托盘与启动", first: true),
-                FieldRow("托盘图标", _mode),
-                _auto,
-                UiChrome.Heading("更新"),
-                _autoUpdate,
-                _updateVersion,
-                Flow(_checkUpdate),
-                _updateStatus,
-                _updateHint),
-            MakeTab(SettingsLayout.SyncTab,
-                UiChrome.Heading("云同步", first: true),
-                _cloudAccount,
-                _cloudEmailRow,
-                _cloudPasswordRow,
-                _cloudAuth,
-                _cloudActions,
-                _syncStatus,
-                _syncHint),
-        ]);
+        _tokenFrame = UiChrome.Frame(_token, 90);
+        _tokenFrame.Padding = new Padding(8, 6, 8, 6);
+        _tokenFrame.MinimumSize = new Size(0, 88);
+        _tokenFrame.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
+        var addStack = MakeStack(
+            _tokenFrame,
+            FollowRow(ImportRow(cur, add, _importMore)),
+            FollowRow(_status),
+            _hint);
+        addStack.Dock = DockStyle.Fill;
+        _addPanel.Controls.Add(addStack);
+        _addToggle.Click += (_, _) => ShowAddAccount();
+        _tabs.AddPage(SettingsLayout.AccountTab, MakeTab(
+            FieldRow("当前账号", _accounts),
+            FollowRow(ImportRow(rename, del, login)),
+            FieldRow("账号类型", _kind, FormTone.FieldWidthCombo),
+            _startRow,
+            _durationRow,
+            _endAtRow,
+            UiChrome.Heading("成本与渠道"),
+            FieldRow("渠道", _channel, FormTone.FieldWidthCombo),
+            FieldRow("实际成本（人民币）", _actualCny, FormTone.FieldWidthMedium),
+            _actualHint,
+            FollowRow(Flow(_addToggle)),
+            FollowRow(_pageStatus)));
+        _tabs.AddPage(SettingsLayout.NotifyTab, MakeTab(
+            UiChrome.Heading("刷新与通知", first: true),
+            FieldRow("刷新间隔（分钟）", _interval, FormTone.FieldWidthShort),
+            FieldRow("月费（美元）", _planUsd, FormTone.FieldWidthShort),
+            FieldRow("美元兑人民币", _cnyRate, FormTone.FieldWidthShort),
+            _spendHint,
+            FieldRow("告警阈值", _thresholds, FormTone.FieldWidthMedium),
+            FollowRow(_notify),
+            FollowRow(_exhaust)));
+        _tabs.AddPage(SettingsLayout.TrayTab, MakeTab(
+            UiChrome.Heading("常规", first: true),
+            FieldRow("托盘图标", _mode, FormTone.FieldWidthCombo),
+            FollowRow(_auto),
+            FollowRow(_autoUpdate),
+            FollowRow(_updateVersion),
+            FollowRow(Flow(_checkUpdate)),
+            FollowRow(_updateStatus),
+            _updateHint));
+        _tabs.AddPage(SettingsLayout.SyncTab, MakeTab(
+            UiChrome.Heading("云同步", first: true),
+            FollowRow(_cloudAccount),
+            _cloudEmailRow,
+            _cloudPasswordRow,
+            _cloudAuthRow,
+            _cloudActionsRow,
+            FollowRow(_syncStatus),
+            _syncHint));
         var cancel = ActionButton("取消");
         var apply = ActionButton("应用");
         var save = ActionButton("保存", UiButtonKind.Primary);
@@ -200,14 +220,15 @@ sealed class SettingsForm : Form
         actions.FlowDirection = FlowDirection.RightToLeft;
         actions.WrapContents = false;
         actions.Dock = DockStyle.Fill;
-        actions.Padding = new Padding(0, 8, 0, 0);
+        actions.Margin = Padding.Empty;
         actions.AccessibleName = "窗口操作";
+        _footer.Controls.Add(actions);
         _root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _root.RowCount = 2;
         _root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         _root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         _root.Controls.Add(_tabs, 0, 0);
-        _root.Controls.Add(actions, 0, 1);
+        _root.Controls.Add(_footer, 0, 1);
         Controls.Add(_root);
         LoadFrom(_cfg);
         _accounts.SelectedIndexChanged += (_, _) =>
@@ -268,16 +289,25 @@ sealed class SettingsForm : Form
             _token.ScrollBars = lines > 4 ? ScrollBars.Vertical : ScrollBars.None;
         };
         _status.TextChanged += (_, _) => _status.Visible = _status.Text.Length > 0;
+        _pageStatus.TextChanged += (_, _) => _pageStatus.Visible = _pageStatus.Text.Length > 0;
         ResumeLayout(false);
         UiChrome.Apply(this);
-        if (startImport) BeginInvoke(async () => await DoImport("cursor-app"));
+        if (startImport)
+        {
+            BeginInvoke(() =>
+            {
+                _ = DoImport("cursor-app");
+                ShowAddAccount();
+            });
+        }
     }
 
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
         SizeButtons();
-        FitToContent();
+        PadFooter();
+        FitOnce();
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs e)
@@ -287,20 +317,31 @@ sealed class SettingsForm : Form
         {
             UiChrome.Apply(this);
             SizeButtons();
-            FitToContent();
+            PadFooter();
+            FitOnce();
         });
     }
 
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        if (_fitting) return;
         WrapText();
+        StretchContent();
     }
 
     void SizeButtons()
     {
         foreach (var btn in EnumerateButtons(this))
             UiChrome.SizeToText(btn, DeviceDpi);
+    }
+
+    void PadFooter()
+    {
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var left = UiLayout.ScalePx(SettingsLayout.NavWidth + SettingsLayout.PagePadding, dpi);
+        var pad = UiLayout.ScalePx(SettingsLayout.PagePadding, dpi);
+        _footer.Padding = new Padding(left, UiLayout.ScalePx(10, dpi), pad, UiLayout.ScalePx(12, dpi));
     }
 
     static IEnumerable<Button> EnumerateButtons(Control root)
@@ -313,51 +354,251 @@ sealed class SettingsForm : Form
         }
     }
 
-    void FitToContent()
+    int ContentInnerWidth()
     {
-        var work = Screen.FromControl(this).WorkingArea;
-        var dpi = DeviceDpi;
-        var max = UiLayout.FitWindow(
-            SettingsLayout.DesignWidth,
-            SettingsLayout.DesignHeight,
-            SettingsLayout.MinWidth,
-            SettingsLayout.MinHeight,
-            dpi,
-            work.Width,
-            work.Height);
-        ClientSize = new Size(max.Item1, max.Item2);
-        WrapText();
-        PerformLayout();
-        var bodyH = 0;
-        var innerW = Math.Max(200, max.Item1 - UiLayout.ScalePx(48, dpi));
-        foreach (TabPage page in _tabs.TabPages)
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        return Math.Max(80, ClientSize.Width
+            - UiLayout.ScalePx(SettingsLayout.NavWidth, dpi)
+            - UiLayout.ScalePx(SettingsLayout.PagePadding * 2, dpi));
+    }
+
+    void StretchContent()
+    {
+        var inner = ContentInnerWidth();
+        foreach (var page in _tabs.Pages)
+            StretchRows(page, inner);
+    }
+
+    void FitOnce()
+    {
+        if (_fitting) return;
+        _fitting = true;
+        NativeTheme.SetRedraw(this, false);
+        try
         {
-            foreach (Control child in page.Controls)
+            _startRow.Visible = false;
+            _durationRow.Visible = false;
+            _endAtRow.Visible = false;
+            _endAt.Visible = false;
+            PadFooter();
+            var work = Screen.FromControl(this).WorkingArea;
+            var dpi = DeviceDpi;
+            var margin = UiLayout.ScalePx(48, dpi);
+            var box = UiLayout.FitWindow(
+                SettingsLayout.WindowsDesignWidth,
+                SettingsLayout.MinHeight,
+                SettingsLayout.WindowsMinWidth,
+                SettingsLayout.MinHeight,
+                dpi,
+                work.Width,
+                work.Height);
+            var width = Math.Min(box.Item1, Math.Max(1, work.Width - margin));
+            var floor = Math.Min(box.Item2, Math.Max(1, work.Height - margin));
+            MinimumSize = new Size(Math.Min(width, UiLayout.ScalePx(SettingsLayout.WindowsMinWidth, dpi)), floor);
+            ClientSize = new Size(width, floor);
+            _tabs.FitNav(dpi);
+            _tabs.PreparePages();
+            WrapText();
+            var inner = ContentInnerWidth();
+            foreach (var page in _tabs.Pages)
             {
-                child.Width = innerW;
-                child.PerformLayout();
-                var pref = child.GetPreferredSize(new Size(innerW, 0)).Height;
-                var stacked = child.Padding.Vertical;
-                foreach (Control c in child.Controls)
-                    stacked += c.Height + c.Margin.Vertical;
-                bodyH = Math.Max(bodyH, Math.Max(pref, stacked));
+                foreach (Control child in page.Controls)
+                {
+                    child.Width = inner;
+                    CollapseHiddenRows(child);
+                    StretchRows(child, Math.Max(80, inner));
+                    FitFieldRows(child, dpi);
+                    child.PerformLayout();
+                }
+            }
+            var bodyH = MapBottom(_addToggle.Parent ?? _addToggle, _tabs.Pages[0]);
+            var extra = UiLayout.ScalePx(SettingsLayout.FitExtra, dpi);
+            var cap = Math.Max(1, work.Height - margin);
+            var height = Math.Min(cap, Math.Max(floor, bodyH + extra));
+            ClientSize = new Size(width, height);
+            MinimumSize = new Size(Math.Min(width, UiLayout.ScalePx(SettingsLayout.WindowsMinWidth, dpi)), Math.Min(height, floor));
+            UpdateTempVisibility();
+            foreach (var page in _tabs.Pages)
+                page.AutoScrollPosition = Point.Empty;
+            WrapText();
+            StretchContent();
+            foreach (var page in _tabs.Pages)
+                FitFieldRows(page, dpi);
+        }
+        finally
+        {
+            NativeTheme.SetRedraw(this, true);
+            _fitting = false;
+        }
+    }
+
+    void ShowAddAccount()
+    {
+        if (_addDialog is { IsDisposed: false, Visible: true })
+        {
+            _addDialog.Activate();
+            _token.Focus();
+            return;
+        }
+        if (_addDialog is null || _addDialog.IsDisposed)
+            _addDialog = BuildAddDialog();
+        LayoutAddDialog();
+        foreach (var btn in EnumerateButtons(_addDialog))
+            UiChrome.SizeToText(btn, DeviceDpi);
+        UiChrome.Apply(_addDialog);
+        LayoutAddDialog();
+        CenterOverSettings(_addDialog);
+        _addDialog.Show(this);
+        _addDialog.Activate();
+        _token.Focus();
+    }
+
+    Form BuildAddDialog()
+    {
+        var dlg = new Form
+        {
+            Text = "添加账号",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            StartPosition = FormStartPosition.Manual,
+            AutoScaleMode = AutoScaleMode.Dpi,
+            AutoScaleDimensions = new SizeF(96F, 96F),
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            Padding = new Padding(16),
+        };
+        var icon = AppWindow.CreateIcon();
+        if (icon is not null) dlg.Icon = icon;
+        _addPanel.Parent = dlg;
+        _addPanel.Dock = DockStyle.Fill;
+        _addPanel.Visible = true;
+        dlg.FormClosed += (_, _) => _addPanel.Parent = null;
+        UiChrome.Apply(dlg);
+        return dlg;
+    }
+
+    void LayoutAddDialog()
+    {
+        if (_addDialog is null || _addDialog.IsDisposed) return;
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var inner = UiLayout.ScalePx(SettingsLayout.AddDialogWidth, dpi);
+        var pad = UiLayout.ScalePx(16, dpi);
+        _addPanel.Width = inner;
+        _tokenFrame.Width = inner;
+        _tokenFrame.Height = UiLayout.ScalePx(90, dpi);
+        _tokenFrame.MinimumSize = new Size(0, UiLayout.ScalePx(88, dpi));
+        StretchRows(_addPanel, inner);
+        FitFieldRows(_addPanel, dpi);
+        _status.MaximumSize = new Size(inner, 0);
+        _hint.SetInnerWidth(inner);
+        _addPanel.PerformLayout();
+        var bodyH = Math.Max(UiLayout.ScalePx(200, dpi), MapBottom(_hint, _addPanel) + pad);
+        _addDialog.ClientSize = new Size(inner + pad * 2, bodyH + pad);
+    }
+
+    void CenterOverSettings(Form dlg)
+    {
+        dlg.StartPosition = FormStartPosition.Manual;
+        if (!dlg.IsHandleCreated)
+            dlg.CreateControl();
+        var x = Left + (Width - dlg.Width) / 2;
+        var y = Top + (Height - dlg.Height) / 2;
+        var work = Screen.FromControl(this).WorkingArea;
+        x = dlg.Width >= work.Width ? work.Left : Math.Max(work.Left, Math.Min(x, work.Right - dlg.Width));
+        y = dlg.Height >= work.Height ? work.Top : Math.Max(work.Top, Math.Min(y, work.Bottom - dlg.Height));
+        dlg.Location = new Point(x, y);
+    }
+
+    IWin32Window AddOwner() => _addDialog is { Visible: true } ? _addDialog : this;
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        if (_addDialog is { IsDisposed: false })
+            _addDialog.Close();
+        base.OnFormClosed(e);
+    }
+
+    static void FitFieldRows(Control root, int dpi)
+    {
+        if (root is FieldRowPanel row)
+            row.Fit(dpi);
+        foreach (Control child in root.Controls)
+            FitFieldRows(child, dpi);
+    }
+
+    static void CollapseHiddenRows(Control root)
+    {
+        if (root is TableLayoutPanel tlp)
+        {
+            for (var i = 0; i < tlp.RowCount; i++)
+            {
+                var cell = tlp.GetControlFromPosition(0, i);
+                if (cell is { Visible: false })
+                    tlp.RowStyles[i] = new RowStyle(SizeType.Absolute, 0);
+                else if (cell is { Visible: true })
+                    tlp.RowStyles[i] = new RowStyle(SizeType.AutoSize);
             }
         }
-        var extra = _root.Padding.Vertical + _tabs.ItemSize.Height + UiLayout.ScalePx(72, dpi);
-        var need = bodyH + extra;
-        var cap = Math.Max(max.Item2, work.Height - UiLayout.ScalePx(48, dpi));
-        var h = Math.Min(cap, Math.Max(max.Item2, need));
-        ClientSize = new Size(max.Item1, h);
-        WrapText();
+        foreach (Control child in root.Controls)
+            CollapseHiddenRows(child);
+    }
+
+    static bool HoldsSpin(Control control)
+    {
+        if (control is NumericUpDown) return true;
+        foreach (Control child in control.Controls)
+            if (HoldsSpin(child)) return true;
+        return false;
+    }
+
+    static void StretchRows(Control root, int width)
+    {
+        foreach (Control child in root.Controls)
+        {
+            if (child is Button or CheckBox)
+            {
+                StretchRows(child, width);
+                continue;
+            }
+            if (root is FieldRowPanel row && row.FieldWidth > 0 && child == row.Field)
+            {
+                var cap = row.ScaledFieldWidth(row.DeviceDpi > 0 ? row.DeviceDpi : 96);
+                StretchRows(child, Math.Min(width, cap));
+                continue;
+            }
+            if (child is FieldFrame)
+            {
+                if (root is not FieldRowPanel && !HoldsSpin(child))
+                    child.Width = width;
+                StretchRows(child, Math.Max(80, Math.Max(8, child.ClientSize.Width)));
+                continue;
+            }
+            if (child is Panel or FlowLayoutPanel or TableLayoutPanel or HintBlock)
+                child.Width = width;
+            StretchRows(child, Math.Max(80, width - child.Padding.Horizontal));
+        }
+    }
+
+    static int MapBottom(Control control, Control ancestor)
+    {
+        var y = control.Bottom + control.Margin.Bottom;
+        for (var p = control.Parent; p != null && p != ancestor; p = p.Parent)
+            y += p.Top + p.Padding.Bottom;
+        return y;
     }
 
     void WrapText()
     {
-        var inner = Math.Max(200, ClientSize.Width - 56);
-        foreach (var label in new[] { _addCaption, _status, _syncStatus, _endAt })
+        var inner = Math.Max(200, ContentInnerWidth());
+        var addInner = _addDialog is { Visible: true }
+            ? Math.Max(200, _addPanel.ClientSize.Width > 8 ? _addPanel.ClientSize.Width : inner)
+            : inner;
+        foreach (var label in new[] { _pageStatus, _syncStatus, _endAt })
             label.MaximumSize = new Size(inner, 0);
-        foreach (var hint in new[] { _hint, _actualHint, _syncHint, _spendHint, _updateHint })
+        _status.MaximumSize = new Size(addInner, 0);
+        foreach (var hint in new[] { _actualHint, _syncHint, _spendHint, _updateHint })
             hint.SetInnerWidth(inner);
+        _hint.SetInnerWidth(addInner);
     }
 
     void RenameActive()
@@ -398,64 +639,89 @@ sealed class SettingsForm : Form
         LoadFrom(_cfg); NotifySaved();
     }
 
-    static TabPage MakeTab(string title, params Control[] children)
+    static FlowLayoutPanel MakeStack(params Control[] children)
     {
-        var page = new TabPage(title)
-        {
-            AutoScroll = true,
-            UseVisualStyleBackColor = false,
-            Padding = new Padding(0),
-        };
-        page.HandleCreated += (_, _) => NativeTheme.DarkTree(page.Handle);
-        var body = new TableLayoutPanel
+        var stack = new FlowLayoutPanel
         {
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 1,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false,
             Dock = DockStyle.Top,
-            Padding = new Padding(8, 2, 8, 4),
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
         };
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         foreach (var child in children)
-            body.Controls.Add(child);
+        {
+            child.Dock = DockStyle.None;
+            child.Anchor = AnchorStyles.Left | AnchorStyles.Top;
+            stack.Controls.Add(child);
+        }
+        return stack;
+    }
+
+    static Panel MakeTab(params Control[] children)
+    {
+        var page = new Panel
+        {
+            AutoScroll = true,
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0),
+        };
+        page.HandleCreated += (_, _) => NativeTheme.DarkTree(page.Handle);
+        var body = MakeStack(children);
+        body.Padding = new Padding(SettingsLayout.PagePadding, 16, SettingsLayout.PagePadding, 12);
+        void FitBody()
+        {
+            var w = Math.Max(1, page.ClientSize.Width);
+            body.Width = w;
+            var inner = Math.Max(80, w - body.Padding.Horizontal);
+            var dpi = page.DeviceDpi > 0 ? page.DeviceDpi : 96;
+            foreach (Control child in body.Controls)
+            {
+                child.Width = inner;
+                if (child is FieldRowPanel row)
+                    row.Fit(dpi);
+            }
+        }
+        page.SizeChanged += (_, _) => FitBody();
+        page.HandleCreated += (_, _) => FitBody();
         page.Controls.Add(body);
         return page;
     }
 
-    static FlowLayoutPanel LabeledSpin(string label, Control field, string? suffix = null)
+    FlowLayoutPanel DurationFields()
     {
         var row = new FlowLayoutPanel
         {
             AutoSize = true,
             WrapContents = false,
-            Margin = new Padding(0, 0, 12, 4),
+            Margin = Padding.Empty,
         };
-        if (!string.IsNullOrEmpty(label))
+        var days = UiChrome.Frame(_days);
+        var hours = UiChrome.Frame(_hours);
+        days.Width = FormTone.FieldWidthShort;
+        hours.Width = FormTone.FieldWidthShort;
+        days.Margin = new Padding(0, 2, 8, 2);
+        hours.Margin = new Padding(0, 2, 8, 2);
+        row.Controls.Add(days);
+        row.Controls.Add(new Label
         {
-            row.Controls.Add(new Label
-            {
-                Text = label,
-                AutoSize = false,
-                Height = FormTone.FieldHeight,
-                Width = TextRenderer.MeasureText(label, UiChrome.UiFont()).Width + 4,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = new Padding(0, 2, 8, 0),
-            });
-        }
-        field.Margin = new Padding(0, 2, 4, 2);
-        row.Controls.Add(field);
-        if (!string.IsNullOrEmpty(suffix))
+            Text = "天",
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Size = new Size(20, FormTone.FieldHeight),
+            Margin = new Padding(0, 2, 8, 2),
+        });
+        row.Controls.Add(hours);
+        row.Controls.Add(new Label
         {
-            row.Controls.Add(new Label
-            {
-                Text = suffix,
-                AutoSize = false,
-                Height = FormTone.FieldHeight,
-                Width = TextRenderer.MeasureText(suffix, UiChrome.UiFont()).Width + 4,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Margin = new Padding(0, 2, 0, 0),
-            });
-        }
+            Text = "小时",
+            AutoSize = false,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Size = new Size(40, FormTone.FieldHeight),
+            Margin = new Padding(0, 2, 0, 2),
+        });
         return row;
     }
 
@@ -478,50 +744,34 @@ sealed class SettingsForm : Form
     static FlowLayoutPanel ImportRow(params Control[] items)
     {
         var p = Flow(items);
-        p.WrapContents = true;
-        p.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
+        p.WrapContents = false;
+        p.Margin = Padding.Empty;
         return p;
     }
 
-    static TableLayoutPanel FieldRow(string label, Control field)
+    static Panel FollowRow(Control content)
     {
-        var row = new TableLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            RowCount = 1,
-            Dock = DockStyle.Top,
-            Margin = new Padding(0, 4, 0, 4),
-            Tag = UiChrome.FieldRowTag,
-        };
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, FormTone.LabelColumn));
-        row.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        row.Controls.Add(new Label
-        {
-            Text = label,
-            AutoSize = false,
-            Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Margin = new Padding(0, 0, 10, 0),
-        }, 0, 0);
-        field.Margin = new Padding(0, 2, 0, 2);
+        content.Margin = new Padding(0, 2, 0, 2);
+        var row = new FieldRowPanel("", content);
+        row.AutoSize = true;
+        row.Margin = new Padding(0, 2, 0, 4);
+        return row;
+    }
+
+    static Panel FieldRow(string label, Control field, int width = FormTone.FieldMaxWidth)
+    {
+        field.Margin = Padding.Empty;
         field.MinimumSize = new Size(0, FormTone.FieldHeight);
         field.MaximumSize = Size.Empty;
-        if ((field is TextBox box && !box.Multiline) || field is ComboBox)
+        if ((field is TextBox box && !box.Multiline) || field is ComboBox or FlatDatePicker or NumericUpDown)
         {
             var framed = UiChrome.Frame(field);
-            framed.Dock = DockStyle.Fill;
-            framed.Margin = new Padding(0, 2, 0, 2);
-            row.Controls.Add(framed, 1, 0);
+            framed.Dock = DockStyle.None;
+            framed.Margin = Padding.Empty;
+            return new FieldRowPanel(label, framed, width);
         }
-        else
-        {
-            field.Dock = DockStyle.Fill;
-            row.Controls.Add(field, 1, 0);
-        }
-        return row;
+        field.Dock = DockStyle.None;
+        return new FieldRowPanel(label, field, width);
     }
 
     static TableLayoutPanel PathRow(TextBox path, Button browse)
@@ -548,7 +798,7 @@ sealed class SettingsForm : Form
         BeginInvoke(() =>
         {
             if (IsDisposed) return;
-            _token.Focus();
+            ShowAddAccount();
             _token.SelectAll();
         });
     }
@@ -556,7 +806,12 @@ sealed class SettingsForm : Form
     public void StartImport()
     {
         _tabs.SelectedIndex = 0;
-        BeginInvoke(async () => await DoImport("cursor-app"));
+        BeginInvoke(() =>
+        {
+            if (IsDisposed) return;
+            _ = DoImport("cursor-app");
+            ShowAddAccount();
+        });
     }
 
     void LoadFrom(AppConfig cfg)
@@ -588,7 +843,7 @@ sealed class SettingsForm : Form
             _updateVersion.Text = "当前版本  " + AppUpdate.DisplayVersion();
             if (string.IsNullOrWhiteSpace(_updateStatus.Text))
                 _updateStatus.Text = string.IsNullOrWhiteSpace(cfg.UpdateLastError)
-                    ? (string.IsNullOrWhiteSpace(cfg.UpdateLastCheckAt) ? "" : "上次检查 " + cfg.UpdateLastCheckAt)
+                    ? (string.IsNullOrWhiteSpace(cfg.UpdateLastCheckAt) ? "" : "上次检查 " + AccountSync.FormatLocal(cfg.UpdateLastCheckAt))
                     : cfg.UpdateLastError;
             _cloudEmail.Text = cfg.CloudEmail;
             _cloudPassword.Text = "";
@@ -603,6 +858,8 @@ sealed class SettingsForm : Form
             _cloudEmailRow.Visible = !cfg.CloudLoggedIn;
             _cloudPasswordRow.Visible = !cfg.CloudLoggedIn;
             _cloudAuth.Visible = !cfg.CloudLoggedIn;
+            _cloudAuthRow.Visible = !cfg.CloudLoggedIn;
+            _cloudActionsRow.Visible = cfg.CloudLoggedIn;
             _cloudLogout.Visible = cfg.CloudLoggedIn;
             _cloudChangePassword.Visible = cfg.CloudLoggedIn;
             _cloudDelete.Visible = cfg.CloudLoggedIn;
@@ -703,9 +960,12 @@ sealed class SettingsForm : Form
     void UpdateTempVisibility()
     {
         var show = _kind.SelectedIndex == 1;
-        _tempFields.Visible = show;
+        _startRow.Visible = show;
+        _durationRow.Visible = show;
+        _endAtRow.Visible = show;
         _endAt.Visible = show;
-        if (IsHandleCreated) BeginInvoke(WrapText);
+        if (IsHandleCreated)
+            BeginInvoke(WrapText);
     }
 
     void UpdateEndLabel()
@@ -765,7 +1025,7 @@ sealed class SettingsForm : Form
                 {
                     _status.Text = "正在打开登录页…";
                     using var dlg = new PasswordLoginForm(item.Email, item.Password);
-                    if (dlg.ShowDialog(this) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
+                    if (dlg.ShowDialog(AddOwner()) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
                     {
                         fail++;
                         continue;
@@ -816,11 +1076,11 @@ sealed class SettingsForm : Form
     {
         if (_importing) return;
         _importing = true;
-        _status.Text = "正在写入 Cursor…";
+        _pageStatus.Text = "正在写入 Cursor…";
         try
         {
             var result = await CursorLoginUi.Run(_cfg.ActiveAccount, this);
-            if (!IsDisposed) _status.Text = result.Message;
+            if (!IsDisposed) _pageStatus.Text = result.Message;
         }
         finally { _importing = false; }
     }

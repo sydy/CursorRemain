@@ -44,6 +44,20 @@ static class UiChrome
         return SystemFonts.MessageBoxFont ?? Control.DefaultFont;
     }
 
+    public static Font? IconFont(float pt = 11f)
+    {
+        foreach (var name in new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" })
+        {
+            try
+            {
+                using var family = new FontFamily(name);
+                return new Font(family, Math.Max(7f, pt), FontStyle.Regular, GraphicsUnit.Point);
+            }
+            catch (ArgumentException) { }
+        }
+        return null;
+    }
+
     public static void Install()
     {
         NativeTheme.PreferAppDarkMode();
@@ -311,7 +325,7 @@ static class UiChrome
     static void ThemeTextScroll(object? sender, EventArgs e)
     {
         if (sender is TextBox box && box.IsHandleCreated)
-            NativeTheme.DarkExplorer(box.Handle);
+            NativeTheme.Strip(box.Handle);
     }
 
     static void ThemeGridScroll(object? sender, EventArgs e)
@@ -351,7 +365,7 @@ static class UiChrome
                 btn.FlatAppearance.MouseDownBackColor = ColorOf(pal.AccentHover);
                 break;
             case UiButtonKind.Danger:
-                btn.BackColor = ColorOf(pal.DangerFill);
+                btn.BackColor = ColorOf(pal.Window);
                 btn.ForeColor = ColorOf(pal.Danger);
                 btn.FlatAppearance.BorderColor = ColorOf(pal.Danger);
                 btn.FlatAppearance.MouseOverBackColor = ColorOf(pal.DangerFill);
@@ -409,7 +423,7 @@ static class UiChrome
                 combo.IntegralHeight = false;
                 if (combo.Parent is FieldFrame host)
                 {
-                    combo.Dock = DockStyle.Fill;
+                    combo.Dock = DockStyle.None;
                     combo.MaximumSize = Size.Empty;
                     host.Relayout();
                 }
@@ -420,27 +434,43 @@ static class UiChrome
                     combo.Height = h;
                     FitComboItem(combo);
                 }
-                if (combo.IsHandleCreated) NativeTheme.Strip(combo.Handle);
+                if (combo.IsHandleCreated) NativeTheme.StripCombo(combo.Handle);
                 break;
             case NumericUpDown spin:
-                spin.BorderStyle = BorderStyle.FixedSingle;
+                spin.BorderStyle = BorderStyle.None;
                 spin.BackColor = field;
                 spin.ForeColor = text;
-                spin.MinimumSize = new Size(spin.MinimumSize.Width, h);
-                spin.Height = h;
+                spin.TextAlign = HorizontalAlignment.Center;
                 spin.HandleCreated -= ThemeSpin;
                 spin.HandleCreated += ThemeSpin;
                 if (spin.IsHandleCreated) ThemeSpin(spin, EventArgs.Empty);
+                if (spin.Parent is FieldFrame spinHost)
+                {
+                    spinHost.Width = UiLayout.ScalePx(FormTone.FieldWidthShort, dpi);
+                    spinHost.Height = h;
+                    spinHost.Relayout();
+                }
+                else
+                {
+                    spin.MinimumSize = new Size(spin.MinimumSize.Width, h);
+                    spin.Height = h;
+                }
                 break;
-            case DateTimePicker picker:
+            case FlatDatePicker picker:
+                picker.ForeColor = text;
+                picker.BackColor = field;
                 picker.CalendarForeColor = text;
                 picker.CalendarMonthBackground = field;
                 picker.CalendarTitleBackColor = ColorOf(pal.Header);
                 picker.CalendarTitleForeColor = text;
                 picker.CalendarTrailingForeColor = ColorOf(pal.Secondary);
-                picker.MinimumSize = new Size(picker.MinimumSize.Width, h);
-                picker.Height = h;
-                if (picker.IsHandleCreated) NativeTheme.Strip(picker.Handle);
+                if (picker.Parent is FieldFrame dateHost)
+                    dateHost.Relayout();
+                else
+                {
+                    picker.MinimumSize = new Size(picker.MinimumSize.Width, h);
+                    picker.Height = h;
+                }
                 break;
         }
     }
@@ -454,7 +484,7 @@ static class UiChrome
 
     const int EmSetRect = 0x00B3;
 
-    static void CenterEdit(TextBox box)
+    internal static void CenterEdit(TextBox box, int padX = 6)
     {
         void ApplyRect(object? sender, EventArgs e)
         {
@@ -463,9 +493,9 @@ static class UiChrome
             var top = Math.Max(0, (box.ClientSize.Height - fontH) / 2);
             var rc = new RECT
             {
-                Left = 6,
+                Left = padX,
                 Top = top,
-                Right = Math.Max(8, box.ClientSize.Width - 4),
+                Right = Math.Max(padX + 4, box.ClientSize.Width - padX),
                 Bottom = box.ClientSize.Height - top,
             };
             _ = SendMessage(box.Handle, EmSetRect, IntPtr.Zero, ref rc);
@@ -481,9 +511,7 @@ static class UiChrome
 
     static void StyleTabs(TabControl tabs, FormTone.Palette pal, int dpi)
     {
-        tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-        tabs.SizeMode = tabs is FlatTabControl ? TabSizeMode.Normal : TabSizeMode.Fixed;
-        tabs.Padding = new Point(16, 7);
+        tabs.SizeMode = TabSizeMode.Fixed;
         tabs.BackColor = ColorOf(pal.Window);
         foreach (TabPage page in tabs.TabPages)
         {
@@ -491,11 +519,8 @@ static class UiChrome
             page.BackColor = ColorOf(pal.Window);
             page.ForeColor = ColorOf(pal.Text);
         }
-        if (tabs is FlatTabControl flat)
-        {
-            flat.FitItems(dpi);
-            return;
-        }
+        tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+        tabs.Padding = new Point(16, 7);
         tabs.ItemSize = new Size(UiLayout.ScalePx(FormTone.TabItemWidth, dpi), UiLayout.ScalePx(FormTone.TabItemHeight, dpi));
         tabs.DrawItem -= DrawTab;
         tabs.DrawItem += DrawTab;
@@ -544,7 +569,7 @@ static class UiChrome
             case TabControl tabs:
                 StyleTabs(tabs, pal, dpi);
                 break;
-            case TextBox or ComboBox or NumericUpDown or DateTimePicker:
+            case TextBox or ComboBox or NumericUpDown or DateTimePicker or FlatDatePicker:
                 StyleInput(parent, pal, dpi);
                 return;
             case CheckBox box:
@@ -587,11 +612,12 @@ static class UiChrome
                     frame.Relayout();
                 }
                 break;
-            case TableLayoutPanel table when Equals(table.Tag, FieldRowTag):
-                table.BackColor = window;
-                table.ForeColor = text;
-                if (table.ColumnStyles.Count > 0)
-                    table.ColumnStyles[0].Width = UiLayout.ScalePx(FormTone.LabelColumn, dpi);
+            case FieldRowPanel row:
+                row.BackColor = window;
+                row.ForeColor = text;
+                row.Caption.ForeColor = secondary;
+                row.Caption.Font = UiFont(9f);
+                row.Fit(dpi);
                 break;
             case SplitContainer split:
                 split.BackColor = ColorOf(pal.Hairline);
@@ -688,10 +714,37 @@ static class NativeTheme
         }
     }
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    static extern IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+    [DllImport("user32.dll")]
+    static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
     public static void Strip(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return;
         _ = SetWindowTheme(hwnd, "", "");
+        const int GwlStyle = -16;
+        const int GwlExStyle = -20;
+        const int WsBorder = 0x00800000;
+        const int WsExClientEdge = 0x00000200;
+        const int WsExStaticEdge = 0x00020000;
+        const int WsExWindowEdge = 0x00000100;
+        const uint SwpNosize = 0x0001;
+        const uint SwpNomove = 0x0002;
+        const uint SwpNozorder = 0x0004;
+        const uint SwpFramechanged = 0x0020;
+        var style = GetWindowLongPtr(hwnd, GwlStyle).ToInt64();
+        SetWindowLongPtr(hwnd, GwlStyle, (IntPtr)(style & ~WsBorder));
+        var ex = GetWindowLongPtr(hwnd, GwlExStyle).ToInt64();
+        SetWindowLongPtr(hwnd, GwlExStyle, (IntPtr)(ex & ~WsExClientEdge & ~WsExStaticEdge & ~WsExWindowEdge));
+        SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0, SwpNosize | SwpNomove | SwpNozorder | SwpFramechanged);
     }
 
     public static void PreferAppDarkMode()
@@ -705,6 +758,15 @@ static class NativeTheme
         {
             // older Windows builds omit these ordinals
         }
+    }
+
+    public static void StripCombo(IntPtr hwnd)
+    {
+        Strip(hwnd);
+        var info = new ComboBoxInfo { cbSize = Marshal.SizeOf<ComboBoxInfo>() };
+        if (!GetComboBoxInfo(hwnd, ref info)) return;
+        if (info.hwndItem != IntPtr.Zero) Strip(info.hwndItem);
+        if (info.hwndList != IntPtr.Zero) Strip(info.hwndList);
     }
 
     public static void DarkExplorer(IntPtr hwnd)
@@ -740,8 +802,23 @@ static class NativeTheme
         Strip(hwnd);
         var child = IntPtr.Zero;
         while ((child = FindWindowEx(hwnd, child, null, null)) != IntPtr.Zero)
+        {
             Strip(child);
+            var cls = ClassName(child);
+            if (cls.Contains("updown", StringComparison.OrdinalIgnoreCase))
+                ShowWindow(child, 0);
+        }
     }
+
+    static string ClassName(IntPtr hwnd)
+    {
+        var buf = new char[64];
+        var n = GetClassName(hwnd, buf, buf.Length);
+        return n > 0 ? new string(buf, 0, n) : "";
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetClassName(IntPtr hWnd, char[] lpClassName, int nMaxCount);
 
     public static void ComboList(IntPtr hwnd)
     {
@@ -794,13 +871,26 @@ sealed class FieldFrame : Panel
 
     public void Relayout() => LayoutInner();
 
+    protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+    {
+        if (Parent is FieldRowPanel { HasCaption: true, FieldWidth: > 0 } row)
+        {
+            var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+            width = Math.Min(width, row.ScaledFieldWidth(dpi));
+        }
+        base.SetBoundsCore(x, y, width, height, specified);
+    }
+
     public override Size GetPreferredSize(Size proposedSize)
     {
         if (Controls.Count == 1 && Controls[0] is TextBox { Multiline: true })
             return base.GetPreferredSize(proposedSize);
-        var h = UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96);
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var h = UiChrome.FieldPx(dpi);
         var w = proposedSize.Width > 0 ? proposedSize.Width : Math.Max(Width, 80);
-        return new Size(w, h);
+        if (Parent is FieldRowPanel { HasCaption: true, FieldWidth: > 0 } row)
+            w = Math.Min(w, row.ScaledFieldWidth(dpi));
+        return new Size(Math.Max(8, w), h);
     }
 
     protected override void OnControlAdded(ControlEventArgs e)
@@ -823,28 +913,46 @@ sealed class FieldFrame : Panel
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
-        e.Graphics.Clear(BackColor);
+        var window = Parent?.BackColor ?? UiChrome.ColorOf(UiChrome.Tone.Window);
+        e.Graphics.Clear(window);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.SmoothingMode = SmoothingMode.None;
-        using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
-        g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi > 0 ? DeviceDpi : 96);
+        var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1f, Width - 1f), Math.Max(1f, Height - 1f));
+        using var path = UiChrome.RoundRect(bounds, radius);
+        using (var br = new SolidBrush(UiChrome.ColorOf(UiChrome.Tone.Field)))
+            g.FillPath(br, path);
+        using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Field));
+        g.DrawPath(pen, path);
     }
 
     void LayoutInner()
     {
         if (Controls.Count != 1) return;
         var inner = Controls[0];
-        if (inner is TextBox { Multiline: true } or ComboBox)
+        if (inner is NumericUpDown spin)
         {
-            inner.Dock = DockStyle.Fill;
+            inner.Dock = DockStyle.None;
             inner.Margin = Padding.Empty;
+            var inset = 1;
+            var w = Math.Max(8, Width - inset * 2);
+            var h = Math.Max(8, Math.Min(spin.PreferredSize.Height, Height - inset * 2));
+            inner.Bounds = new Rectangle(inset, Math.Max(inset, (Height - h) / 2), w, h);
+            return;
+        }
+        if (inner is TextBox { Multiline: true } or ComboBox or FlatDatePicker)
+        {
+            inner.Dock = DockStyle.None;
+            inner.Margin = Padding.Empty;
+            var inset = inner is ComboBox ? 3 : 1;
+            inner.Bounds = new Rectangle(inset, inset, Math.Max(8, Width - inset * 2), Math.Max(8, Height - inset * 2));
             if (inner is ComboBox combo)
             {
-                var innerH = Math.Max(16, ClientSize.Height - 6);
+                var innerH = Math.Max(16, inner.Height - 6);
                 if (combo.ItemHeight != innerH)
                     combo.ItemHeight = innerH;
             }
@@ -894,44 +1002,212 @@ sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
     }
 }
 
-sealed class FlatTabControl : TabControl
+sealed class FieldRowPanel : Panel
 {
+    public Label Caption { get; }
+    public Control Field { get; }
+    public int FieldWidth { get; }
+    public bool HasCaption => Caption is not null && !string.IsNullOrEmpty(Caption.Text);
+
+    public int ScaledFieldWidth(int dpi) =>
+        FieldWidth > 0 ? UiLayout.ScalePx(FieldWidth, dpi) : Math.Max(8, Width);
+
+    public FieldRowPanel(string label, Control field, int fieldWidth = FormTone.FieldMaxWidth)
+    {
+        AutoSize = false;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        Dock = DockStyle.None;
+        Margin = new Padding(0, 4, 0, 6);
+        Tag = UiChrome.FieldRowTag;
+        FieldWidth = fieldWidth;
+        Caption = new Label
+        {
+            Text = label,
+            AutoSize = false,
+            Dock = DockStyle.None,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            Visible = label.Length > 0,
+        };
+        Field = field;
+        field.Dock = DockStyle.None;
+        field.Margin = Padding.Empty;
+        Controls.Add(field);
+        Controls.Add(Caption);
+        Height = FormTone.FieldHeight + (label.Length > 0 ? 24 : 8);
+        MinimumSize = new Size(0, Height);
+    }
+
+    public void Fit(int dpi)
+    {
+        var h = MeasureHeight(dpi, Width);
+        MinimumSize = new Size(0, h);
+        Height = h;
+        PerformLayout();
+    }
+
+    int MeasureHeight(int dpi, int width)
+    {
+        var fieldH = Math.Max(UiChrome.FieldPx(dpi), Field?.GetPreferredSize(new Size(Math.Max(80, width), 0)).Height ?? 0);
+        if (!HasCaption) return fieldH;
+        return CaptionHeight(dpi) + UiLayout.ScalePx(4, dpi) + fieldH;
+    }
+
+    int CaptionHeight(int dpi) => UiLayout.ScalePx(18, dpi);
+
+    public override Size GetPreferredSize(Size proposedSize)
+    {
+        var w = proposedSize.Width > 1 ? proposedSize.Width : Math.Max(Width, 80);
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        return new Size(w, MeasureHeight(dpi, w));
+    }
+
+    protected override void OnLayout(LayoutEventArgs levent)
+    {
+        if (Field is null || Caption is null) return;
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var want = MeasureHeight(dpi, Width);
+        if (Math.Abs(Height - want) > 1)
+        {
+            MinimumSize = new Size(0, want);
+            Height = want;
+        }
+        var capH = HasCaption ? CaptionHeight(dpi) : 0;
+        var gap = HasCaption ? UiLayout.ScalePx(4, dpi) : 0;
+        var maxW = ScaledFieldWidth(dpi);
+        var fieldW = HasCaption ? Math.Min(Math.Max(8, Width), maxW) : Math.Max(8, Width);
+        Field.Dock = DockStyle.None;
+        Field.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        Field.MaximumSize = HasCaption && FieldWidth > 0 ? new Size(maxW, 0) : Size.Empty;
+        if (HasCaption)
+            Caption.SetBounds(0, 0, Math.Max(fieldW, Width), capH);
+        else
+            Caption.SetBounds(0, 0, 0, 0);
+        var fieldH = Math.Max(8, Height - capH - gap);
+        Field.SetBounds(0, capH + gap, fieldW, fieldH);
+        base.OnLayout(levent);
+    }
+}
+
+sealed class FlatTabHost : Panel
+{
+    readonly List<string> _titles = [];
+    readonly List<Panel> _pages = [];
+    readonly Panel _body = new() { Dock = DockStyle.Fill };
+    int _selected;
     int _hover = -1;
 
-    public FlatTabControl()
+    public FlatTabHost()
     {
-        DrawMode = TabDrawMode.OwnerDrawFixed;
-        SizeMode = TabSizeMode.Normal;
-        Multiline = false;
-        ItemSize = new Size(FormTone.TabItemWidth, FormTone.TabItemHeight);
-        Padding = new Point(16, 7);
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
-        UpdateStyles();
+        DoubleBuffered = true;
+        Dock = DockStyle.Fill;
+        Padding = new Padding(SettingsLayout.NavWidth, 0, 0, 0);
+        Controls.Add(_body);
     }
 
-    public void FitItems(int dpi)
+    public IReadOnlyList<Panel> Pages => _pages;
+    public int TabCount => _pages.Count;
+    public event EventHandler? SelectedIndexChanged;
+
+    public int SelectedIndex
     {
-        SizeMode = TabSizeMode.Normal;
-        var h = UiLayout.ScalePx(FormTone.TabItemHeight, dpi);
-        if (ItemSize.Height != h)
-            ItemSize = new Size(FormTone.TabItemWidth, h);
+        get => _selected;
+        set
+        {
+            if (value < 0 || value >= _pages.Count || value == _selected) return;
+            _selected = value;
+            ShowSelected();
+            Invalidate();
+            SelectedIndexChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
-    protected override void OnResize(EventArgs e)
+    public void AddPage(string title, Panel page)
     {
-        base.OnResize(e);
-        FitItems(DeviceDpi > 0 ? DeviceDpi : 96);
+        page.Dock = DockStyle.Fill;
+        _titles.Add(title);
+        _pages.Add(page);
+        _body.Controls.Add(page);
+        page.Visible = _pages.Count == 1;
         Invalidate();
+    }
+
+    public void PreparePages()
+    {
+        var bounds = _body.ClientRectangle;
+        if (bounds.Width < 8 || bounds.Height < 8) return;
+        foreach (var page in _pages)
+            page.Bounds = bounds;
+    }
+
+    public void FitNav(int dpi)
+    {
+        var w = UiLayout.ScalePx(SettingsLayout.NavWidth, dpi);
+        Padding = new Padding(w, 0, 0, 0);
+        _body.Dock = DockStyle.Fill;
+        Invalidate();
+    }
+
+    int NavSpan => Math.Max(1, Padding.Left);
+
+    int ItemHeight
+    {
+        get
+        {
+            var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+            return UiLayout.ScalePx(FormTone.TabItemHeight, dpi);
+        }
+    }
+
+    Rectangle TabSlot(int index)
+    {
+        var h = ItemHeight;
+        return new Rectangle(0, index * h, NavSpan, h);
+    }
+
+    int TabAt(Point pt)
+    {
+        if (pt.X >= NavSpan) return -1;
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            if (TabSlot(i).Contains(pt)) return i;
+        }
+        return -1;
+    }
+
+    void ShowSelected()
+    {
+        NativeTheme.SetRedraw(this, false);
+        try
+        {
+            for (var i = 0; i < _pages.Count; i++)
+            {
+                var on = i == _selected;
+                if (_pages[i].Visible != on)
+                    _pages[i].Visible = on;
+                if (on)
+                    _pages[i].BringToFront();
+            }
+        }
+        finally
+        {
+            NativeTheme.SetRedraw(this, true);
+        }
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        var idx = TabAt(e.Location);
+        if (idx >= 0)
+            SelectedIndex = idx;
+        base.OnMouseDown(e);
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        var idx = -1;
-        for (var i = 0; i < TabCount; i++)
-        {
-            if (GetTabRect(i).Contains(e.Location)) { idx = i; break; }
-        }
+        var idx = TabAt(e.Location);
         if (idx == _hover) return;
         _hover = idx;
         Invalidate();
@@ -942,6 +1218,12 @@ sealed class FlatTabControl : TabControl
         base.OnMouseLeave(e);
         if (_hover < 0) return;
         _hover = -1;
+        Invalidate();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
         Invalidate();
     }
 
@@ -958,44 +1240,59 @@ sealed class FlatTabControl : TabControl
         var secondary = UiChrome.ColorOf(pal.Secondary);
         var accent = UiChrome.ColorOf(pal.Accent);
         var hair = UiChrome.ColorOf(pal.Hairline);
+        var header = UiChrome.ColorOf(pal.Header);
         var g = e.Graphics;
+        var navW = NavSpan;
         g.Clear(window);
-        var headerH = TabCount > 0 ? GetTabRect(0).Bottom : UiLayout.ScalePx(FormTone.TabItemHeight, DeviceDpi);
+        using (var navBg = new SolidBrush(header))
+            g.FillRectangle(navBg, 0, 0, navW, Height);
         using (var line = new SolidBrush(hair))
-            g.FillRectangle(line, 0, Math.Max(0, headerH - 1), Width, 1);
-        var flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
-        for (var i = 0; i < TabCount; i++)
+            g.FillRectangle(line, Math.Max(0, navW - 1), 0, 1, Height);
+        var flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var pad = UiLayout.ScalePx(14, dpi);
+        var mark = UiLayout.ScalePx(3, dpi);
+        var iconSlot = UiLayout.ScalePx(16, dpi);
+        var iconGap = UiLayout.ScalePx(8, dpi);
+        using var iconFont = UiChrome.IconFont(11f);
+        for (var i = 0; i < _pages.Count; i++)
         {
-            var bounds = GetTabRect(i);
-            var selected = i == SelectedIndex;
-            var label = TabPages[i].Text;
-            if (!selected && i == _hover)
-            {
-                using var hover = new SolidBrush(UiChrome.ColorOf(pal.Header));
-                g.FillRectangle(hover, bounds.X, bounds.Y, bounds.Width, Math.Max(1, bounds.Height - 1));
-            }
-            TextRenderer.DrawText(g, label, Font, bounds, selected ? text : secondary, flags);
+            var bounds = TabSlot(i);
+            var selected = i == _selected;
+            var color = selected ? text : secondary;
             if (selected)
             {
-                var textW = TextRenderer.MeasureText(g, label, Font, bounds.Size, flags).Width;
-                var underlineW = Math.Max(16, Math.Min(bounds.Width - 8, textW));
-                var underlineX = bounds.X + Math.Max(0, (bounds.Width - underlineW) / 2);
-                using var underline = new SolidBrush(accent);
-                g.FillRectangle(underline, underlineX, headerH - 2, underlineW, 2);
+                using var fill = new SolidBrush(window);
+                g.FillRectangle(fill, bounds);
+                using var bar = new SolidBrush(accent);
+                g.FillRectangle(bar, bounds.X, bounds.Y + 6, mark, Math.Max(8, bounds.Height - 12));
             }
+            else if (i == _hover)
+            {
+                using var hover = new SolidBrush(window);
+                g.FillRectangle(hover, bounds);
+            }
+            var x = bounds.X + pad;
+            var glyph = SettingsLayout.TabGlyph(_titles[i]);
+            if (iconFont is not null && glyph.Length > 0)
+            {
+                var iconBox = new Rectangle(x, bounds.Y, iconSlot, bounds.Height);
+                TextRenderer.DrawText(g, glyph, iconFont, iconBox, color,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+                x += iconSlot + iconGap;
+            }
+            var label = new Rectangle(x, bounds.Y, Math.Max(8, bounds.Right - x - 8), bounds.Height);
+            TextRenderer.DrawText(g, _titles[i], Font, label, color, flags);
         }
     }
 
-    protected override void OnSelectedIndexChanged(EventArgs e)
-    {
-        base.OnSelectedIndexChanged(e);
-        Invalidate();
-    }
 }
 
 sealed class FlatCombo : ComboBox
 {
     const int WmPaint = 0x000F;
+    const int WmWindowPosChanging = 0x0046;
+    const int SwpNosize = 0x0001;
 
     public FlatCombo()
     {
@@ -1006,21 +1303,26 @@ sealed class FlatCombo : ComboBox
         MaxDropDownItems = 12;
     }
 
+    int DesiredHeight()
+    {
+        if (Parent is FieldFrame frame && frame.ClientSize.Height > 1)
+            return frame.ClientSize.Height;
+        return UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96);
+    }
+
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        NativeTheme.Strip(Handle);
+        NativeTheme.StripCombo(Handle);
         BackColor = UiChrome.ColorOf(UiChrome.Tone.Field);
         ForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
-        ItemHeight = Math.Max(16, Height - 6);
+        ItemHeight = Math.Max(16, DesiredHeight() - 6);
+        Height = DesiredHeight();
     }
 
     protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
     {
-        var want = Parent is FieldFrame frame && frame.ClientSize.Height > 1
-            ? frame.ClientSize.Height
-            : UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96);
-        height = want;
+        height = DesiredHeight();
         base.SetBoundsCore(x, y, width, height, specified);
     }
 
@@ -1069,8 +1371,32 @@ sealed class FlatCombo : ComboBox
 
     protected override void WndProc(ref Message m)
     {
+        if (m.Msg == WmWindowPosChanging && m.LParam != IntPtr.Zero)
+        {
+            var pos = Marshal.PtrToStructure<WindowPos>(m.LParam);
+            var want = DesiredHeight();
+            if ((pos.Flags & SwpNosize) == 0 && pos.Cy > 0 && pos.Cy != want)
+            {
+                pos.Cy = want;
+                Marshal.StructureToPtr(pos, m.LParam, false);
+            }
+        }
+        const int WmNcPaint = 0x0085;
+        if (m.Msg == WmNcPaint)
+        {
+            m.Result = IntPtr.Zero;
+            return;
+        }
         base.WndProc(ref m);
         if (m.Msg == WmPaint) PaintChrome();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct WindowPos
+    {
+        public IntPtr Hwnd;
+        public IntPtr HwndInsertAfter;
+        public int X, Y, Cx, Cy, Flags;
     }
 
     void PaintChrome()
@@ -1081,6 +1407,13 @@ sealed class FlatCombo : ComboBox
         var field = UiChrome.ColorOf(pal.Field);
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var text = UiChrome.ColorOf(pal.Secondary);
+        using (var cover = new SolidBrush(field))
+        {
+            g.FillRectangle(cover, 0, 0, Width, 3);
+            g.FillRectangle(cover, 0, Height - 3, Width, 3);
+            g.FillRectangle(cover, 0, 0, 3, Height);
+            g.FillRectangle(cover, Width - 3, 0, 3, Height);
+        }
         if (Parent is not FieldFrame)
         {
             using var pen = new Pen(stroke);
@@ -1106,11 +1439,76 @@ sealed class FlatCombo : ComboBox
 sealed class FlatSpin : NumericUpDown
 {
     const int WmPaint = 0x000F;
+    readonly System.Windows.Forms.Timer _repeat = new() { Interval = 360 };
+    int _press;
+    int _hover;
 
     public FlatSpin()
     {
-        BorderStyle = BorderStyle.FixedSingle;
+        BorderStyle = BorderStyle.None;
         DecimalPlaces = 0;
+        TextAlign = HorizontalAlignment.Center;
+        _repeat.Tick += (_, _) =>
+        {
+            if (_press == 0) { _repeat.Stop(); return; }
+            Step(_press);
+            _repeat.Interval = 70;
+        };
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _repeat.Dispose();
+        base.Dispose(disposing);
+    }
+
+    const int WmLButtonDown = 0x0201;
+    const int WmLButtonUp = 0x0202;
+    const int WmLButtonDblClk = 0x0203;
+
+    Control? NativeButtons => Controls.Cast<Control>().FirstOrDefault(c => c.GetType().Name == "UpDownButtons");
+    TextBox? Edit => Controls.OfType<TextBox>().FirstOrDefault();
+    int SpinWidth() => Math.Max(18, UiLayout.ScalePx(18, DeviceDpi > 0 ? DeviceDpi : 96));
+    Rectangle SpinBox() => new(Math.Max(0, Width - SpinWidth()), 0, SpinWidth() + 1, Height);
+    Rectangle UpBox()
+    {
+        var box = SpinBox();
+        return new Rectangle(box.X, box.Y, box.Width, box.Height / 2);
+    }
+    Rectangle DownBox()
+    {
+        var box = SpinBox();
+        return new Rectangle(box.X, box.Y + box.Height / 2, box.Width, box.Height - box.Height / 2);
+    }
+
+    void HideNativeButtons()
+    {
+        var buttons = NativeButtons;
+        if (buttons is null) return;
+        buttons.Visible = false;
+        buttons.Enabled = false;
+        buttons.SetBounds(-32000, -32000, 0, 0);
+    }
+
+    void FitEdit()
+    {
+        HideNativeButtons();
+        var edit = Edit;
+        if (edit is null) return;
+        edit.BorderStyle = BorderStyle.None;
+        edit.Dock = DockStyle.None;
+        edit.Margin = Padding.Empty;
+        edit.TextAlign = HorizontalAlignment.Center;
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var spinW = SpinWidth();
+        var padX = UiLayout.ScalePx(6, dpi);
+        var fontH = Math.Max(edit.Font.Height + 2, TextRenderer.MeasureText("8", edit.Font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Height);
+        var h = Math.Min(Math.Max(8, fontH), Math.Max(8, Height - 2));
+        var editW = Math.Max(8, Width - spinW - padX - 2);
+        edit.MaximumSize = Size.Empty;
+        edit.Bounds = new Rectangle(padX, Math.Max(0, (Height - h) / 2), editW, h);
+        if (edit.IsHandleCreated) NativeTheme.Strip(edit.Handle);
+        UiChrome.CenterEdit(edit, 0);
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -1119,11 +1517,114 @@ sealed class FlatSpin : NumericUpDown
         NativeTheme.Spin(Handle);
         BackColor = UiChrome.ColorOf(UiChrome.Tone.Field);
         ForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
+        if (Edit is { } edit)
+        {
+            edit.BackColor = BackColor;
+            edit.ForeColor = ForeColor;
+        }
+        FitEdit();
+    }
+
+    protected override void OnLayout(LayoutEventArgs e)
+    {
+        base.OnLayout(e);
+        FitEdit();
+    }
+
+    protected override void OnResize(EventArgs e)
+    {
+        base.OnResize(e);
+        FitEdit();
+        Invalidate();
+    }
+
+    protected override void OnEnabledChanged(EventArgs e)
+    {
+        base.OnEnabledChanged(e);
+        FitEdit();
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        var next = UpBox().Contains(e.Location) ? 1 : DownBox().Contains(e.Location) ? -1 : 0;
+        if (next != _hover)
+        {
+            _hover = next;
+            Invalidate();
+        }
+        Cursor = next != 0 ? Cursors.Hand : Cursors.IBeam;
+        base.OnMouseMove(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = 0;
+        EndRepeat();
+        Cursor = Cursors.Default;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Left)
+        {
+            if (UpBox().Contains(e.Location)) { BeginRepeat(1); return; }
+            if (DownBox().Contains(e.Location)) { BeginRepeat(-1); return; }
+            if (Edit is { } edit)
+            {
+                edit.Focus();
+                edit.SelectAll();
+            }
+        }
+        base.OnMouseDown(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        EndRepeat();
+        base.OnMouseUp(e);
+    }
+
+    void BeginRepeat(int dir)
+    {
+        Focus();
+        Step(dir);
+        _press = dir;
+        _repeat.Interval = 360;
+        _repeat.Start();
+        Invalidate();
+    }
+
+    void EndRepeat()
+    {
+        _press = 0;
+        _repeat.Stop();
+        Invalidate();
+    }
+
+    void Step(int dir)
+    {
+        if (dir > 0) UpButton();
+        else DownButton();
     }
 
     protected override void WndProc(ref Message m)
     {
-        base.WndProc(ref m);
+        if (m.Msg is WmLButtonDown or WmLButtonDblClk)
+        {
+            var raw = m.LParam.ToInt64();
+            var pt = new Point((short)(raw & 0xFFFF), (short)((raw >> 16) & 0xFFFF));
+            if (UpBox().Contains(pt)) { BeginRepeat(1); return; }
+            if (DownBox().Contains(pt)) { BeginRepeat(-1); return; }
+        }
+        if (m.Msg == WmLButtonUp && _press != 0)
+        {
+            EndRepeat();
+            return;
+        }
+        try { base.WndProc(ref m); }
+        catch (InvalidOperationException) { }
         if (m.Msg == WmPaint) PaintChrome();
     }
 
@@ -1136,27 +1637,47 @@ sealed class FlatSpin : NumericUpDown
         var field = UiChrome.ColorOf(pal.Field);
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var text = UiChrome.ColorOf(pal.Secondary);
-        using (var pen = new Pen(stroke))
+        var hover = UiChrome.ColorOf(pal.ButtonHover);
+        var framed = Parent is FieldFrame;
+        if (!framed)
+        {
+            using var pen = new Pen(stroke);
             g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-        var spinW = Math.Max(16, UiLayout.ScalePx(16, DeviceDpi));
-        var arrow = new Rectangle(Width - spinW - 1, 1, spinW, Height - 2);
+        }
+        var arrow = SpinBox();
         using (var br = new SolidBrush(field))
+        {
             g.FillRectangle(br, arrow);
-        var up = new Rectangle(arrow.X, arrow.Y, arrow.Width, arrow.Height / 2);
-        var down = new Rectangle(arrow.X, arrow.Y + arrow.Height / 2, arrow.Width, arrow.Height - arrow.Height / 2);
-        DrawChevron(g, up, text, up: true);
-        DrawChevron(g, down, text, up: false);
+            g.FillRectangle(br, arrow.X, 0, arrow.Width, 3);
+            g.FillRectangle(br, arrow.X, Math.Max(0, Height - 3), arrow.Width, 3);
+        }
+        var up = UpBox();
+        var down = DownBox();
+        if (_hover == 1 || _press == 1)
+        {
+            using var br = new SolidBrush(hover);
+            g.FillRectangle(br, up);
+        }
+        if (_hover == -1 || _press == -1)
+        {
+            using var br = new SolidBrush(hover);
+            g.FillRectangle(br, down);
+        }
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        DrawChevron(g, up, text, up: true, dpi);
+        DrawChevron(g, down, text, up: false, dpi);
     }
 
-    static void DrawChevron(Graphics g, Rectangle area, Color color, bool up)
+    static void DrawChevron(Graphics g, Rectangle area, Color color, bool up, int dpi)
     {
+        var s = Math.Max(3, UiLayout.ScalePx(3, dpi));
         var cx = area.X + area.Width / 2;
         var cy = area.Y + area.Height / 2;
-        using var pen = new Pen(color, 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var pen = new Pen(color, Math.Max(1.2f, dpi / 96f * 1.4f)) { StartCap = LineCap.Round, EndCap = LineCap.Round };
         if (up)
-            g.DrawLines(pen, new[] { new Point(cx - 3, cy + 1), new Point(cx, cy - 2), new Point(cx + 3, cy + 1) });
+            g.DrawLines(pen, new[] { new Point(cx - s, cy + s - 1), new Point(cx, cy - s + 1), new Point(cx + s, cy + s - 1) });
         else
-            g.DrawLines(pen, new[] { new Point(cx - 3, cy - 1), new Point(cx, cy + 2), new Point(cx + 3, cy - 1) });
+            g.DrawLines(pen, new[] { new Point(cx - s, cy - s + 1), new Point(cx, cy + s - 1), new Point(cx + s, cy - s + 1) });
     }
 }
 
@@ -1303,38 +1824,114 @@ sealed class FlatCheck : CheckBox
     }
 }
 
-sealed class FlatDatePicker : DateTimePicker
+sealed class FlatDatePicker : Control
 {
-    const int WmPaint = 0x000F;
+    DateTime _value = DateTime.Now;
+    DateTime _min = new(2000, 1, 1);
+    DateTime _max = new(2100, 1, 1);
+    bool _checked = true;
+    bool _hover;
+    Form? _popup;
+
+    public event EventHandler? ValueChanged;
 
     public FlatDatePicker()
     {
-        Format = DateTimePickerFormat.Custom;
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw | ControlStyles.Selectable, true);
+        UpdateStyles();
+        Cursor = Cursors.Hand;
         CustomFormat = "yyyy-MM-dd";
+        Height = FormTone.FieldHeight;
+        TabStop = true;
     }
 
-    protected override void OnHandleCreated(EventArgs e)
+    public string CustomFormat { get; set; }
+    public bool ShowCheckBox { get; set; }
+    public bool ShowUpDown { get; set; }
+    public Color CalendarForeColor { get; set; }
+    public Color CalendarMonthBackground { get; set; }
+    public Color CalendarTitleBackColor { get; set; }
+    public Color CalendarTitleForeColor { get; set; }
+    public Color CalendarTrailingForeColor { get; set; }
+
+    public DateTime MinDate
     {
-        base.OnHandleCreated(e);
-        NativeTheme.Strip(Handle);
-        var pal = UiChrome.Tone;
-        CalendarForeColor = UiChrome.ColorOf(pal.Text);
-        CalendarMonthBackground = UiChrome.ColorOf(pal.Field);
-        CalendarTitleBackColor = UiChrome.ColorOf(pal.Header);
-        CalendarTitleForeColor = UiChrome.ColorOf(pal.Text);
-        CalendarTrailingForeColor = UiChrome.ColorOf(pal.Secondary);
+        get => _min;
+        set { _min = value; Value = _value; }
     }
 
-    protected override void WndProc(ref Message m)
+    public DateTime MaxDate
     {
-        base.WndProc(ref m);
-        if (m.Msg == WmPaint) PaintChrome();
+        get => _max;
+        set { _max = value; Value = _value; }
     }
 
-    void PaintChrome()
+    public bool Checked
     {
-        if (!IsHandleCreated || Width <= 1 || Height <= 1) return;
-        using var g = Graphics.FromHwnd(Handle);
+        get => _checked;
+        set
+        {
+            if (_checked == value) return;
+            _checked = value;
+            Invalidate();
+            ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public DateTime Value
+    {
+        get => _value;
+        set
+        {
+            var next = Clamp(value);
+            if (next == _value) return;
+            _value = next;
+            Invalidate();
+            ValueChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public override string Text => ShowCheckBox && !Checked ? "" : _value.ToString(CustomFormat);
+
+    bool NeedsTime()
+    {
+        var format = CustomFormat ?? "";
+        return format.Contains("HH", StringComparison.Ordinal) || format.Contains("hh", StringComparison.Ordinal)
+            || format.Contains("mm", StringComparison.Ordinal);
+    }
+
+    DateTime Clamp(DateTime value)
+    {
+        if (value < _min) return _min;
+        if (value > _max) return _max;
+        return value;
+    }
+
+    int ButtonWidth() => Math.Max(22, UiLayout.ScalePx(28, DeviceDpi > 0 ? DeviceDpi : 96));
+
+    Rectangle ButtonBox()
+    {
+        var w = ButtonWidth();
+        return new Rectangle(Math.Max(0, Width - w), 0, w, Height);
+    }
+
+    Rectangle CheckBox()
+    {
+        var size = Math.Max(12, UiLayout.ScalePx(14, DeviceDpi > 0 ? DeviceDpi : 96));
+        return new Rectangle(8, Math.Max(0, (Height - size) / 2), size, size);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+        var fill = Parent is FieldFrame
+            ? UiChrome.ColorOf(UiChrome.Tone.Field)
+            : Parent?.BackColor ?? UiChrome.ColorOf(UiChrome.Tone.Window);
+        e.Graphics.Clear(fill);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var pal = UiChrome.Tone;
         var field = UiChrome.ColorOf(pal.Field);
@@ -1342,37 +1939,515 @@ sealed class FlatDatePicker : DateTimePicker
         var secondary = UiChrome.ColorOf(pal.Secondary);
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var accent = UiChrome.ColorOf(pal.Accent);
+        var button = _hover ? UiChrome.ColorOf(pal.ButtonHover) : UiChrome.ColorOf(pal.Button);
         var bounds = ClientRectangle;
-        using (var br = new SolidBrush(field))
+        if (Parent is not FieldFrame)
+        {
+            var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi);
+            using var path = UiChrome.RoundRect(new RectangleF(0.5f, 0.5f, Math.Max(1f, Width - 1f), Math.Max(1f, Height - 1f)), radius);
+            using (var br = new SolidBrush(field))
+                g.FillPath(br, path);
+            using (var pen = new Pen(stroke))
+                g.DrawPath(pen, path);
+        }
+        else
+        {
+            using var br = new SolidBrush(field);
             g.FillRectangle(br, bounds);
-        using (var pen = new Pen(stroke))
-            g.DrawRectangle(pen, 0, 0, bounds.Width - 1, bounds.Height - 1);
+        }
+
         var x = 8;
         if (ShowCheckBox)
         {
-            var box = new Rectangle(6, Math.Max(2, (bounds.Height - 14) / 2), 14, 14);
+            var box = CheckBox();
+            using var path = UiChrome.RoundRect(box, 3);
+            using (var br = new SolidBrush(Checked ? accent : field))
+                g.FillPath(br, path);
             using (var pen = new Pen(Checked ? accent : stroke))
-                g.DrawRectangle(pen, box);
+                g.DrawPath(pen, path);
             if (Checked)
             {
-                using var fill = new SolidBrush(accent);
-                g.FillRectangle(fill, box.X + 3, box.Y + 3, 8, 8);
+                using var mark = new Pen(UiChrome.ColorOf(pal.OnAccent), 1.6f)
+                {
+                    StartCap = LineCap.Round,
+                    EndCap = LineCap.Round,
+                };
+                g.DrawLines(mark, new[]
+                {
+                    new Point(box.X + 3, box.Y + box.Height / 2),
+                    new Point(box.X + box.Width / 2 - 1, box.Bottom - 4),
+                    new Point(box.Right - 3, box.Y + 3),
+                });
             }
             x = box.Right + 8;
         }
+
+        var btn = ButtonBox();
+        using (var br = new SolidBrush(button))
+            g.FillRectangle(br, btn);
+        using (var split = new Pen(stroke))
+            g.DrawLine(split, btn.X, 4, btn.X, Height - 4);
+        var cx = btn.X + btn.Width / 2;
+        var cy = btn.Y + btn.Height / 2;
+        using (var chevron = new Pen(Enabled ? text : secondary, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawLines(chevron, new[] { new Point(cx - 5, cy - 1), new Point(cx, cy + 4), new Point(cx + 5, cy - 1) });
+
         var faded = !Enabled || (ShowCheckBox && !Checked);
-        var textRect = new Rectangle(x, 0, Math.Max(8, bounds.Width - x - 22), bounds.Height);
+        var label = ShowCheckBox && !Checked ? "不限" : _value.ToString(CustomFormat);
+        var textRect = new Rectangle(x, 0, Math.Max(8, btn.X - x - 6), Height);
         TextRenderer.DrawText(
             g,
-            Text,
+            label,
             Font,
             textRect,
             faded ? secondary : text,
-            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
-        var cx = bounds.Width - 12;
-        var cy = bounds.Height / 2;
-        using var chevron = new Pen(secondary, 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-        g.DrawLines(chevron, new[] { new Point(cx - 4, cy - 1), new Point(cx, cy + 3), new Point(cx + 4, cy - 1) });
+            TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+    }
+
+    protected override void OnMouseEnter(EventArgs e)
+    {
+        _hover = true;
+        Invalidate();
+        base.OnMouseEnter(e);
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = false;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (!Enabled) return;
+        Focus();
+        if (ShowCheckBox && CheckBox().Contains(e.Location))
+        {
+            Checked = !Checked;
+            return;
+        }
+        if (ShowCheckBox && !Checked)
+            Checked = true;
+        ShowCalendar();
+        base.OnMouseDown(e);
+    }
+
+    void ShowCalendar()
+    {
+        if (_popup is { IsDisposed: false })
+        {
+            _popup.Close();
+            return;
+        }
+        var stamp = Clamp(_value);
+        var view = new FlatMonthView
+        {
+            Selected = stamp.Date,
+            MinDate = _min,
+            MaxDate = _max,
+            ShowTime = NeedsTime(),
+            Hour = stamp.Hour,
+            Minute = stamp.Minute,
+        };
+        var popup = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ControlBox = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Padding = Padding.Empty,
+            Text = "",
+            BackColor = UiChrome.ColorOf(UiChrome.Tone.Window),
+        };
+        view.DatePicked += date =>
+        {
+            Value = date;
+            if (!popup.IsDisposed) popup.Close();
+        };
+        popup.Controls.Add(view);
+        var armed = false;
+        popup.Shown += (_, _) => armed = true;
+        popup.Deactivate += (_, _) =>
+        {
+            if (!armed || popup.IsDisposed) return;
+            popup.BeginInvoke(() => { if (!popup.IsDisposed) popup.Close(); });
+        };
+        popup.FormClosed += (_, _) =>
+        {
+            if (ReferenceEquals(_popup, popup)) _popup = null;
+        };
+        popup.Paint += (_, e) =>
+        {
+            using var pen = new Pen(UiChrome.ColorOf(UiChrome.Tone.Stroke));
+            e.Graphics.DrawRectangle(pen, 0, 0, popup.ClientSize.Width - 1, popup.ClientSize.Height - 1);
+        };
+        var origin = PointToScreen(new Point(0, Height + 2));
+        var work = Screen.FromControl(this).WorkingArea;
+        popup.Location = origin;
+        _popup = popup;
+        var owner = FindForm();
+        if (owner is not null) popup.Show(owner);
+        else popup.Show();
+        var size = popup.Size;
+        var x = Math.Min(origin.X, work.Right - size.Width);
+        var y = origin.Y + size.Height > work.Bottom ? origin.Y - Height - size.Height - 2 : origin.Y;
+        popup.Location = new Point(Math.Max(work.Left, x), Math.Max(work.Top, y));
+    }
+
+    protected override void OnHandleDestroyed(EventArgs e)
+    {
+        if (_popup is { IsDisposed: false })
+            _popup.Close();
+        base.OnHandleDestroyed(e);
+    }
+}
+
+sealed class FlatMonthView : Control
+{
+    static readonly string[] Weekdays = ["一", "二", "三", "四", "五", "六", "日"];
+
+    readonly FlatSpin _hours = new() { Minimum = 0, Maximum = 23, DecimalPlaces = 0 };
+    readonly FlatSpin _minutes = new() { Minimum = 0, Maximum = 59, DecimalPlaces = 0 };
+    readonly FieldFrame _hourFrame;
+    readonly FieldFrame _minFrame;
+    readonly Label _hourLbl = new() { Text = "时", AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Label _minLbl = new() { Text = "分", AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
+    readonly Button _ok = UiChrome.Button("确定", UiButtonKind.Primary);
+    DateTime _month;
+    DateTime _selected;
+    DateTime _min = new(2000, 1, 1);
+    DateTime _max = new(2100, 1, 1);
+    int _hover = -1;
+    bool _showTime;
+
+    public event Action<DateTime>? DatePicked;
+
+    public FlatMonthView()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+        UpdateStyles();
+        _selected = DateTime.Today;
+        _month = new DateTime(_selected.Year, _selected.Month, 1);
+        _hourFrame = UiChrome.Frame(_hours);
+        _minFrame = UiChrome.Frame(_minutes);
+        foreach (var frame in new[] { _hourFrame, _minFrame })
+        {
+            frame.Dock = DockStyle.None;
+            frame.Margin = Padding.Empty;
+        }
+        _ok.Margin = Padding.Empty;
+        _ok.Click += (_, _) => Pick(Stamp());
+        Controls.AddRange([_hourFrame, _hourLbl, _minFrame, _minLbl, _ok]);
+        foreach (var child in TimeParts())
+            child.Visible = false;
+    }
+
+    Control[] TimeParts() => [_hourFrame, _hourLbl, _minFrame, _minLbl, _ok];
+
+    public bool ShowTime
+    {
+        get => _showTime;
+        set
+        {
+            _showTime = value;
+            foreach (var child in TimeParts())
+                child.Visible = value;
+            Fit();
+        }
+    }
+
+    public int Hour
+    {
+        get => (int)_hours.Value;
+        set => _hours.Value = Math.Clamp(value, 0, 23);
+    }
+
+    public int Minute
+    {
+        get => (int)_minutes.Value;
+        set => _minutes.Value = Math.Clamp(value, 0, 59);
+    }
+
+    public DateTime MinDate { get => _min; set { _min = value.Date; Invalidate(); } }
+    public DateTime MaxDate { get => _max; set { _max = value.Date; Invalidate(); } }
+
+    public DateTime Selected
+    {
+        get => _selected;
+        set
+        {
+            _selected = value.Date;
+            _month = new DateTime(_selected.Year, _selected.Month, 1);
+            Invalidate();
+        }
+    }
+
+    int Cell() => UiLayout.ScalePx(32, DeviceDpi > 0 ? DeviceDpi : 96);
+    int Pad() => UiLayout.ScalePx(12, DeviceDpi > 0 ? DeviceDpi : 96);
+    int HeaderH() => UiLayout.ScalePx(36, DeviceDpi > 0 ? DeviceDpi : 96);
+    int WeekH() => UiLayout.ScalePx(24, DeviceDpi > 0 ? DeviceDpi : 96);
+    int FootH() => UiLayout.ScalePx(36, DeviceDpi > 0 ? DeviceDpi : 96);
+    int TimeH() => _showTime ? UiChrome.FieldPx(DeviceDpi > 0 ? DeviceDpi : 96) + Pad() / 2 : 0;
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        Fit();
+    }
+
+    DateTime Stamp() => _selected.Date.AddHours(Hour).AddMinutes(Minute);
+
+    void Pick(DateTime value) => DatePicked?.Invoke(value);
+
+    void Fit()
+    {
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        StyleTime(dpi);
+        var cell = Cell();
+        var pad = Pad();
+        Width = Math.Max(pad * 2 + cell * 7, TimeRowWidth(dpi));
+        Height = pad + HeaderH() + WeekH() + cell * 6 + FootH() + TimeH();
+        LayoutTime(dpi);
+    }
+
+    void StyleTime(int dpi)
+    {
+        var pal = UiChrome.Tone;
+        var secondary = UiChrome.ColorOf(pal.Secondary);
+        var window = UiChrome.ColorOf(pal.Window);
+        var h = UiChrome.FieldPx(dpi);
+        var w = UiLayout.ScalePx(FormTone.FieldWidthShort, dpi);
+        foreach (var frame in new[] { _hourFrame, _minFrame })
+        {
+            frame.Size = new Size(w, h);
+            frame.Relayout();
+        }
+        var labelW = UiLayout.ScalePx(20, dpi);
+        foreach (var label in new[] { _hourLbl, _minLbl })
+        {
+            label.ForeColor = secondary;
+            label.BackColor = window;
+            label.Font = Font;
+            label.Size = new Size(labelW, h);
+        }
+        UiChrome.SizeToText(_ok, dpi);
+        if (_ok.Height != h)
+            _ok.Height = h;
+    }
+
+    int TimeRowWidth(int dpi)
+    {
+        if (!_showTime) return 0;
+        var pad = Pad();
+        var gap = UiLayout.ScalePx(8, dpi);
+        return pad + _hourFrame.Width + gap + _hourLbl.Width + gap
+            + _minFrame.Width + gap + _minLbl.Width + gap + _ok.Width + pad;
+    }
+
+    void LayoutTime(int dpi)
+    {
+        if (!_showTime) return;
+        var pad = Pad();
+        var gap = UiLayout.ScalePx(8, dpi);
+        var h = UiChrome.FieldPx(dpi);
+        var y = Height - TimeH() + Math.Max(0, (TimeH() - h) / 2);
+        var x = pad;
+        _hourFrame.SetBounds(x, y, _hourFrame.Width, h);
+        x = _hourFrame.Right + gap;
+        _hourLbl.SetBounds(x, y, _hourLbl.Width, h);
+        x = _hourLbl.Right + gap;
+        _minFrame.SetBounds(x, y, _minFrame.Width, h);
+        x = _minFrame.Right + gap;
+        _minLbl.SetBounds(x, y, _minLbl.Width, h);
+        _ok.SetBounds(Width - pad - _ok.Width, y + Math.Max(0, (h - _ok.Height) / 2), _ok.Width, _ok.Height);
+    }
+
+    Rectangle NavBox(bool next)
+    {
+        var pad = Pad();
+        var size = UiLayout.ScalePx(24, DeviceDpi > 0 ? DeviceDpi : 96);
+        var y = pad + (HeaderH() - size) / 2;
+        return next
+            ? new Rectangle(Width - pad - size, y, size, size)
+            : new Rectangle(pad, y, size, size);
+    }
+
+    Rectangle DayBox(int index)
+    {
+        var cell = Cell();
+        var pad = Pad();
+        var top = pad + HeaderH() + WeekH();
+        return new Rectangle(pad + index % 7 * cell, top + index / 7 * cell, cell, cell);
+    }
+
+    Rectangle TodayBox()
+    {
+        var pad = Pad();
+        return new Rectangle(pad, Height - FootH() - TimeH(), Width - pad * 2, FootH() - pad / 2);
+    }
+
+    DateTime FirstGridDay()
+    {
+        var first = _month;
+        var offset = ((int)first.DayOfWeek + 6) % 7;
+        return first.AddDays(-offset);
+    }
+
+    DateTime DayAt(int index) => FirstGridDay().AddDays(index);
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var pal = UiChrome.Tone;
+        var window = UiChrome.ColorOf(pal.Window);
+        var text = UiChrome.ColorOf(pal.Text);
+        var secondary = UiChrome.ColorOf(pal.Secondary);
+        var accent = UiChrome.ColorOf(pal.Accent);
+        var onAccent = UiChrome.ColorOf(pal.OnAccent);
+        var hover = UiChrome.ColorOf(pal.ButtonHover);
+        using (var bg = new SolidBrush(window))
+            g.FillRectangle(bg, ClientRectangle);
+
+        var pad = Pad();
+        var title = $"{_month.Year}年{_month.Month}月";
+        TextRenderer.DrawText(g, title, UiChrome.UiFont(10f, FontStyle.Bold), new Rectangle(0, pad, Width, HeaderH()), text,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        DrawArrow(g, NavBox(false), text, left: true);
+        DrawArrow(g, NavBox(true), text, left: false);
+
+        var weekTop = pad + HeaderH();
+        var cell = Cell();
+        for (var i = 0; i < 7; i++)
+        {
+            var box = new Rectangle(pad + i * cell, weekTop, cell, WeekH());
+            TextRenderer.DrawText(g, Weekdays[i], Font, box, secondary,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+
+        var today = DateTime.Today;
+        for (var i = 0; i < 42; i++)
+        {
+            var day = DayAt(i);
+            var box = DayBox(i);
+            var muted = day.Month != _month.Month;
+            var disabled = day < _min || day > _max;
+            var on = day == _selected;
+            var isToday = day == today;
+            if (i == _hover && !disabled)
+            {
+                using var br = new SolidBrush(hover);
+                g.FillEllipse(br, Inset(box, 4));
+            }
+            if (on)
+            {
+                using var br = new SolidBrush(accent);
+                g.FillEllipse(br, Inset(box, 4));
+            }
+            else if (isToday)
+            {
+                using var pen = new Pen(accent);
+                g.DrawEllipse(pen, Inset(box, 4));
+            }
+            var color = disabled ? UiChrome.ColorOf(pal.Hairline) : on ? onAccent : muted ? secondary : text;
+            TextRenderer.DrawText(g, day.Day.ToString(), Font, box, color,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+        }
+
+        var foot = TodayBox();
+        var todayOn = _hover == 42;
+        TextRenderer.DrawText(g, "今天  " + today.ToString("M月d日"), UiChrome.UiFont(9f), foot, todayOn ? accent : secondary,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
+    }
+
+    static Rectangle Inset(Rectangle box, int pad) =>
+        new(box.X + pad, box.Y + pad, Math.Max(4, box.Width - pad * 2), Math.Max(4, box.Height - pad * 2));
+
+    static void DrawArrow(Graphics g, Rectangle box, Color color, bool left)
+    {
+        var cx = box.X + box.Width / 2;
+        var cy = box.Y + box.Height / 2;
+        using var pen = new Pen(color, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        if (left)
+            g.DrawLines(pen, new[] { new Point(cx + 3, cy - 5), new Point(cx - 3, cy), new Point(cx + 3, cy + 5) });
+        else
+            g.DrawLines(pen, new[] { new Point(cx - 3, cy - 5), new Point(cx + 3, cy), new Point(cx - 3, cy + 5) });
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        var next = Hit(e.Location);
+        if (next == _hover) return;
+        _hover = next;
+        Invalidate();
+        Cursor = next >= 0 ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        _hover = -1;
+        Cursor = Cursors.Default;
+        Invalidate();
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        if (NavBox(false).Contains(e.Location))
+        {
+            Shift(-1);
+            return;
+        }
+        if (NavBox(true).Contains(e.Location))
+        {
+            Shift(1);
+            return;
+        }
+        if (TodayBox().Contains(e.Location))
+        {
+            var today = DateTime.Today;
+            if (today < _min || today > _max) return;
+            if (_showTime)
+            {
+                Selected = today;
+                return;
+            }
+            Pick(today);
+            return;
+        }
+        var hit = Hit(e.Location);
+        if (hit is >= 0 and < 42)
+        {
+            var day = DayAt(hit);
+            if (day < _min || day > _max) return;
+            if (_showTime)
+            {
+                Selected = day;
+                return;
+            }
+            Pick(day);
+        }
+    }
+
+    void Shift(int months)
+    {
+        var next = _month.AddMonths(months);
+        if (next > _max || next.AddMonths(1).AddDays(-1) < _min) return;
+        _month = new DateTime(next.Year, next.Month, 1);
+        Invalidate();
+    }
+
+    int Hit(Point pt)
+    {
+        if (TodayBox().Contains(pt)) return 42;
+        for (var i = 0; i < 42; i++)
+            if (DayBox(i).Contains(pt)) return i;
+        return -1;
     }
 }
 
