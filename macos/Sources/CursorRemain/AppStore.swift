@@ -40,6 +40,7 @@ final class AppStore: ObservableObject {
     }
 
     func start() {
+        AppUpdater.confirmPending(store: self)
         LoginItem.apply(config.autostartEnabled)
         if let acc = config.activeAccount {
             UsageHistory.adoptLegacyHistory(accountId: acc.id, directory: settingsDirectory ?? AppPaths.configDirectory())

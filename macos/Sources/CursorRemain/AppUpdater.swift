@@ -49,17 +49,17 @@ enum AppUpdater {
                 return "已取消更新"
             }
             let staged = try await downloadAndStage(asset)
-            if !launchHelper(newApp: staged) {
+            if !launchHelper(newApp: staged, expectedSha: release.commitSha) {
                 let fail = "已下载更新，但无法启动安装脚本"
                 rememberCheck(store: store, error: fail)
                 return fail
             }
-            if let remembered = AppUpdate.rememberedInstallAfterHelper(
+            if let pending = AppUpdate.rememberedInstallAfterHelper(
                 sha: release.commitSha,
                 assetId: asset.id,
                 helperStarted: true
             ) {
-                rememberInstalled(store: store, sha: remembered.sha, assetId: remembered.assetId)
+                AppUpdate.writePendingInstall(directory: pendingDirectory(store), sha: pending.sha, assetId: pending.assetId)
             }
             NSApp.terminate(nil)
             return decision.message + "，即将重启"
@@ -179,44 +179,125 @@ enum AppUpdater {
         return nil
     }
 
-    private static func launchHelper(newApp: URL) -> Bool {
+    @MainActor
+    static func confirmPending(store: AppStore) {
+        let dir = pendingDirectory(store)
+        guard let pending = AppUpdate.readPendingInstall(directory: dir) else { return }
+        if let confirmed = AppUpdate.confirmPendingInstall(currentSha: AppUpdate.currentCommitSha, pending: pending) {
+            AppUpdate.clearPendingInstall(directory: dir)
+            rememberInstalled(store: store, sha: confirmed.sha, assetId: confirmed.assetId)
+            return
+        }
+        if AppUpdate.pendingInstallFailed(currentSha: AppUpdate.currentCommitSha, pending: pending) {
+            AppUpdate.clearPendingInstall(directory: dir)
+            store.config = ConfigStore.update(from: store.settingsDirectory) { live in
+                live.updateLastCheckAt = ""
+                live.updateLastError = "上次更新没有替换成功，请再试一次"
+            }
+        }
+    }
+
+    private static func pendingDirectory(_ store: AppStore) -> URL {
+        store.settingsDirectory ?? AppPaths.configDirectory()
+    }
+
+    private static func launchHelper(newApp: URL, expectedSha: String) -> Bool {
         let dest = Bundle.main.bundleURL
         let script = FileManager.default.temporaryDirectory
             .appendingPathComponent("CursorRemain-apply-\(UUID().uuidString).sh")
+        let log = AppPaths.logPath().deletingLastPathComponent().appendingPathComponent("CursorRemain-update-helper.log")
         let body = """
         #!/bin/bash
         PID="$1"
         SRC="$2"
         DST="$3"
+        EXPECT="$4"
+        echo "start $(date -u +%Y-%m-%dT%H:%M:%SZ) pid=$PID dst=$DST expect=$EXPECT"
         for i in $(seq 1 80); do
           if ! kill -0 "$PID" 2>/dev/null; then
             break
           fi
           sleep 0.25
         done
-        sleep 0.4
-        TMP="${DST}.updating"
-        rm -rf "$TMP"
-        /usr/bin/ditto "$SRC" "$TMP" || exit 1
-        if [ -d "$DST" ]; then
-          rm -rf "${DST}.old"
-          mv "$DST" "${DST}.old" || exit 1
+        if kill -0 "$PID" 2>/dev/null; then
+          kill -9 "$PID" 2>/dev/null || true
+          sleep 0.3
         fi
-        mv "$TMP" "$DST" || exit 1
-        xattr -cr "$DST" >/dev/null 2>&1 || true
-        rm -rf "${DST}.old"
-        open "$DST"
+        sleep 0.4
+        apply() {
+          TMP="${DST}.updating"
+          rm -rf "$TMP"
+          /usr/bin/ditto "$SRC" "$TMP" || return 1
+          if [ -d "$DST" ]; then
+            rm -rf "${DST}.old"
+            mv "$DST" "${DST}.old" || rm -rf "$DST" || return 1
+          fi
+          mv "$TMP" "$DST" || return 1
+          xattr -cr "$DST" >/dev/null 2>&1 || true
+          rm -rf "${DST}.old"
+          if [ -n "$EXPECT" ]; then
+            GOT=$(/usr/libexec/PlistBuddy -c 'Print :GitCommit' "$DST/Contents/Info.plist" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+            EXP=$(printf '%s' "$EXPECT" | tr '[:upper:]' '[:lower:]')
+            case "$GOT" in
+              "$EXP"*) ;;
+              *)
+                case "$EXP" in
+                  "$GOT"*) ;;
+                  *) echo "sha mismatch got=$GOT expect=$EXP"; return 1 ;;
+                esac
+                ;;
+            esac
+          fi
+          return 0
+        }
+        ok=0
+        for t in 1 2 3 4 5; do
+          if apply; then ok=1; break; fi
+          echo "retry $t"
+          sleep 0.4
+        done
+        if [ "$ok" -ne 1 ]; then
+          echo "apply failed"
+          rm -f "$0"
+          exit 1
+        fi
+        EXE="$DST/Contents/MacOS/CursorRemain"
+        if [ ! -x "$EXE" ]; then
+          EXE="$DST/Contents/MacOS/CursorTokenTray"
+        fi
+        if [ -x "$EXE" ]; then
+          /usr/bin/nohup "$EXE" >/dev/null 2>&1 &
+        else
+          /usr/bin/open -n -g "$DST"
+        fi
+        echo "opened $DST"
         rm -f "$0"
         """
         do {
+            AppPaths.ensureDirectory(log.deletingLastPathComponent())
             try body.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-            proc.arguments = [script.path, String(ProcessInfo.processInfo.processIdentifier), newApp.path, dest.path]
+            proc.arguments = [
+                "-c",
+                AppUpdate.detachedHelperLaunchCommand(
+                    script: script.path,
+                    pid: String(ProcessInfo.processInfo.processIdentifier),
+                    source: newApp.path,
+                    destination: dest.path,
+                    expectedSha: AppUpdate.normalizeSha(expectedSha),
+                    log: log.path
+                ),
+            ]
             proc.standardOutput = FileHandle.nullDevice
             proc.standardError = FileHandle.nullDevice
             try proc.run()
+            proc.waitUntilExit()
+            if proc.terminationStatus != 0 {
+                AppLog.log("无法启动更新脚本: exit \(proc.terminationStatus)")
+                return false
+            }
             return true
         } catch {
             AppLog.log("无法启动更新脚本: \(error.localizedDescription)")

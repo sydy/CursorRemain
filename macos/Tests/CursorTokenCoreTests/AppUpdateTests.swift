@@ -230,6 +230,39 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(remembered?.assetId, 99)
     }
 
+    func testPendingInstallConfirmsOnlyAfterNewBinaryMatches() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ctt-pending-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        XCTAssertNil(AppUpdate.readPendingInstall(directory: dir))
+        AppUpdate.writePendingInstall(directory: dir, sha: "0ad980084152a814bdaefeb3bb162184db07d64a", assetId: 7)
+        let pending = try XCTUnwrap(AppUpdate.readPendingInstall(directory: dir))
+        XCTAssertEqual(pending.sha, "0ad980084152a814bdaefeb3bb162184db07d64a")
+        XCTAssertEqual(pending.assetId, 7)
+        XCTAssertNil(AppUpdate.confirmPendingInstall(currentSha: "eb9a0a2a0512609588b3458d87443971eed07ec3", pending: pending))
+        XCTAssertTrue(AppUpdate.pendingInstallFailed(currentSha: "eb9a0a2a0512609588b3458d87443971eed07ec3", pending: pending))
+        XCTAssertFalse(AppUpdate.pendingInstallFailed(currentSha: "", pending: pending))
+        let confirmed = AppUpdate.confirmPendingInstall(currentSha: "0ad9800", pending: pending)
+        XCTAssertEqual(confirmed?.sha, pending.sha)
+        AppUpdate.clearPendingInstall(directory: dir)
+        XCTAssertNil(AppUpdate.readPendingInstall(directory: dir))
+    }
+
+    func testDetachedHelperCommandKeepsExternalVolumePathsQuoted() {
+        let cmd = AppUpdate.detachedHelperLaunchCommand(
+            script: "/tmp/apply.sh",
+            pid: "12",
+            source: "/tmp/src/CursorRemain.app",
+            destination: "/Volumes/数据盘/Documents/Git/cursorremain/macos/dist/CursorRemain.app",
+            expectedSha: "0ad9800",
+            log: "/Users/me/Library/Logs/CursorRemain-update-helper.log"
+        )
+        XCTAssertTrue(cmd.hasPrefix("/usr/bin/nohup "))
+        XCTAssertTrue(cmd.contains("'/Volumes/数据盘/Documents/Git/cursorremain/macos/dist/CursorRemain.app'"))
+        XCTAssertTrue(cmd.hasSuffix(" &"))
+        XCTAssertEqual(AppUpdate.shellQuote("it's"), "'it'\\''s'")
+    }
+
     func testConfigRoundtripsAutoUpdateFields() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ctt-update-cfg-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

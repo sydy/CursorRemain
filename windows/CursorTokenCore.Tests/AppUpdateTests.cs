@@ -309,6 +309,34 @@ public class AppUpdateTests
     }
 
     [Fact]
+    public void PendingInstallConfirmsOnlyAfterNewBinaryMatches()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ctt-pending-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            Assert.Null(AppUpdate.ReadPendingInstall(dir));
+            AppUpdate.WritePendingInstall(dir, "0ad980084152a814bdaefeb3bb162184db07d64a", 7);
+            var pending = AppUpdate.ReadPendingInstall(dir);
+            Assert.NotNull(pending);
+            Assert.Equal("0ad980084152a814bdaefeb3bb162184db07d64a", pending.Value.Sha);
+            Assert.Equal(7, pending.Value.AssetId);
+            Assert.Null(AppUpdate.ConfirmPendingInstall("eb9a0a2a0512609588b3458d87443971eed07ec3", pending));
+            Assert.True(AppUpdate.PendingInstallFailed("eb9a0a2a0512609588b3458d87443971eed07ec3", pending));
+            Assert.False(AppUpdate.PendingInstallFailed("", pending));
+            var confirmed = AppUpdate.ConfirmPendingInstall("0ad9800", pending);
+            Assert.NotNull(confirmed);
+            Assert.Equal(pending.Value.Sha, confirmed.Value.Sha);
+            AppUpdate.ClearPendingInstall(dir);
+            Assert.Null(AppUpdate.ReadPendingInstall(dir));
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void ShouldAutoCheckRespectsInterval()
     {
         var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);

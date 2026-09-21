@@ -88,8 +88,8 @@ static class AppUpdater
                 RememberCheck(cfg, fail);
                 return fail;
             }
-            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, asset.Id, true) is { } remembered)
-                RememberInstalled(cfg, remembered.Sha, remembered.AssetId);
+            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, asset.Id, true) is { } pending)
+                AppUpdate.WritePendingInstall(AppPaths.ConfigDirectory(), pending.Sha, pending.AssetId);
             restart?.Invoke();
             return decision.Message + "，即将重启";
         }
@@ -277,6 +277,37 @@ static class AppUpdater
             ?? throw new InvalidOperationException("安装包里没有 CursorRemain.exe");
     }
 
+    public static void ConfirmPending(AppConfig cfg)
+    {
+        var dir = AppPaths.ConfigDirectory();
+        var pending = AppUpdate.ReadPendingInstall(dir);
+        if (pending is null) return;
+        if (AppUpdate.ConfirmPendingInstall(AppUpdate.CurrentCommitSha(), pending) is { } confirmed)
+        {
+            AppUpdate.ClearPendingInstall(dir);
+            RememberInstalled(cfg, confirmed.Sha, confirmed.AssetId);
+            return;
+        }
+        if (AppUpdate.PendingInstallFailed(AppUpdate.CurrentCommitSha(), pending))
+        {
+            AppUpdate.ClearPendingInstall(dir);
+            try
+            {
+                ConfigStore.Update(live =>
+                {
+                    live.UpdateLastCheckAt = "";
+                    live.UpdateLastError = "上次更新没有替换成功，请再试一次";
+                    cfg.UpdateLastCheckAt = "";
+                    cfg.UpdateLastError = live.UpdateLastError;
+                    cfg.AutoUpdateEnabled = live.AutoUpdateEnabled;
+                    cfg.UpdateInstalledSha = live.UpdateInstalledSha;
+                    cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
+                });
+            }
+            catch (Exception ex) { CrashLog.Write(ex); }
+        }
+    }
+
     static bool LaunchHelper(string newExe)
     {
         var dest = Environment.ProcessPath ?? Application.ExecutablePath;
@@ -290,29 +321,38 @@ static class AppUpdater
             "set \"DST=%~3\"\r\n" +
             "set /a _i=0\r\n" +
             ":wait\r\n" +
-            "if %_i% GEQ 80 goto copy\r\n" +
+            "if %_i% GEQ 80 goto kill\r\n" +
             "ping -n 2 127.0.0.1 >nul\r\n" +
             "tasklist /FI \"PID eq %PID%\" 2>nul | findstr /I /C:\" %PID% \" >nul\r\n" +
             "if not errorlevel 1 (\r\n" +
             "  set /a _i+=1\r\n" +
             "  goto wait\r\n" +
             ")\r\n" +
+            "goto copy\r\n" +
+            ":kill\r\n" +
+            "taskkill /F /PID %PID% >nul 2>&1\r\n" +
+            "ping -n 2 127.0.0.1 >nul\r\n" +
             ":copy\r\n" +
+            "set /a _c=0\r\n" +
+            ":retry\r\n" +
             "copy /Y \"%SRC%\" \"%DST%\" >nul\r\n" +
-            "if errorlevel 1 (\r\n" +
-            "  ping -n 2 127.0.0.1 >nul\r\n" +
-            "  copy /Y \"%SRC%\" \"%DST%\" >nul\r\n" +
-            ")\r\n" +
+            "if not errorlevel 1 goto start\r\n" +
+            "set /a _c+=1\r\n" +
+            "if %_c% GEQ 8 goto fail\r\n" +
+            "ping -n 2 127.0.0.1 >nul\r\n" +
+            "goto retry\r\n" +
+            ":fail\r\n" +
+            "exit /b 1\r\n" +
+            ":start\r\n" +
             "start \"\" \"%DST%\"\r\n" +
             "del \"%~f0\"\r\n";
         File.WriteAllText(bat, script);
-        var args = $"/c \"\"{bat}\" {Environment.ProcessId} \"{newExe}\" \"{dest}\"\"";
         var psi = new ProcessStartInfo
         {
-            FileName = "cmd.exe",
-            Arguments = args,
-            UseShellExecute = false,
-            CreateNoWindow = true,
+            FileName = bat,
+            Arguments = $"{Environment.ProcessId} \"{newExe}\" \"{dest}\"",
+            UseShellExecute = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
             WorkingDirectory = Path.GetTempPath(),
         };
         return Process.Start(psi) is not null;

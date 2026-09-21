@@ -581,11 +581,69 @@ public static class AppUpdate
     public readonly record struct RememberedInstall(string Sha, long AssetId);
 
     /// <summary>
-    /// Persist the installed SHA only after the replace helper actually started.
-    /// A failed launch must keep the previous SHA so the same release can be retried.
+    /// Write a pending stamp only after the replace helper actually started.
+    /// The installed SHA is recorded later, when the new process confirms its commit hash.
     /// </summary>
     public static RememberedInstall? RememberedInstallAfterHelper(string sha, long assetId, bool helperStarted) =>
         helperStarted ? new RememberedInstall(NormalizeSha(sha), assetId) : null;
+
+    public const string PendingInstallFileName = "update-pending.json";
+
+    public static string PendingInstallPath(string directory) =>
+        Path.Combine(directory, PendingInstallFileName);
+
+    public static void WritePendingInstall(string directory, string sha, long assetId)
+    {
+        Directory.CreateDirectory(directory);
+        var json = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["sha"] = NormalizeSha(sha),
+            ["asset_id"] = assetId,
+        });
+        File.WriteAllText(PendingInstallPath(directory), json);
+    }
+
+    public static RememberedInstall? ReadPendingInstall(string directory)
+    {
+        var path = PendingInstallPath(directory);
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            var sha = NormalizeSha(doc.RootElement.TryGetProperty("sha", out var shaEl) ? shaEl.GetString() : "");
+            if (sha.Length == 0) return null;
+            long id = 0;
+            if (doc.RootElement.TryGetProperty("asset_id", out var idEl) && idEl.TryGetInt64(out var parsed))
+                id = parsed;
+            return new RememberedInstall(sha, id);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static void ClearPendingInstall(string directory)
+    {
+        try { File.Delete(PendingInstallPath(directory)); }
+        catch { }
+    }
+
+    public static RememberedInstall? ConfirmPendingInstall(string currentSha, RememberedInstall? pending)
+    {
+        if (pending is null) return null;
+        var current = NormalizeSha(currentSha);
+        if (current.Length == 0) return null;
+        return SameSha(current, pending.Value.Sha) ? pending : null;
+    }
+
+    public static bool PendingInstallFailed(string currentSha, RememberedInstall? pending)
+    {
+        if (pending is null) return false;
+        var current = NormalizeSha(currentSha);
+        if (current.Length == 0) return false;
+        return !SameSha(current, pending.Value.Sha);
+    }
 
     static UpdateDecision Available(AppRelease release, AppReleaseAsset asset) =>
         new()

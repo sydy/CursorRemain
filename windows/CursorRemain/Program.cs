@@ -172,6 +172,7 @@ sealed partial class TrayContext : ApplicationContext
     public TrayContext()
     {
         _config = ConfigStore.Load();
+        AppUpdater.ConfirmPending(_config);
         if (_config.SyncEnabled)
             _ = TryReconcileAsync(save: true);
         Autostart.Apply(_config.AutostartEnabled);

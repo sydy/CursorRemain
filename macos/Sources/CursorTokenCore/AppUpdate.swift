@@ -508,10 +508,65 @@ public enum AppUpdate {
         }
     }
 
-    /// Persist the installed SHA only after the replace helper actually started.
-    /// A failed launch must keep the previous SHA so the same release can be retried.
+    /// Write a pending stamp only after the replace helper actually started.
+    /// The installed SHA is recorded later, when the new process confirms its bundle hash.
     public static func rememberedInstallAfterHelper(sha: String, assetId: Int64, helperStarted: Bool) -> RememberedInstall? {
         helperStarted ? RememberedInstall(sha: normalizeSha(sha), assetId: assetId) : nil
+    }
+
+    public static let pendingInstallFileName = "update-pending.json"
+
+    public static func pendingInstallPath(directory: URL) -> URL {
+        directory.appendingPathComponent(pendingInstallFileName)
+    }
+
+    public static func writePendingInstall(directory: URL, sha: String, assetId: Int64) {
+        let obj: [String: Any] = ["sha": normalizeSha(sha), "asset_id": assetId]
+        guard let data = try? JSONSerialization.data(withJSONObject: obj, options: []) else { return }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? data.write(to: pendingInstallPath(directory: directory), options: .atomic)
+    }
+
+    public static func readPendingInstall(directory: URL) -> RememberedInstall? {
+        guard let data = try? Data(contentsOf: pendingInstallPath(directory: directory)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let sha = normalizeSha(stringValue(obj["sha"]))
+        if sha.isEmpty { return nil }
+        return RememberedInstall(sha: sha, assetId: int64Value(obj["asset_id"]))
+    }
+
+    public static func clearPendingInstall(directory: URL) {
+        try? FileManager.default.removeItem(at: pendingInstallPath(directory: directory))
+    }
+
+    public static func confirmPendingInstall(currentSha: String, pending: RememberedInstall?) -> RememberedInstall? {
+        guard let pending else { return nil }
+        let current = normalizeSha(currentSha)
+        if current.isEmpty { return nil }
+        return sameSha(current, pending.sha) ? pending : nil
+    }
+
+    public static func pendingInstallFailed(currentSha: String, pending: RememberedInstall?) -> Bool {
+        guard let pending else { return false }
+        let current = normalizeSha(currentSha)
+        if current.isEmpty { return false }
+        return !sameSha(current, pending.sha)
+    }
+
+    public static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    public static func detachedHelperLaunchCommand(
+        script: String,
+        pid: String,
+        source: String,
+        destination: String,
+        expectedSha: String,
+        log: String
+    ) -> String {
+        "/usr/bin/nohup \(shellQuote(script)) \(pid) \(shellQuote(source)) \(shellQuote(destination)) \(shellQuote(expectedSha)) >>\(shellQuote(log)) 2>&1 &"
     }
 
     public static func shortSha(_ sha: String?) -> String {
