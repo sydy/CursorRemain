@@ -171,6 +171,21 @@ public class CloudSyncTests
     }
 
     [Fact]
+    public void KeepLiveActiveAccountUsesExplicitLiveActive()
+    {
+        var a = new Account { Id = "user_01A", Token = "tok-a", Label = "A" };
+        var b = new Account { Id = "user_01B", Token = "tok-b", Label = "B" };
+        var cfg = new AppConfig { Accounts = [a, b], ActiveAccountId = "user_01A" };
+        var snap = AccountSync.SnapshotFromConfig(cfg);
+        snap.ActiveAccountId = "user_01A";
+        AccountSync.ApplySnapshotToConfig(cfg, snap);
+        Assert.False(AccountSync.KeepLiveActiveAccount(cfg, "user_01A"));
+        Assert.True(AccountSync.KeepLiveActiveAccount(cfg, "user_01A", "user_01B"));
+        Assert.Equal("user_01B", cfg.ActiveAccountId);
+        Assert.Equal("tok-b", cfg.SessionToken);
+    }
+
+    [Fact]
     public async Task ReconcileKeepsSessionActiveAfterRemoteMerge()
     {
         var a = new Account { Id = "user_01A", Token = "tok-a-" + new string('x', 40), Label = "A" };

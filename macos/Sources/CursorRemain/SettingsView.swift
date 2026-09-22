@@ -722,6 +722,15 @@ struct SettingsRootView: View {
         store.applyConfig(cfg, refresh: false)
     }
 
+    func applySyncedConfig(_ cfg: inout AppConfig, startedActive: String, refresh: Bool) {
+        let kept = AccountSync.keepLiveActiveAccount(
+            &cfg,
+            startedActive: startedActive,
+            liveActive: store.config.activeAccountId
+        )
+        store.applyConfig(cfg, refresh: refresh || kept)
+    }
+
     func authCloud(register: Bool) {
         let email = cloudEmail.trimmingCharacters(in: .whitespaces)
         let password = cloudPassword.trimmingCharacters(in: .whitespaces)
@@ -731,6 +740,7 @@ struct SettingsRootView: View {
         }
         syncStatus = register ? "正在注册…" : "正在登录…"
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = register
@@ -740,7 +750,7 @@ struct SettingsRootView: View {
                 DispatchQueue.main.async { syncStatus = "正在从云端导入账号和用量…" }
                 let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
-                    store.applyConfig(cfg, refresh: status.changed)
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
                     syncStatus = status.message
                     hint = status.message
                     cloudPassword = ""
@@ -767,11 +777,12 @@ struct SettingsRootView: View {
         }
         syncStatus = "正在修改密码…"
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try CloudSync.changePassword(&cfg, oldPassword: old, newPassword: next)
                 DispatchQueue.main.async {
-                    store.applyConfig(cfg, refresh: false)
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
                     oldCloudPassword = ""
                     newCloudPassword = ""
                     confirmCloudPassword = ""
@@ -794,11 +805,12 @@ struct SettingsRootView: View {
         }
         syncStatus = "正在注销…"
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 try CloudSync.deleteAccount(&cfg, password: password)
                 DispatchQueue.main.async {
-                    store.applyConfig(cfg, refresh: false)
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
                     deletePassword = ""
                     showDeleteConfirm = false
                     syncStatus = "云端账号已删除"
@@ -813,10 +825,11 @@ struct SettingsRootView: View {
 
     func logoutCloud() {
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             CloudSync.logout(&cfg)
             DispatchQueue.main.async {
-                store.applyConfig(cfg, refresh: false)
+                applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
                 syncStatus = "已退出登录"
             }
         }
@@ -825,10 +838,11 @@ struct SettingsRootView: View {
     func syncNow() {
         syncStatus = "正在同步…"
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             let status = AccountSync.reconcile(&cfg)
             DispatchQueue.main.async {
-                store.applyConfig(cfg, refresh: status.changed)
+                applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
                 syncStatus = status.message
                 hint = status.message
             }
@@ -845,9 +859,10 @@ struct SettingsRootView: View {
         if panel.runModal() != .OK { return }
         guard let url = panel.url else { return }
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         do {
             let dest = try AccountSync.exportToFile(&cfg, path: url.path, passphrase: exportPassphrase())
-            store.applyConfig(cfg, refresh: false)
+            applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
             syncStatus = "已导出到 " + dest
         } catch {
             syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
@@ -863,9 +878,10 @@ struct SettingsRootView: View {
         if panel.runModal() != .OK { return }
         guard let url = panel.url else { return }
         var cfg = store.config
+        let startedActive = cfg.activeAccountId
         do {
             try AccountSync.importFromFile(&cfg, path: url.path, passphrase: exportPassphrase())
-            store.applyConfig(cfg, refresh: true)
+            applySyncedConfig(&cfg, startedActive: startedActive, refresh: true)
             syncStatus = "已从文件合并账号"
             hint = "已导入"
         } catch {
