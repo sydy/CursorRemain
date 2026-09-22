@@ -111,6 +111,13 @@ sealed class CompareForm : Form
         LoadCache();
     }
 
+    public void RefreshTheme()
+    {
+        UiChrome.Apply(this);
+        UiChrome.StyleGrid(_grid);
+        Render();
+    }
+
     static (string Name, string Header, float Fill, DataGridViewContentAlignment Align)[] Columns() =>
     [
         ("name", "账号 / 分类", 22, DataGridViewContentAlignment.MiddleLeft),
@@ -251,7 +258,7 @@ sealed class CompareForm : Form
                     Unit(row.CnyPerRequest)));
                 StyleRow(_grid.Rows[accIdx], RowKind.Account);
                 if (best is { } bestVal && row.CnyPerMillion is { } perM && UsageEvents.CompareBestEligible(row) && Math.Abs(perM - bestVal) < 1e-9)
-                    _grid.Rows[accIdx].Cells["perM"].Style.ForeColor = Color.SeaGreen;
+                    _grid.Rows[accIdx].Cells["perM"].Style.ForeColor = UiChrome.GoodText();
                 AddCategory("First-party", row.FirstParty);
                 AddCategory("API", row.Api);
                 AddCategory("Grok Bot", row.GrokBot);

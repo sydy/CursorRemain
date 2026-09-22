@@ -634,6 +634,22 @@ public static class AccountSync
         return before != Before() || beforeSettings != SettingsIdentity(SnapshotSettings(cfg)) || usageChanged;
     }
 
+    /// <summary>
+    /// Restore the account the user picked while a merge was applying the snapshot.
+    /// No-op when they did not switch, or when that account is gone.
+    /// </summary>
+    public static bool KeepLiveActiveAccount(AppConfig cfg, string startedActive)
+    {
+        var live = (cfg.SessionActiveAccountId ?? "").Trim();
+        startedActive = (startedActive ?? "").Trim();
+        if (live.Length == 0 || live == startedActive) return false;
+        if (!cfg.Accounts.Any(a => a.Id == live)) return false;
+        if (cfg.ActiveAccountId == live) return false;
+        cfg.ActiveAccountId = live;
+        cfg.SyncLegacyFields();
+        return true;
+    }
+
     static void ApplyUsageFields(Account account, SyncAccount ident)
     {
         if (!HasUsageFields(ident)) return;

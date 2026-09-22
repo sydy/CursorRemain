@@ -219,16 +219,24 @@ public sealed class AppConfig
         {
             if (ActiveAccountId != accountId) AccountSync.TouchActiveAccount(this);
             ActiveAccountId = accountId;
+            SessionActiveAccountId = accountId;
         }
         SyncLegacyFields();
         return (existing, created);
     }
+
+    /// <summary>
+    /// Last account the user picked this session. Cloud merge must not revert a
+    /// switch that happened while reconcile was in flight.
+    /// </summary>
+    public string SessionActiveAccountId { get; set; } = "";
 
     public bool SetActiveAccount(string id)
     {
         if (!Accounts.Any(a => a.Id == id)) return false;
         if (ActiveAccountId != id) AccountSync.TouchActiveAccount(this);
         ActiveAccountId = id;
+        SessionActiveAccountId = id;
         SyncLegacyFields();
         return true;
     }
@@ -271,6 +279,7 @@ public sealed class AppConfig
         if (ActiveAccountId == id)
         {
             ActiveAccountId = Accounts.FirstOrDefault()?.Id ?? "";
+            SessionActiveAccountId = ActiveAccountId;
             AccountSync.TouchActiveAccount(this);
         }
         AccountSync.RememberDeleted(this, id);

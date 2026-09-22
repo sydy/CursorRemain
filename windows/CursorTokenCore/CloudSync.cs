@@ -145,6 +145,7 @@ public static class CloudSync
         AccountSync.EnsureDeviceId(cfg);
         var stamp = AccountSync.NowIso(now);
         var passphrase = cfg.SyncSecret;
+        var startedActive = cfg.ActiveAccountId;
         var local = AccountSync.SnapshotFromConfig(cfg);
         local.DeviceId = cfg.SyncDeviceId;
         try
@@ -167,6 +168,8 @@ public static class CloudSync
                 else cfg.CloudRevision = revision;
             }
             else cfg.CloudRevision = revision;
+            if (AccountSync.KeepLiveActiveAccount(cfg, startedActive))
+                changed = true;
             cfg.SyncLastAt = stamp;
             status.Ok = true;
             status.Changed = changed;
