@@ -331,7 +331,7 @@ struct SettingsRootView: View {
                 Task { await store.checkForUpdate(manual: true) }
             }
             .disabled(store.updateBusy)
-            Text(store.updateStatus.isEmpty ? "对照 GitHub 正式版（v*）。打包版会下载替换后重启；开发运行则打开下载页。若弹出钥匙串授权，选一次「始终允许」即可，之后更新不再要登录密码。" : store.updateStatus)
+            Text(store.updateStatus.isEmpty ? "对照 GitHub 正式版（v*）。打包版会下载替换后重启；开发运行则打开下载页。更新后若再要钥匙串密码，允许一次即可：密钥会写到本机配置目录，之后不再弹。" : store.updateStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
