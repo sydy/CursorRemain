@@ -176,15 +176,15 @@ sealed partial class TrayContext : ApplicationContext
     {
         _config = ConfigStore.Load();
         AppUpdater.ConfirmPending(_config);
+        _menu = new ContextMenuStrip();
+        _dashboardItem = new ToolStripMenuItem();
+        _switcher = new ToolStripMenuItem("切换账号");
         ApplyTheme();
         if (_config.SyncEnabled)
             _ = TryReconcileAsync(save: true);
         Autostart.Apply(_config.AutostartEnabled);
         _sync = new HiddenSyncForm();
         _ = _sync.Handle;
-        _menu = new ContextMenuStrip();
-        _dashboardItem = new ToolStripMenuItem();
-        _switcher = new ToolStripMenuItem("切换账号");
         BuildMenu();
         _icon = new NotifyIcon
         {
@@ -247,6 +247,7 @@ sealed partial class TrayContext : ApplicationContext
         _menu.Items.Add("退出", null, (_, _) => Exit());
         _menu.Opening -= MenuOpening;
         _menu.Opening += MenuOpening;
+        UiChrome.StyleMenu(_menu);
         RefreshAccountMenu();
     }
 
@@ -492,9 +493,10 @@ sealed partial class TrayContext : ApplicationContext
         NativeTheme.PreferAppDarkMode();
         void Paint()
         {
-            if (_settings is { IsDisposed: false }) UiChrome.Apply(_settings);
+            UiChrome.StyleMenu(_menu);
+            if (_settings is { IsDisposed: false }) _settings.RefreshChrome();
             if (_report is { IsDisposed: false }) UiChrome.Apply(_report);
-            if (_compare is { IsDisposed: false }) UiChrome.Apply(_compare);
+            if (_compare is { IsDisposed: false }) _compare.RefreshTheme();
             _flyout?.RefreshChrome();
         }
         if (_sync is { IsDisposed: false, InvokeRequired: true }) OnUi(Paint);

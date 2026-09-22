@@ -198,7 +198,11 @@ static class UiChrome
         foreach (var item in items)
             menu.Items.Add(item.Title, null, item.Handler);
         StyleMenu(menu);
-        btn.Click += (_, _) => menu.Show(btn, new Point(0, btn.Height));
+        btn.Click += (_, _) =>
+        {
+            StyleMenu(menu);
+            menu.Show(btn, new Point(0, btn.Height));
+        };
         return btn;
     }
 
@@ -477,6 +481,7 @@ static class UiChrome
     public static Color HeaderFill() => ColorOf(Tone.Header);
     public static Color SecondaryText() => ColorOf(Tone.Secondary);
     public static Color SelectionFill() => ColorOf(Tone.Selection);
+    public static Color GoodText() => ColorOf(Tone.Good);
 
     static void StyleButton(Button btn, UiButtonKind kind)
     {

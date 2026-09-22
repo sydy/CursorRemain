@@ -40,7 +40,8 @@ public static class FormTone
         Rgb Danger,
         Rgb DangerFill,
         Rgb Button,
-        Rgb ButtonHover);
+        Rgb ButtonHover,
+        Rgb Good);
 
     public static Palette Light { get; } = new(
         Window: new(246, 246, 248),
@@ -57,7 +58,8 @@ public static class FormTone
         Danger: new(192, 57, 43),
         DangerFill: new(253, 236, 234),
         Button: new(236, 236, 238),
-        ButtonHover: new(226, 226, 228));
+        ButtonHover: new(226, 226, 228),
+        Good: new(36, 138, 61));
 
     public static Palette Dark { get; } = new(
         Window: new(36, 36, 38),
@@ -74,7 +76,8 @@ public static class FormTone
         Danger: new(255, 138, 128),
         DangerFill: new(72, 36, 34),
         Button: new(54, 54, 58),
-        ButtonHover: new(66, 66, 70));
+        ButtonHover: new(66, 66, 70),
+        Good: new(72, 198, 128));
 
     public static Palette For(bool light) => light ? Light : Dark;
 }

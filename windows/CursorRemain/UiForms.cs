@@ -152,7 +152,11 @@ sealed class SettingsForm : Form
         UiChrome.StyleMenu(importMenu);
         importMenu.Items.Add("Firefox 登录", null, (_, _) => ff.PerformClick());
         importMenu.Items.Add("仅导入 Cookie", null, (_, _) => cookie.PerformClick());
-        _importMore.Click += (_, _) => importMenu.Show(_importMore, new Point(0, _importMore.Height));
+        _importMore.Click += (_, _) =>
+        {
+            UiChrome.StyleMenu(importMenu);
+            importMenu.Show(_importMore, new Point(0, _importMore.Height));
+        };
         var cloudMenu = new ContextMenuStrip();
         UiChrome.StyleMenu(cloudMenu);
         cloudMenu.Items.Add("退出登录", null, (_, _) => _cloudLogout.PerformClick());
@@ -161,7 +165,11 @@ sealed class SettingsForm : Form
         cloudMenu.Items.Add(new ToolStripSeparator());
         cloudMenu.Items.Add("导出…", null, (_, _) => _syncExport.PerformClick());
         cloudMenu.Items.Add("导入…", null, (_, _) => _syncImport.PerformClick());
-        _cloudMore.Click += (_, _) => cloudMenu.Show(_cloudMore, new Point(0, _cloudMore.Height));
+        _cloudMore.Click += (_, _) =>
+        {
+            UiChrome.StyleMenu(cloudMenu);
+            cloudMenu.Show(_cloudMore, new Point(0, _cloudMore.Height));
+        };
         _tokenFrame = UiChrome.Frame(_token, 90);
         _tokenFrame.Padding = new Padding(8, 6, 8, 6);
         _tokenFrame.MinimumSize = new Size(0, 88);
@@ -784,6 +792,13 @@ sealed class SettingsForm : Form
         browse.Margin = new Padding(8, 0, 0, 0);
         row.Controls.Add(browse, 1, 0);
         return row;
+    }
+
+    public void RefreshChrome()
+    {
+        UiChrome.Apply(this);
+        if (_addDialog is { IsDisposed: false })
+            UiChrome.Apply(_addDialog);
     }
 
     public void FocusToken()

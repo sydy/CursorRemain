@@ -135,6 +135,8 @@ public class NativeClientReliabilityTests
         Assert.Equal("未命名账号", StatusText.FormatAccountMenuTitle("", null));
         Assert.Equal(["aaa.bbb.ccc", "ddd.eee.fff"], CursorAccountPaste.TokenValues("aaa.bbb.ccc\nddd.eee.fff"));
         Assert.Empty(CursorAccountPaste.TokenValues("name@example.com:secret"));
+        Assert.NotEqual(FormTone.Light.Good, FormTone.Dark.Good);
+        Assert.NotEqual(FormTone.Light.Text, FormTone.Light.Good);
     }
 
     [Fact]

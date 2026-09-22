@@ -128,6 +128,84 @@ public class CloudSyncTests
         Assert.Equal("e799", kept[^1].Id);
     }
 
+    [Fact]
+    public void KeepLiveActiveAccountRestoresSwitchDuringMerge()
+    {
+        var a = new Account { Id = "user_01A", Token = "tok-a", Label = "A" };
+        var b = new Account { Id = "user_01B", Token = "tok-b", Label = "B" };
+        var cfg = new AppConfig { Accounts = [a, b], ActiveAccountId = "user_01A" };
+        cfg.SetActiveAccount("user_01B");
+        var snap = AccountSync.SnapshotFromConfig(cfg);
+        snap.ActiveAccountId = "user_01A";
+        AccountSync.ApplySnapshotToConfig(cfg, snap);
+        Assert.Equal("user_01A", cfg.ActiveAccountId);
+        Assert.True(AccountSync.KeepLiveActiveAccount(cfg, "user_01A"));
+        Assert.Equal("user_01B", cfg.ActiveAccountId);
+        Assert.Equal("tok-b", cfg.SessionToken);
+    }
+
+    [Fact]
+    public void KeepLiveActiveAccountLeavesMergedActiveWhenUserDidNotSwitch()
+    {
+        var a = new Account { Id = "user_01A", Token = "tok-a", Label = "A" };
+        var b = new Account { Id = "user_01B", Token = "tok-b", Label = "B" };
+        var cfg = new AppConfig { Accounts = [a, b], ActiveAccountId = "user_01A" };
+        var snap = AccountSync.SnapshotFromConfig(cfg);
+        snap.ActiveAccountId = "user_01B";
+        AccountSync.ApplySnapshotToConfig(cfg, snap);
+        Assert.False(AccountSync.KeepLiveActiveAccount(cfg, "user_01A"));
+        Assert.Equal("user_01B", cfg.ActiveAccountId);
+        cfg.SessionActiveAccountId = "user_01A";
+        var dir = Path.Combine(Path.GetTempPath(), "ctt-session-active-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            ConfigStore.Save(cfg, dir);
+            Assert.DoesNotContain("session_active", File.ReadAllText(AppPaths.ConfigPath(dir)), StringComparison.OrdinalIgnoreCase);
+            Assert.Equal("", ConfigStore.Load(dir).SessionActiveAccountId);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task ReconcileKeepsSessionActiveAfterRemoteMerge()
+    {
+        var a = new Account { Id = "user_01A", Token = "tok-a-" + new string('x', 40), Label = "A" };
+        var b = new Account { Id = "user_01B", Token = "tok-b-" + new string('x', 40), Label = "B" };
+        var cfg = LoggedIn();
+        cfg.Accounts = [a, b];
+        cfg.ActiveAccountId = "user_01A";
+        cfg.SessionActiveAccountId = "user_01B";
+        var remote = AccountSync.SnapshotFromConfig(cfg);
+        remote.ActiveAccountId = "user_01A";
+        remote.ActiveAccountUpdatedAt = "2026-09-22T12:00:00.000Z";
+        var envelope = AccountSync.EncryptEnvelope(remote, cfg.SyncSecret);
+        var body = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["revision"] = 2,
+            ["envelope"] = envelope,
+        });
+        var handler = new ScriptedHandler
+        {
+            Steps = [(HttpMethod.Get, "/v1/sync", 200, body)],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg, write: false);
+            Assert.True(status.Ok, status.Message);
+            Assert.Equal("user_01B", cfg.ActiveAccountId);
+        }
+        finally
+        {
+            CloudSync.TestHttp = null;
+        }
+    }
+
     static AppConfig LoggedIn() => new()
     {
         SyncEnabled = true,
