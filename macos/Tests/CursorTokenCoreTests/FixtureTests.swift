@@ -1180,6 +1180,19 @@ final class InstanceLockTests: XCTestCase {
     }
 }
 
+final class InstanceIpcTests: XCTestCase {
+    func testLaunchActionPrefersReportThenSettings() {
+        XCTAssertEqual(InstanceIpc.launchAction(from: ["CursorRemain", "--report"]), .report)
+        XCTAssertEqual(InstanceIpc.launchAction(from: ["CursorRemain", "--settings"]), .settings)
+        XCTAssertEqual(InstanceIpc.launchAction(from: ["--Report", "--settings"]), .report)
+        XCTAssertEqual(InstanceIpc.launchAction(from: ["--SETTINGS"]), .settings)
+        XCTAssertNil(InstanceIpc.launchAction(from: ["CursorRemain"]))
+        XCTAssertNil(InstanceIpc.launchAction(from: ["--compare"]))
+        XCTAssertEqual(InstanceIpc.notificationName, "cn.harker.CursorRemain.open")
+        XCTAssertEqual(InstanceIpc.actionKey, "action")
+    }
+}
+
 final class CursorAuthTests: XCTestCase {
     func testJwtTypeDistinguishesSessionAndWeb() throws {
         let session = try jwt(["sub": "auth0|user_01SESS", "type": "session"])

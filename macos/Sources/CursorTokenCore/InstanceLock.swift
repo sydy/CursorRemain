@@ -66,11 +66,10 @@ public enum InstanceLock {
     }
 
     public static func release(directory: URL? = nil) {
-        if let fd = acquiredFD {
-            flock(fd, LOCK_UN)
-            close(fd)
-            acquiredFD = nil
-        }
+        guard let fd = acquiredFD else { return }
+        flock(fd, LOCK_UN)
+        close(fd)
+        acquiredFD = nil
         let dir = directory ?? AppPaths.configDirectory()
         try? FileManager.default.removeItem(at: dir.appendingPathComponent("instance.pid"))
     }
