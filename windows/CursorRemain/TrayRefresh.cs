@@ -71,7 +71,7 @@ sealed partial class TrayContext
                     if (o.Snap is { } snap)
                     {
                         AccountValidity.ApplyEndOverride(snap, acc);
-                        live.ApplySnapshot(o.Id, snap.MembershipType, snap.RemainingPercent, "", o.Stamp, snap.BillingCycleStart, snap.BillingCycleEnd);
+                        live.ApplySnapshot(o.Id, snap.MembershipType, snap.RemainingPercent, "", o.Stamp, snap.BillingCycleStart, AccountValidity.StoredCycleEnd(snap));
                         acc.AuthErrorNotified = false;
                         foreach (var n in AlertLogic.Evaluate(live, acc, snap))
                             notices.Add((n.Title, n.Body, false));

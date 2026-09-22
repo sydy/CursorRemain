@@ -78,6 +78,7 @@ public struct UsageSnapshot: Equatable {
     public var limitType: String
     public var isUnlimited: Bool
     public var billingCycleEndOverridden: Bool
+    public var apiBillingCycleEnd: String?
     public var grokBotPercentUsed: Double?
     public var grokBotRemainingPercent: Double?
     public var grokBotPeriodStart: String?
@@ -110,6 +111,7 @@ public struct UsageSnapshot: Equatable {
         limitType: String = "",
         isUnlimited: Bool = false,
         billingCycleEndOverridden: Bool = false,
+        apiBillingCycleEnd: String? = nil,
         grokBotPercentUsed: Double? = nil,
         grokBotRemainingPercent: Double? = nil,
         grokBotPeriodStart: String? = nil,
@@ -141,6 +143,7 @@ public struct UsageSnapshot: Equatable {
         self.limitType = limitType
         self.isUnlimited = isUnlimited
         self.billingCycleEndOverridden = billingCycleEndOverridden
+        self.apiBillingCycleEnd = apiBillingCycleEnd
         self.grokBotPercentUsed = grokBotPercentUsed
         self.grokBotRemainingPercent = grokBotRemainingPercent
         self.grokBotPeriodStart = grokBotPeriodStart

@@ -36,9 +36,19 @@ public enum AccountValidity {
 
     public static func applyEndOverride(_ snap: inout UsageSnapshot, account: Account?, now: Date = Date()) {
         guard let end = accountEndIso(account) else { return }
+        if !snap.billingCycleEndOverridden {
+            snap.apiBillingCycleEnd = snap.billingCycleEnd
+        }
         snap.billingCycleEnd = end
         snap.daysRemaining = UsageParser.daysUntil(end, now: now)
         snap.billingCycleEndOverridden = true
+    }
+
+    public static func storedCycleEnd(_ snap: UsageSnapshot) -> String? {
+        if snap.billingCycleEndOverridden {
+            return snap.apiBillingCycleEnd ?? ""
+        }
+        return snap.billingCycleEnd
     }
 
     static func clampInt(_ raw: Any?, lo: Int, hi: Int) -> Int {

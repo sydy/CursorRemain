@@ -25,6 +25,37 @@ from cursor_api import (
 USAGE_EVENTS_PAGE_SIZE = 100
 USAGE_EVENTS_MAX_PAGES = 50
 
+
+def resolve_usage_events_window(
+    *,
+    billing_cycle_start: str | None = None,
+    billing_cycle_end: str | None = None,
+    end_overridden: bool = False,
+    api_billing_cycle_end: str | None = None,
+    now_ms: int,
+    watermark_ms: int = 0,
+) -> dict[str, int | None]:
+    """明细查询用 Cursor 账单周期。展示用的临时到期日不能把 endDate 截到已有明细之前。"""
+    now = int(now_ms)
+    cycle_start = _iso_to_ms(billing_cycle_start)
+    if cycle_start is None:
+        cycle_start = now - 30 * 86_400 * 1000
+    end_iso = api_billing_cycle_end if end_overridden else billing_cycle_end
+    cycle_end = _iso_to_ms(end_iso)
+    if cycle_end is None:
+        cycle_end = now
+    if cycle_end > now:
+        cycle_end = now
+    start_ms = int(cycle_start)
+    stop_at: int | None = None
+    watermark = int(watermark_ms or 0)
+    if watermark > 0:
+        start_ms = max(start_ms, watermark - 60_000)
+        stop_at = watermark
+    if cycle_end < start_ms:
+        cycle_end = now
+    return {"start_ms": start_ms, "end_ms": int(cycle_end), "stop_at_ms": stop_at}
+
 KIND_INCLUDED = "included"
 KIND_FREE = "free"
 KIND_ON_DEMAND = "on_demand"

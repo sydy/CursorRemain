@@ -348,6 +348,22 @@ public class FixtureTests
             Assert.Equal(row.GetProperty("date").GetString(), UsageEvents.EventDate(ts));
             Assert.Equal(row.GetProperty("hour").GetString(), UsageEvents.EventHour(ts));
         }
+        foreach (var row in root.GetProperty("sync_window").EnumerateArray())
+        {
+            var window = UsageEvents.ResolveSyncWindow(
+                NullStr(row, "billing_cycle_start"),
+                NullStr(row, "billing_cycle_end"),
+                row.TryGetProperty("end_overridden", out var over) && over.ValueKind == JsonValueKind.True,
+                NullStr(row, "api_billing_cycle_end"),
+                row.GetProperty("now_ms").GetInt64(),
+                row.TryGetProperty("watermark_ms", out var wm) && wm.ValueKind == JsonValueKind.Number ? wm.GetInt64() : 0L);
+            Assert.Equal(row.GetProperty("start_ms").GetInt64(), window.StartMs);
+            Assert.Equal(row.GetProperty("end_ms").GetInt64(), window.EndMs);
+            long? stop = row.TryGetProperty("stop_at_ms", out var stopEl) && stopEl.ValueKind == JsonValueKind.Number
+                ? stopEl.GetInt64()
+                : null;
+            Assert.Equal(stop, window.StopAtMs);
+        }
     }
 
     [Fact]
@@ -1507,6 +1523,11 @@ public class FixtureTests
             Assert.Equal(row.GetProperty("expected_end").GetString(), snap.BillingCycleEnd);
             Assert.Equal(row.GetProperty("expected_days_remaining").GetInt32(), snap.DaysRemaining);
             Assert.Equal(row.GetProperty("overridden").GetBoolean(), snap.BillingCycleEndOverridden);
+            Assert.Equal(row.GetProperty("api_end").GetString(), AccountValidity.StoredCycleEnd(snap));
+            if (row.GetProperty("overridden").GetBoolean())
+                Assert.Equal(row.GetProperty("api_end").GetString(), snap.ApiBillingCycleEnd);
+            else
+                Assert.Null(snap.ApiBillingCycleEnd);
         }
         var tmp = new Account { Label = "租号", AccountKind = AccountValidity.Temporary };
         Assert.Contains("临时", tmp.Caption(false));

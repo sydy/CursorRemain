@@ -393,6 +393,18 @@ public struct AccountCompareReport: Equatable, Sendable {
     }
 }
 
+public struct UsageEventsWindow: Equatable, Sendable {
+    public var startMs: Int64
+    public var endMs: Int64
+    public var stopAtMs: Int64?
+
+    public init(startMs: Int64, endMs: Int64, stopAtMs: Int64? = nil) {
+        self.startMs = startMs
+        self.endMs = endMs
+        self.stopAtMs = stopAtMs
+    }
+}
+
 public struct UsageEventsSyncResult: Sendable {
     public var events: [UsageEvent]
     public var fetched: Int
@@ -1438,6 +1450,28 @@ public enum UsageEvents {
         try? text.write(to: path, atomically: true, encoding: .utf8)
     }
 
+    public static func resolveSyncWindow(
+        billingCycleStart: String?,
+        billingCycleEnd: String?,
+        endOverridden: Bool,
+        apiBillingCycleEnd: String?,
+        nowMs: Int64,
+        watermarkMs: Int64
+    ) -> UsageEventsWindow {
+        let cycleStart = Int64(UsageParser.isoToMs(billingCycleStart) ?? Int(nowMs - 30 * 86_400 * 1000))
+        let endIso = endOverridden ? apiBillingCycleEnd : billingCycleEnd
+        var cycleEnd = Int64(UsageParser.isoToMs(endIso) ?? Int(nowMs))
+        if cycleEnd > nowMs { cycleEnd = nowMs }
+        var startMs = cycleStart
+        var stopAt: Int64?
+        if watermarkMs > 0 {
+            startMs = max(cycleStart, watermarkMs - 60_000)
+            stopAt = watermarkMs
+        }
+        if cycleEnd < startMs { cycleEnd = nowMs }
+        return UsageEventsWindow(startMs: startMs, endMs: cycleEnd, stopAtMs: stopAt)
+    }
+
     public static func sync(
         client: CursorClient,
         token: String,
@@ -1449,16 +1483,18 @@ public enum UsageEvents {
     ) async throws -> UsageEventsSyncResult {
         let existing = load(accountId: accountId, teamScope: teamScope, directory: directory)
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        var cycleStart = Int64(UsageParser.isoToMs(usage?.billingCycleStart) ?? Int(nowMs - 30 * 86_400 * 1000))
-        var cycleEnd = Int64(UsageParser.isoToMs(usage?.billingCycleEnd) ?? Int(nowMs))
-        if cycleEnd > nowMs { cycleEnd = nowMs }
-        let watermark = existing.map(\.timestampMs).max() ?? 0
-        var startMs = cycleStart
-        var stopAt: Int64?
-        if watermark > 0 {
-            startMs = max(cycleStart, watermark - 60_000)
-            stopAt = watermark
-        }
+        let window = resolveSyncWindow(
+            billingCycleStart: usage?.billingCycleStart,
+            billingCycleEnd: usage?.billingCycleEnd,
+            endOverridden: usage?.billingCycleEndOverridden == true,
+            apiBillingCycleEnd: usage?.apiBillingCycleEnd,
+            nowMs: nowMs,
+            watermarkMs: existing.map(\.timestampMs).max() ?? 0
+        )
+        let cycleStart = Int64(UsageParser.isoToMs(usage?.billingCycleStart) ?? Int(nowMs - 30 * 86_400 * 1000))
+        let startMs = window.startMs
+        let cycleEnd = window.endMs
+        let stopAt = window.stopAtMs
         let rawTeam = usage.map { UsageParser.teamId(from: $0.raw) } ?? -1
         let teamId: Int? = rawTeam > 0 ? rawTeam : nil
         var userId: Int?

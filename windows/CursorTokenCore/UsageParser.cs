@@ -37,6 +37,8 @@ public sealed class UsageSnapshot
     public string LimitType { get; set; } = "";
     public bool IsUnlimited { get; set; }
     public bool BillingCycleEndOverridden { get; set; }
+    /// <summary>Cursor 返回的账单周期结束时间。临时账号展示用的到期日不会写进这里。</summary>
+    public string? ApiBillingCycleEnd { get; set; }
     public double? GrokBotPercentUsed { get; set; }
     public double? GrokBotRemainingPercent { get; set; }
     public string? GrokBotPeriodStart { get; set; }

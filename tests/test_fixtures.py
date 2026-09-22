@@ -131,6 +131,7 @@ class GoldenFixtureTests(unittest.TestCase):
             format_event_cost,
             format_event_time,
             parse_filtered_usage_events,
+            resolve_usage_events_window,
             usage_event_from_dict,
             usage_events_to_csv,
         )
@@ -289,6 +290,18 @@ class GoldenFixtureTests(unittest.TestCase):
             self.assertEqual(format_event_time(ts), row["time"])
             self.assertEqual(event_date(ts), row["date"])
             self.assertEqual(event_hour(ts), row["hour"])
+        for row in data["sync_window"]:
+            got = resolve_usage_events_window(
+                billing_cycle_start=row.get("billing_cycle_start"),
+                billing_cycle_end=row.get("billing_cycle_end"),
+                end_overridden=bool(row.get("end_overridden")),
+                api_billing_cycle_end=row.get("api_billing_cycle_end"),
+                now_ms=row["now_ms"],
+                watermark_ms=row.get("watermark_ms") or 0,
+            )
+            self.assertEqual(got["start_ms"], row["start_ms"], row["name"])
+            self.assertEqual(got["end_ms"], row["end_ms"], row["name"])
+            self.assertEqual(got["stop_at_ms"], row["stop_at_ms"], row["name"])
 
     def test_usage_chart_fixtures_match_python(self) -> None:
         import usage_report

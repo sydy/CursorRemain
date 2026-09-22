@@ -104,6 +104,7 @@ class UsageSnapshot:
     limit_type: str = ""
     is_unlimited: bool = False
     billing_cycle_end_overridden: bool = False
+    api_billing_cycle_end: str | None = None
     grok_bot_percent_used: float | None = None
     grok_bot_remaining_percent: float | None = None
     grok_bot_period_start: str | None = None

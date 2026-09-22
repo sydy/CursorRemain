@@ -155,7 +155,7 @@ func compareSyncOne(client: CursorClient, account: Account, directory: URL?, onP
             accountId: account.id,
             membership: snap.membershipType,
             start: snap.billingCycleStart,
-            end: snap.billingCycleEnd
+            end: AccountValidity.storedCycleEnd(snap)
         )
     } catch let err as CursorAPIError {
         AppLog.log("compare sync \(account.id): \(err.message)")

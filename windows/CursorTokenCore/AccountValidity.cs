@@ -41,10 +41,19 @@ public static class AccountValidity
     {
         var end = AccountEndIso(account);
         if (string.IsNullOrEmpty(end)) return;
+        if (!snap.BillingCycleEndOverridden)
+            snap.ApiBillingCycleEnd = snap.BillingCycleEnd;
         snap.BillingCycleEnd = end;
         snap.DaysRemaining = UsageParser.DaysUntil(end, now ?? DateTimeOffset.UtcNow);
         snap.BillingCycleEndOverridden = true;
     }
+
+    /// <summary>
+    /// 写回账号的是 Cursor 账单周期，不是临时账号的展示到期日。
+    /// 已被覆盖且接口没有结束时间时返回空字符串，用来清掉之前误存的到期日。
+    /// </summary>
+    public static string? StoredCycleEnd(UsageSnapshot snap) =>
+        snap.BillingCycleEndOverridden ? snap.ApiBillingCycleEnd ?? "" : snap.BillingCycleEnd;
 
     public static bool ValidityEquals(Account a, string kind, string startAt, int days, int hours) =>
         SanitizeKind(a.AccountKind) == SanitizeKind(kind)

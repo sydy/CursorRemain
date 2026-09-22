@@ -106,10 +106,19 @@ def apply_account_end_override(
     end = account_end_iso(account)
     if not end:
         return snapshot
+    if not snapshot.billing_cycle_end_overridden:
+        snapshot.api_billing_cycle_end = snapshot.billing_cycle_end
     snapshot.billing_cycle_end = end
     snapshot.days_remaining = days_until(end, now=now)
     snapshot.billing_cycle_end_overridden = True
     return snapshot
+
+
+def stored_billing_cycle_end(snapshot: UsageSnapshot) -> str | None:
+    """写回账号的是 Cursor 账单周期，不是临时账号的展示到期日。"""
+    if snapshot.billing_cycle_end_overridden:
+        return snapshot.api_billing_cycle_end or ""
+    return snapshot.billing_cycle_end
 
 
 def empty_account(*, token: str = "", account_id: str = "", label: str = "") -> dict[str, Any]:

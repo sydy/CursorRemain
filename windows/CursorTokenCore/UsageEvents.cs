@@ -196,6 +196,8 @@ public sealed class AccountCompareReport
 
 public sealed record UsageEventsSyncResult(List<UsageEvent> Events, int Fetched, int TotalAvailable, bool Truncated, string Note = "");
 
+public readonly record struct UsageEventsWindow(long StartMs, long EndMs, long? StopAtMs);
+
 public static partial class UsageEvents
 {
     public const string NoteTeamPersonal = "team_personal";
@@ -853,6 +855,33 @@ public static partial class UsageEvents
         File.WriteAllText(path, string.Join("\n", lines) + (events.Any() ? "\n" : ""));
     }
 
+    /// <summary>
+    /// 明细查询用 Cursor 的账单周期。临时账号的展示到期日不作为 endDate；
+    /// 若结束时间早于已有明细，则拉到 now，避免 startDate 大于 endDate 后一条都拉不回来。
+    /// </summary>
+    public static UsageEventsWindow ResolveSyncWindow(
+        string? billingCycleStart,
+        string? billingCycleEnd,
+        bool endOverridden,
+        string? apiBillingCycleEnd,
+        long nowMs,
+        long watermarkMs)
+    {
+        var cycleStart = UsageParser.IsoToMs(billingCycleStart) ?? nowMs - 30L * 86400 * 1000;
+        var endIso = endOverridden ? apiBillingCycleEnd : billingCycleEnd;
+        var cycleEnd = UsageParser.IsoToMs(endIso) ?? nowMs;
+        if (cycleEnd > nowMs) cycleEnd = nowMs;
+        var startMs = cycleStart;
+        long? stopAt = null;
+        if (watermarkMs > 0)
+        {
+            startMs = Math.Max(cycleStart, watermarkMs - 60_000);
+            stopAt = watermarkMs;
+        }
+        if (cycleEnd < startMs) cycleEnd = nowMs;
+        return new UsageEventsWindow(startMs, cycleEnd, stopAt);
+    }
+
     public static async Task<UsageEventsSyncResult> SyncAsync(
         CursorClient client,
         string token,
@@ -865,17 +894,17 @@ public static partial class UsageEvents
     {
         var existing = Load(accountId, teamScope, directory);
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var window = ResolveSyncWindow(
+            usage?.BillingCycleStart,
+            usage?.BillingCycleEnd,
+            usage?.BillingCycleEndOverridden == true,
+            usage?.ApiBillingCycleEnd,
+            nowMs,
+            existing.Count > 0 ? existing.Max(e => e.TimestampMs) : 0L);
         var cycleStart = UsageParser.IsoToMs(usage?.BillingCycleStart) ?? nowMs - 30L * 86400 * 1000;
-        var cycleEnd = UsageParser.IsoToMs(usage?.BillingCycleEnd) ?? nowMs;
-        if (cycleEnd > nowMs) cycleEnd = nowMs;
-        var watermark = existing.Count > 0 ? existing.Max(e => e.TimestampMs) : 0L;
-        var startMs = cycleStart;
-        long? stopAt = null;
-        if (watermark > 0)
-        {
-            startMs = Math.Max(cycleStart, watermark - 60_000);
-            stopAt = watermark;
-        }
+        var startMs = window.StartMs;
+        var cycleEnd = window.EndMs;
+        var stopAt = window.StopAtMs;
         var teamId = usage is null ? -1 : UsageParser.TeamId(usage.Raw);
         int? team = teamId > 0 ? teamId : null;
         int? userId = null;

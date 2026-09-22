@@ -195,7 +195,7 @@ sealed class CompareForm : Form
         {
             var snap = await _client.FetchUsageSummary(acc.Token, 20);
             AccountValidity.ApplyEndOverride(snap, acc);
-            _state().PersistCycle(acc.Id, snap.MembershipType, snap.BillingCycleStart, snap.BillingCycleEnd);
+            _state().PersistCycle(acc.Id, snap.MembershipType, snap.BillingCycleStart, AccountValidity.StoredCycleEnd(snap));
             await UsageEvents.SyncAsync(_client, acc.Token, acc.Id, snap, false, onPage: page =>
                 SetProgress(StatusText.FormatCompareSyncProgress(index, total, name, page)));
             return null;

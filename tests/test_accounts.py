@@ -467,6 +467,7 @@ class AccountValidityTests(unittest.TestCase):
         from accounts import (
             apply_account_end_override,
             compute_temp_end_iso,
+            stored_billing_cycle_end,
             sanitize_account_kind,
         )
         from cursor_api import UsageSnapshot
@@ -497,6 +498,11 @@ class AccountValidityTests(unittest.TestCase):
             self.assertEqual(snap.billing_cycle_end, row["expected_end"], row["name"])
             self.assertEqual(snap.days_remaining, row["expected_days_remaining"], row["name"])
             self.assertEqual(snap.billing_cycle_end_overridden, row["overridden"], row["name"])
+            self.assertEqual(stored_billing_cycle_end(snap), row["api_end"], row["name"])
+            if row["overridden"]:
+                self.assertEqual(snap.api_billing_cycle_end, row["api_end"], row["name"])
+            else:
+                self.assertIsNone(snap.api_billing_cycle_end, row["name"])
 
     def test_sanitize_and_caption_keep_validity(self) -> None:
         from accounts import format_account_caption, sanitize_account, update_account_validity, upsert_account

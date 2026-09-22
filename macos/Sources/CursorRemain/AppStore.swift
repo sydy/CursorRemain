@@ -364,7 +364,7 @@ final class AppStore: ObservableObject {
                         error: "",
                         updatedAt: o.stamp,
                         billingCycleStart: adjusted.billingCycleStart,
-                        billingCycleEnd: adjusted.billingCycleEnd
+                        billingCycleEnd: AccountValidity.storedCycleEnd(adjusted)
                     )
                     live.accounts[idx].authErrorNotified = false
                     var account = live.accounts[idx]

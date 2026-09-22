@@ -369,6 +369,19 @@ final class UsageParserFixtureTests: XCTestCase {
             XCTAssertEqual(UsageEvents.eventDate(ts), str(row["date"]))
             XCTAssertEqual(UsageEvents.eventHour(ts), str(row["hour"]))
         }
+        for row in root["sync_window"] as! [[String: Any]] {
+            let window = UsageEvents.resolveSyncWindow(
+                billingCycleStart: row["billing_cycle_start"] as? String,
+                billingCycleEnd: row["billing_cycle_end"] as? String,
+                endOverridden: bool(row["end_overridden"]),
+                apiBillingCycleEnd: row["api_billing_cycle_end"] as? String,
+                nowMs: number64(row["now_ms"]) ?? 0,
+                watermarkMs: number64(row["watermark_ms"]) ?? 0
+            )
+            XCTAssertEqual(window.startMs, number64(row["start_ms"]) ?? -1, str(row["name"]))
+            XCTAssertEqual(window.endMs, number64(row["end_ms"]) ?? -1, str(row["name"]))
+            XCTAssertEqual(window.stopAtMs, number64(row["stop_at_ms"]), str(row["name"]))
+        }
     }
 
     func testAccountCompareCases() throws {
@@ -855,6 +868,12 @@ final class UsageParserFixtureTests: XCTestCase {
             XCTAssertEqual(snap.billingCycleEnd, str(row["expected_end"]), str(row["name"]))
             XCTAssertEqual(snap.daysRemaining, int(row["expected_days_remaining"]), str(row["name"]))
             XCTAssertEqual(snap.billingCycleEndOverridden, bool(row["overridden"]), str(row["name"]))
+            XCTAssertEqual(AccountValidity.storedCycleEnd(snap), str(row["api_end"]), str(row["name"]))
+            if bool(row["overridden"]) {
+                XCTAssertEqual(snap.apiBillingCycleEnd, str(row["api_end"]), str(row["name"]))
+            } else {
+                XCTAssertNil(snap.apiBillingCycleEnd, str(row["name"]))
+            }
         }
         let tmp = Account(label: "租号", accountKind: AccountValidity.temporary)
         XCTAssertTrue(tmp.caption(isActive: false).contains("临时"))

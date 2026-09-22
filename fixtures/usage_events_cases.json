@@ -1293,5 +1293,79 @@
       "date": "2026-08-29",
       "hour": "2026-08-29 00:00"
     }
+  ],
+  "sync_window": [
+    {
+      "name": "open_cycle_clamps_to_now",
+      "billing_cycle_start": "2026-09-08T11:06:12.000Z",
+      "billing_cycle_end": "2026-10-08T11:06:12.000Z",
+      "end_overridden": false,
+      "api_billing_cycle_end": null,
+      "now_ms": 1790036280000,
+      "watermark_ms": 0,
+      "start_ms": 1788865572000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": null
+    },
+    {
+      "name": "incremental_inside_cycle",
+      "billing_cycle_start": "2026-09-08T11:06:12.000Z",
+      "billing_cycle_end": "2026-10-08T11:06:12.000Z",
+      "end_overridden": false,
+      "api_billing_cycle_end": null,
+      "now_ms": 1790036280000,
+      "watermark_ms": 1789971352000,
+      "start_ms": 1789971292000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": 1789971352000
+    },
+    {
+      "name": "temporary_override_uses_api_end",
+      "billing_cycle_start": "2026-09-08T11:06:12.000Z",
+      "billing_cycle_end": "2026-09-11T13:15:12.000Z",
+      "end_overridden": true,
+      "api_billing_cycle_end": "2026-10-08T11:06:12.000Z",
+      "now_ms": 1790036280000,
+      "watermark_ms": 1789971352000,
+      "start_ms": 1789971292000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": 1789971352000
+    },
+    {
+      "name": "override_without_api_end_pulls_through_now",
+      "billing_cycle_start": "2026-09-08T11:06:12.000Z",
+      "billing_cycle_end": "2026-09-11T13:15:12.000Z",
+      "end_overridden": true,
+      "api_billing_cycle_end": null,
+      "now_ms": 1790036280000,
+      "watermark_ms": 1789971352000,
+      "start_ms": 1789971292000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": 1789971352000
+    },
+    {
+      "name": "stale_stored_end_behind_watermark",
+      "billing_cycle_start": "2026-09-08T11:06:12.000Z",
+      "billing_cycle_end": "2026-09-11T13:15:12.000Z",
+      "end_overridden": false,
+      "api_billing_cycle_end": null,
+      "now_ms": 1790036280000,
+      "watermark_ms": 1789971352000,
+      "start_ms": 1789971292000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": 1789971352000
+    },
+    {
+      "name": "missing_cycle_uses_recent_month",
+      "billing_cycle_start": null,
+      "billing_cycle_end": null,
+      "end_overridden": false,
+      "api_billing_cycle_end": null,
+      "now_ms": 1790036280000,
+      "watermark_ms": 0,
+      "start_ms": 1787444280000,
+      "end_ms": 1790036280000,
+      "stop_at_ms": null
+    }
   ]
 }
