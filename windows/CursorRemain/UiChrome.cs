@@ -735,6 +735,69 @@ static class UiChrome
         return path;
     }
 
+    // GDI+ DrawRectangle with a 1px pen rasterizes the bottom and right edges one pixel heavy.
+    // Fill must stay on device pixels; AntiAlias (set for the chevron) smears a 1px rect across two rows.
+    internal static void DrawHairline(Graphics g, Color color, int width, int height)
+    {
+        if (width < 2 || height < 2) return;
+        var smooth = g.SmoothingMode;
+        var offset = g.PixelOffsetMode;
+        var unit = g.PageUnit;
+        g.SmoothingMode = SmoothingMode.None;
+        g.PixelOffsetMode = PixelOffsetMode.None;
+        g.PageUnit = GraphicsUnit.Pixel;
+        using var brush = new SolidBrush(color);
+        g.FillRectangle(brush, 0, 0, width, 1);
+        g.FillRectangle(brush, 0, height - 1, width, 1);
+        if (height > 2)
+        {
+            g.FillRectangle(brush, 0, 1, 1, height - 2);
+            g.FillRectangle(brush, width - 1, 1, 1, height - 2);
+        }
+        g.PageUnit = unit;
+        g.PixelOffsetMode = offset;
+        g.SmoothingMode = smooth;
+    }
+
+    internal static void DrawRoundBorder(Graphics g, Color stroke, Color outside, int width, int height, int radius)
+    {
+        if (width < 2 || height < 2) return;
+        var smooth = g.SmoothingMode;
+        var offset = g.PixelOffsetMode;
+        var unit = g.PageUnit;
+        Region? previous = null;
+        g.PageUnit = GraphicsUnit.Pixel;
+        g.PixelOffsetMode = PixelOffsetMode.None;
+        var bounds = new RectangleF(0.5f, 0.5f, Math.Max(1f, width - 1f), Math.Max(1f, height - 1f));
+        using var path = RoundRect(bounds, Math.Max(1, radius));
+        try
+        {
+            previous = g.Clip;
+            using var outsideRegion = new Region(new Rectangle(0, 0, width, height));
+            outsideRegion.Exclude(path);
+            g.SmoothingMode = SmoothingMode.None;
+            g.SetClip(outsideRegion, CombineMode.Replace);
+            using var fill = new SolidBrush(outside);
+            g.FillRectangle(fill, 0, 0, width, height);
+        }
+        finally
+        {
+            if (previous is not null)
+            {
+                g.Clip = previous;
+                previous.Dispose();
+            }
+            else g.ResetClip();
+        }
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        using var pen = new Pen(stroke, 1f);
+        g.DrawPath(pen, path);
+        g.PageUnit = unit;
+        g.PixelOffsetMode = offset;
+        g.SmoothingMode = smooth;
+    }
+
     static void ApplyTitleBar(Form form)
     {
         void Apply()
@@ -794,6 +857,12 @@ static class NativeTheme
 
     [DllImport("user32.dll")]
     static extern bool GetComboBoxInfo(IntPtr hwndCombo, ref ComboBoxInfo info);
+
+    [DllImport("user32.dll")]
+    static extern bool GetWindowRect(IntPtr hwnd, out Rect lpRect);
+
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr hwnd);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string? className, string? window);
@@ -926,6 +995,15 @@ static class NativeTheme
         var info = new ComboBoxInfo { cbSize = Marshal.SizeOf<ComboBoxInfo>() };
         if (!GetComboBoxInfo(hwnd, ref info) || info.hwndList == IntPtr.Zero) return;
         DarkExplorer(info.hwndList);
+    }
+
+    public static bool ScreenHitsComboList(IntPtr combo, Point screen)
+    {
+        var info = new ComboBoxInfo { cbSize = Marshal.SizeOf<ComboBoxInfo>() };
+        if (!GetComboBoxInfo(combo, ref info) || info.hwndList == IntPtr.Zero || !IsWindowVisible(info.hwndList))
+            return false;
+        if (!GetWindowRect(info.hwndList, out var rc)) return false;
+        return screen.X >= rc.Left && screen.X < rc.Right && screen.Y >= rc.Top && screen.Y < rc.Bottom;
     }
 
     public static Rectangle ComboButton(IntPtr hwnd, int fallbackLeft, int height, int width)
@@ -1525,6 +1603,8 @@ sealed class FlatCombo : ComboBox
     const int WmPaint = 0x000F;
     const int WmWindowPosChanging = 0x0046;
     const int SwpNosize = 0x0001;
+    static readonly DropSwitch Switch = new();
+    static FlatCombo? _open;
 
     public FlatCombo()
     {
@@ -1533,6 +1613,7 @@ sealed class FlatCombo : ComboBox
         FlatStyle = FlatStyle.Flat;
         IntegralHeight = false;
         MaxDropDownItems = 12;
+        Switch.Ensure();
     }
 
     int DesiredHeight()
@@ -1568,9 +1649,91 @@ sealed class FlatCombo : ComboBox
 
     protected override void OnDropDown(EventArgs e)
     {
+        _open = this;
         FitDropDownWidth();
         NativeTheme.ComboList(Handle);
         base.OnDropDown(e);
+    }
+
+    protected override void OnDropDownClosed(EventArgs e)
+    {
+        if (_open == this) _open = null;
+        base.OnDropDownClosed(e);
+    }
+
+    static FlatCombo? OpenCombo =>
+        _open is { IsDisposed: false, IsHandleCreated: true, DroppedDown: true } ? _open : null;
+
+    // A click outside an open list only dismisses it. Arm the combo under the cursor
+    // and open it on mouse-up so switching dropdowns does not take a second click.
+    sealed class DropSwitch : IMessageFilter
+    {
+        const int WmLButtonDown = 0x0201;
+        const int WmLButtonUp = 0x0202;
+        bool _installed;
+        bool _busy;
+        FlatCombo? _arm;
+
+        public void Ensure()
+        {
+            if (_installed) return;
+            Application.AddMessageFilter(this);
+            _installed = true;
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (_busy) return false;
+            if (m.Msg == WmLButtonDown) return OnDown();
+            if (m.Msg == WmLButtonUp) return OnUp();
+            return false;
+        }
+
+        bool OnDown()
+        {
+            _arm = null;
+            var open = OpenCombo;
+            if (open == null) return false;
+            var screen = Cursor.Position;
+            if (open.RectangleToScreen(open.ClientRectangle).Contains(screen)) return false;
+            if (NativeTheme.ScreenHitsComboList(open.Handle, screen)) return false;
+            var hit = Hit(screen);
+            if (hit == null || hit == open || !hit.Enabled || !hit.Visible) return false;
+            _arm = hit;
+            _busy = true;
+            try { open.DroppedDown = false; }
+            finally { _busy = false; }
+            return true;
+        }
+
+        bool OnUp()
+        {
+            var hit = _arm;
+            _arm = null;
+            if (hit == null) return false;
+            if (!hit.IsDisposed && hit.IsHandleCreated && hit.Enabled && hit.Visible
+                && !hit.DroppedDown
+                && hit.RectangleToScreen(hit.ClientRectangle).Contains(Cursor.Position))
+            {
+                _busy = true;
+                try
+                {
+                    hit.Focus();
+                    hit.DroppedDown = true;
+                }
+                finally { _busy = false; }
+            }
+            return true;
+        }
+
+        static FlatCombo? Hit(Point screen)
+        {
+            var hwnd = WindowFromPoint(screen);
+            return hwnd == IntPtr.Zero ? null : Control.FromChildHandle(hwnd) as FlatCombo;
+        }
+
+        [DllImport("user32.dll")]
+        static extern IntPtr WindowFromPoint(Point point);
     }
 
     public void FitDropDownWidth()
@@ -1639,13 +1802,26 @@ sealed class FlatCombo : ComboBox
         var pal = UiChrome.Tone;
         var field = UiChrome.ColorOf(pal.Field);
         var text = UiChrome.ColorOf(pal.Secondary);
-        if (Parent is not FieldFrame)
-            UiChrome.PaintFieldBox(g, Width, Height, DeviceDpi > 0 ? DeviceDpi : 96, Focused || DroppedDown);
+        var stroke = UiChrome.ColorOf(Focused || DroppedDown ? pal.Accent : pal.Stroke);
+        using (var cover = new SolidBrush(field))
+        {
+            g.FillRectangle(cover, 0, 0, Width, 3);
+            g.FillRectangle(cover, 0, Height - 3, Width, 3);
+            g.FillRectangle(cover, 0, 0, 3, Height);
+            g.FillRectangle(cover, Width - 3, 0, 3, Height);
+        }
         var fallbackLeft = Width - Math.Max(20, UiLayout.ScalePx(20, DeviceDpi));
         var arrow = NativeTheme.ComboButton(Handle, fallbackLeft, Height, Width);
         using (var br = new SolidBrush(field))
             g.FillRectangle(br, arrow);
         DrawChevron(g, arrow, text);
+        if (Parent is not FieldFrame)
+        {
+            var outside = Parent?.BackColor ?? UiChrome.ColorOf(pal.Window);
+            if (outside.A == 0) outside = UiChrome.ColorOf(pal.Window);
+            var radius = UiLayout.ScalePx(FormTone.ButtonRadius, DeviceDpi > 0 ? DeviceDpi : 96);
+            UiChrome.DrawRoundBorder(g, stroke, outside, Width, Height, radius);
+        }
     }
 
     static void DrawChevron(Graphics g, Rectangle area, Color color)
@@ -1873,12 +2049,6 @@ sealed class FlatSpin : NumericUpDown
         var stroke = UiChrome.ColorOf(pal.Stroke);
         var text = UiChrome.ColorOf(pal.Secondary);
         var hover = UiChrome.ColorOf(pal.ButtonHover);
-        var framed = Parent is FieldFrame;
-        if (!framed)
-        {
-            using var pen = new Pen(stroke);
-            g.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
-        }
         var arrow = SpinBox();
         using (var br = new SolidBrush(field))
         {
@@ -1901,6 +2071,8 @@ sealed class FlatSpin : NumericUpDown
         var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
         DrawSpinChevron(g, up, text, up: true, dpi);
         DrawSpinChevron(g, down, text, up: false, dpi);
+        if (Parent is not FieldFrame)
+            UiChrome.DrawHairline(g, stroke, Width, Height);
     }
 
     internal static void DrawSpinChevron(Graphics g, Rectangle area, Color color, bool up, int dpi)
