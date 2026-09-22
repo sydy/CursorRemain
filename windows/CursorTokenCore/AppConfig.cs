@@ -343,6 +343,12 @@ public sealed class AppConfig
         if (account.ActualCny <= 0 && ActualCny > 0)
             account.ActualCny = UsageEvents.ClampActualCny(ActualCny);
     }
+
+    public static string NormalizeAppearance(string? raw)
+    {
+        var mode = (raw ?? "").Trim().ToLowerInvariant();
+        return mode is "system" or "light" or "dark" ? mode : "system";
+    }
 }
 
 public static class AppPaths
@@ -437,12 +443,6 @@ public static class AppPaths
         var aid = Token.SafeAccountId((accountId ?? "").Trim());
         if (aid.Length == 0) aid = "account";
         return Path.Combine(root, teamScope ? $"usage_events.{aid}.team.jsonl" : $"usage_events.{aid}.jsonl");
-    }
-
-    public static string NormalizeAppearance(string? raw)
-    {
-        var mode = (raw ?? "").Trim().ToLowerInvariant();
-        return mode is "system" or "light" or "dark" ? mode : "system";
     }
 }
 
