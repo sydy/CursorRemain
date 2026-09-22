@@ -23,6 +23,7 @@ enum FlyoutLayout {
 
 struct FlyoutView: View {
     @ObservedObject var store: AppStore
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,12 +36,24 @@ struct FlyoutView: View {
         }
         .padding(FlyoutLayout.padding)
         .frame(width: FlyoutLayout.width, height: FlyoutLayout.height)
-        .background(.ultraThinMaterial)
+        .background {
+            RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous)
+                .fill(panelFill)
+        }
         .clipShape(RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5)
+                .strokeBorder(Color.primary.opacity(colorScheme == .light ? 0.16 : 0.12), lineWidth: 0.5)
         )
+        .preferredColorScheme(ColorModeAppearance.colorScheme(store.config.colorMode))
+    }
+
+    /// Light material turns into a gray wash and the cards disappear into it.
+    var panelFill: AnyShapeStyle {
+        if colorScheme == .light {
+            return AnyShapeStyle(Color(nsColor: .windowBackgroundColor))
+        }
+        return AnyShapeStyle(.ultraThinMaterial)
     }
 
     var remaining: Double? { store.usage?.remainingPercent }
@@ -177,7 +190,15 @@ struct FlyoutView: View {
         }
         .padding(FlyoutLayout.cardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: FlyoutLayout.cardRadius, style: .continuous))
+        .background(cardFill, in: RoundedRectangle(cornerRadius: FlyoutLayout.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: FlyoutLayout.cardRadius, style: .continuous)
+                .strokeBorder(Color.primary.opacity(colorScheme == .light ? 0.08 : 0), lineWidth: 0.5)
+        )
+    }
+
+    var cardFill: Color {
+        colorScheme == .light ? Color(nsColor: .textBackgroundColor) : Color.primary.opacity(0.06)
     }
 
     func labeled(_ title: String, _ value: String) -> some View {
@@ -224,7 +245,7 @@ struct FlyoutView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(Color.primary.opacity(0.08), in: Capsule())
+            .background(Color.primary.opacity(colorScheme == .light ? 0.06 : 0.08), in: Capsule())
         }
         .buttonStyle(.plain)
         .fixedSize()
@@ -270,6 +291,7 @@ struct RemainingGauge<Pill: View>: View {
     var error: Bool
     var unlimited: Bool
     var color: Color
+    @Environment(\.colorScheme) private var colorScheme
     @ViewBuilder var pill: () -> Pill
 
     var progress: CGFloat {
@@ -281,7 +303,7 @@ struct RemainingGauge<Pill: View>: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.primary.opacity(0.12), lineWidth: FlyoutLayout.ringLine)
+                .stroke(Color.primary.opacity(colorScheme == .light ? 0.16 : 0.12), lineWidth: FlyoutLayout.ringLine)
             Circle()
                 .trim(from: 0, to: progress)
                 .stroke(color, style: StrokeStyle(lineWidth: FlyoutLayout.ringLine, lineCap: .round))
@@ -317,6 +339,10 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
     private var monitor: Any?
     private var keyMonitor: Any?
     private weak var store: AppStore?
+
+    func applyAppearance(_ mode: String) {
+        ColorModeAppearance.apply(to: window, mode: mode)
+    }
 
     func toggle(store: AppStore, statusButton: NSStatusBarButton?) {
         if window?.isVisible == true {

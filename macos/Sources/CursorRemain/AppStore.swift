@@ -2,6 +2,7 @@ import AppKit
 import Combine
 import CursorTokenCore
 import Foundation
+import SwiftUI
 import UserNotifications
 
 @MainActor
@@ -43,6 +44,7 @@ final class AppStore: ObservableObject {
     func start() {
         AppUpdater.confirmPending(store: self)
         LoginItem.apply(config.autostartEnabled)
+        applyAppearance()
         if let acc = config.activeAccount {
             UsageHistory.adoptLegacyHistory(accountId: acc.id, directory: settingsDirectory ?? AppPaths.configDirectory())
         }
@@ -114,6 +116,7 @@ final class AppStore: ObservableObject {
         let prevToken = config.sessionToken
         let prevActive = config.activeAccountId
         let prevAuto = config.autostartEnabled
+        let prevColor = config.colorMode
         config = cfg
         ColorModeAppearance.apply(cfg.colorMode)
         if !ConfigStore.save(cfg, to: settingsDirectory) {
@@ -125,6 +128,9 @@ final class AppStore: ObservableObject {
         if prevAuto != cfg.autostartEnabled {
             LoginItem.apply(cfg.autostartEnabled)
         }
+        if prevColor != cfg.colorMode {
+            applyAppearance()
+        }
         if refresh || prevToken != cfg.sessionToken || prevActive != cfg.activeAccountId {
             requestRefresh()
         }
@@ -132,6 +138,14 @@ final class AppStore: ObservableObject {
         CompareWindowController.shared.reloadIfVisible()
         ReportWindowController.shared.reloadIfVisible()
         objectWillChange.send()
+    }
+
+    func applyAppearance() {
+        ColorModeAppearance.apply(config.colorMode)
+        SettingsWindowController.shared.applyAppearance(config.colorMode)
+        FlyoutWindowController.shared.applyAppearance(config.colorMode)
+        ReportWindowController.shared.applyAppearance(config.colorMode)
+        CompareWindowController.shared.applyAppearance(config.colorMode)
     }
 
     func copySummary() {
@@ -468,13 +482,26 @@ final class AppStore: ObservableObject {
 
 enum ColorModeAppearance {
     static func apply(_ mode: String) {
-        switch mode {
-        case "light":
-            NSApp.appearance = NSAppearance(named: .aqua)
-        case "dark":
-            NSApp.appearance = NSAppearance(named: .darkAqua)
-        default:
-            NSApp.appearance = nil
+        NSApp.appearance = nsAppearance(mode)
+    }
+
+    static func nsAppearance(_ mode: String) -> NSAppearance? {
+        switch AppConfig.normalizeColorMode(mode) {
+        case "light": return NSAppearance(named: .aqua)
+        case "dark": return NSAppearance(named: .darkAqua)
+        default: return nil
         }
+    }
+
+    static func colorScheme(_ mode: String) -> ColorScheme? {
+        switch AppConfig.normalizeColorMode(mode) {
+        case "light": return .light
+        case "dark": return .dark
+        default: return nil
+        }
+    }
+
+    static func apply(to window: NSWindow?, mode: String) {
+        window?.appearance = nsAppearance(mode)
     }
 }

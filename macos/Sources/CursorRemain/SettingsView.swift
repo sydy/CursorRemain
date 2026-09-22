@@ -32,14 +32,20 @@ struct SettingsRootView: View {
     var focusToken: Bool = false
 
     var body: some View {
-        TabView(selection: $tab) {
-            accountPage.tabItem { Label("账户", systemImage: "person.circle") }.tag("account")
-            notifyPage.tabItem { Label("通知", systemImage: "bell") }.tag("notify")
-            menuPage.tabItem { Label("菜单栏", systemImage: "menubar.rectangle") }.tag("menu")
-            syncPage.tabItem { Label("同步", systemImage: "arrow.triangle.2.circlepath") }.tag("sync")
+        VStack(spacing: 12) {
+            SettingsTabBar(selection: $tab)
+            Group {
+                switch tab {
+                case "notify": notifyPage
+                case "menu": menuPage
+                case "sync": syncPage
+                default: accountPage
+                }
+            }
         }
         .padding(SettingsMetrics.padding)
         .frame(width: SettingsMetrics.width, height: pageHeight)
+        .preferredColorScheme(ColorModeAppearance.colorScheme(store.config.colorMode))
         .onPreferenceChange(SettingsBodyHeightKey.self) { height in
             guard height > fittedBody + 1 else { return }
             fittedBody = height
@@ -305,12 +311,7 @@ struct SettingsRootView: View {
         settingsPage(spacing: 14) {
             Text("菜单栏与启动").font(.title3.bold())
             fieldCaption("颜色")
-            fieldWidth(Picker("颜色", selection: colorBinding) {
-                Text("跟随系统").tag("system")
-                Text("亮色").tag("light")
-                Text("暗色").tag("dark")
-            }
-            .labelsHidden(), max: 220)
+            AppearanceSegment(selection: colorBinding)
             fieldCaption("菜单栏图标")
             settingsMenuPicker(
                 selection: modeBinding,
@@ -382,7 +383,7 @@ struct SettingsRootView: View {
     }
 
     var pageHeight: CGFloat {
-        let raw = fittedBody + SettingsMetrics.padding * 2 + SettingsMetrics.footerReserve
+        let raw = fittedBody + SettingsMetrics.padding * 2 + SettingsMetrics.footerReserve + SettingsMetrics.tabBarReserve
         let cap = (NSScreen.main?.visibleFrame.height ?? 800) - 60
         if fittedBody < 1 { return min(SettingsMetrics.width, cap) }
         return min(max(raw, SettingsMetrics.minHeight), cap)
@@ -482,7 +483,7 @@ struct SettingsRootView: View {
     var colorBinding: Binding<String> {
         Binding(
             get: { store.config.colorMode },
-            set: { v in applySetting { $0.colorMode = v } }
+            set: { v in applySetting { $0.colorMode = AppConfig.normalizeColorMode(v) } }
         )
     }
 
@@ -973,11 +974,101 @@ struct SettingsRootView: View {
     }
 }
 
+private struct SettingsTabBar: View {
+    @Binding var selection: String
+
+    private let items = [("account", "账户"), ("notify", "通知"), ("menu", "菜单栏"), ("sync", "同步")]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.0) { index, item in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.primary.opacity(0.16))
+                        .frame(width: 1, height: 12)
+                }
+                let on = selection == item.0
+                Button {
+                    selection = item.0
+                } label: {
+                    Text(item.1)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 3)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(on ? Color.primary.opacity(0.12) : Color.clear)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(item.1)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct AppearanceSegment: View {
+    @Binding var selection: String
+
+    private let options: [(id: String, title: String, icon: String)] = [
+        ("system", "跟随系统", "display"),
+        ("light", "浅色", "sun.max"),
+        ("dark", "深色", "moon"),
+    ]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.id) { option in
+                let on = selection == option.id
+                Button {
+                    selection = option.id
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: option.icon)
+                            .font(.system(size: 13))
+                            .frame(width: 14, height: 14)
+                        Text(option.title)
+                            .font(.system(size: 13))
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .frame(height: 26)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(on ? Color(nsColor: .controlBackgroundColor) : Color.clear)
+                            .shadow(color: on ? Color.black.opacity(0.12) : Color.clear, radius: 1, y: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.title)
+                .accessibilityAddTraits(on ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("颜色")
+        .animation(.easeOut(duration: 0.12), value: selection)
+    }
+}
+
 private enum SettingsMetrics {
     static let width: CGFloat = 540
     static let padding: CGFloat = 20
     static let footerGap: CGFloat = 12
     static let footerReserve: CGFloat = 44
+    static let tabBarReserve: CGFloat = 40
     static let minHeight: CGFloat = 420
 }
 
@@ -993,6 +1084,10 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
     private weak var store: AppStore?
+
+    func applyAppearance(_ mode: String) {
+        ColorModeAppearance.apply(to: window, mode: mode)
+    }
 
     func resizeTo(height: CGFloat) {
         guard let win = window else { return }

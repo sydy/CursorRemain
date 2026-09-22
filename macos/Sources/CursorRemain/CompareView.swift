@@ -209,6 +209,7 @@ struct CompareRootView: View {
         }
         .padding(16)
         .frame(minWidth: 900, minHeight: 520)
+        .preferredColorScheme(ColorModeAppearance.colorScheme(store.app.config.colorMode))
         .onAppear { store.loadCache() }
         .onChange(of: store.app.config.activeAccountId) { _ in store.reloadFromConfig() }
         .onChange(of: store.app.config.monthlyPlanUsd) { _ in store.reloadFromConfig() }
@@ -496,6 +497,10 @@ final class CompareWindowController: NSObject, NSWindowDelegate {
             store?.reloadFromConfig()
         }
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func applyAppearance(_ mode: String) {
+        ColorModeAppearance.apply(to: window, mode: mode)
     }
 
     func reloadIfVisible() {

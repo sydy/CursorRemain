@@ -50,8 +50,9 @@ static class UiChrome
         try { ThemeChanged?.Invoke(); }
         catch { }
     }
+    public static bool AppsUseLightTheme() => SystemUsesLightTheme();
 
-    public static bool AppsUseLightTheme()
+    static bool SystemUsesLightTheme()
     {
         try
         {
@@ -755,6 +756,10 @@ static class UiChrome
                     frame.Relayout();
                 }
                 break;
+            case AppearanceSegment segment:
+                segment.BackColor = window;
+                segment.Invalidate();
+                return;
             case FieldRowPanel row:
                 row.BackColor = window;
                 row.ForeColor = text;
@@ -1366,6 +1371,191 @@ sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
         public override Color ImageMarginGradientEnd => UiChrome.ColorOf(UiChrome.Tone.Field);
         public override Color SeparatorDark => UiChrome.ColorOf(UiChrome.Tone.Hairline);
         public override Color SeparatorLight => UiChrome.ColorOf(UiChrome.Tone.Hairline);
+    }
+}
+
+sealed class AppearanceSegment : Control
+{
+    public event EventHandler? SelectionChanged;
+
+    enum IconKind { Display, Sun, Moon }
+
+    readonly record struct Segment(string Value, string Title, IconKind Icon, int Width);
+
+    static readonly Segment[] Segments = BuildSegments();
+
+    public static int DesignWidth { get; } = 4 + Segments.Sum(s => s.Width);
+
+    string _value = "system";
+    readonly List<Rectangle> _hits = [];
+
+    public string Value
+    {
+        get => _value;
+        set
+        {
+            var next = AppConfig.NormalizeAppearance(value);
+            if (next == _value) return;
+            _value = next;
+            var title = Segments.First(s => s.Value == next).Title;
+            AccessibleName = "颜色 " + title;
+            Invalidate();
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public AppearanceSegment()
+    {
+        SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+        TabStop = true;
+        Cursor = Cursors.Hand;
+        AccessibleName = "颜色 跟随系统";
+        Height = FormTone.FieldHeight;
+        Width = DesignWidth;
+    }
+
+    static Segment[] BuildSegments()
+    {
+        return
+        [
+            Make("system", "跟随系统", IconKind.Display),
+            Make("light", "浅色", IconKind.Sun),
+            Make("dark", "深色", IconKind.Moon),
+        ];
+    }
+
+    static Segment Make(string value, string title, IconKind icon)
+    {
+        var text = DesignTextWidth(title);
+        var textWidth = Math.Max(text, title.Length * 13);
+        return new Segment(value, title, icon, 10 + 14 + 6 + textWidth + 12);
+    }
+
+    static int DesignTextWidth(string text)
+    {
+        using var font = UiChrome.UiFont(9f);
+        using var bmp = new Bitmap(1, 1);
+        bmp.SetResolution(96, 96);
+        using var g = Graphics.FromImage(bmp);
+        var size = g.MeasureString(text, font, int.MaxValue, StringFormat.GenericTypographic);
+        return Math.Max(8, (int)Math.Ceiling(size.Width));
+    }
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        Focus();
+        var hit = Hit(e.Location);
+        if (hit is not null) Value = hit;
+        base.OnMouseDown(e);
+    }
+
+    protected override bool IsInputKey(Keys keyData) =>
+        keyData is Keys.Left or Keys.Right || base.IsInputKey(keyData);
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        var index = Array.FindIndex(Segments, s => s.Value == _value);
+        if (e.KeyCode == Keys.Left && index > 0)
+        {
+            Value = Segments[index - 1].Value;
+            e.Handled = true;
+        }
+        else if (e.KeyCode == Keys.Right && index >= 0 && index < Segments.Length - 1)
+        {
+            Value = Segments[index + 1].Value;
+            e.Handled = true;
+        }
+        base.OnKeyDown(e);
+    }
+
+    string? Hit(Point pt)
+    {
+        for (var i = 0; i < _hits.Count && i < Segments.Length; i++)
+            if (_hits[i].Contains(pt)) return Segments[i].Value;
+        return null;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var pal = UiChrome.Tone;
+        var light = UiChrome.UseLightTheme();
+        var track = UiChrome.ColorOf(light ? pal.Button : pal.Header);
+        var chip = UiChrome.ColorOf(light ? pal.Field : pal.ButtonHover);
+        var text = UiChrome.ColorOf(pal.Text);
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        int S(int px) => UiLayout.ScalePx(px, dpi);
+        var pad = Math.Max(1, S(2));
+        var bounds = ClientRectangle;
+        bounds.Inflate(-1, -1);
+        if (bounds.Width < 4 || bounds.Height < 4) return;
+        using (var path = UiChrome.RoundRect(bounds, S(8)))
+        using (var brush = new SolidBrush(track))
+            g.FillPath(brush, path);
+
+        using var font = UiChrome.UiFont(9f);
+        _hits.Clear();
+        var x = bounds.X + pad;
+        var y = bounds.Y + pad;
+        var h = Math.Max(8, bounds.Height - pad * 2);
+        foreach (var seg in Segments)
+        {
+            var w = S(seg.Width);
+            if (x + w > bounds.Right - pad) w = Math.Max(8, bounds.Right - pad - x);
+            var box = new Rectangle(x, y, w, h);
+            _hits.Add(box);
+            if (seg.Value == _value)
+            {
+                var chipBox = box;
+                chipBox.Inflate(-1, -1);
+                using var chipPath = UiChrome.RoundRect(chipBox, S(6));
+                using var chipBrush = new SolidBrush(chip);
+                g.FillPath(chipBrush, chipPath);
+            }
+            var icon = new Rectangle(box.X + S(10), box.Y + Math.Max(0, (box.Height - S(14)) / 2), S(14), S(14));
+            DrawIcon(g, icon, seg.Icon, text);
+            var label = new Rectangle(icon.Right + S(6), box.Y, Math.Max(0, box.Right - S(8) - icon.Right - S(6)), box.Height);
+            TextRenderer.DrawText(g, seg.Title, font, label, text,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+            x += w;
+        }
+    }
+
+    static void DrawIcon(Graphics g, Rectangle box, IconKind kind, Color color)
+    {
+        if (box.Width < 4 || box.Height < 4) return;
+        using var pen = new Pen(color, Math.Max(1.1f, box.Width / 14f * 1.35f))
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round,
+            LineJoin = LineJoin.Round,
+        };
+        float x = box.X, y = box.Y, w = box.Width, h = box.Height;
+        switch (kind)
+        {
+            case IconKind.Display:
+                g.DrawRectangle(pen, x + w * 0.08f, y + h * 0.1f, w * 0.84f, h * 0.56f);
+                g.DrawLine(pen, x + w * 0.5f, y + h * 0.66f, x + w * 0.5f, y + h * 0.84f);
+                g.DrawLine(pen, x + w * 0.28f, y + h * 0.84f, x + w * 0.72f, y + h * 0.84f);
+                break;
+            case IconKind.Sun:
+            {
+                var r = w * 0.16f;
+                g.DrawEllipse(pen, x + w / 2f - r, y + h / 2f - r, r * 2f, r * 2f);
+                void Ray(float dx, float dy)
+                {
+                    g.DrawLine(pen,
+                        x + w / 2f + dx * w * 0.32f, y + h / 2f + dy * h * 0.32f,
+                        x + w / 2f + dx * w * 0.46f, y + h / 2f + dy * h * 0.46f);
+                }
+                Ray(0, -1); Ray(0, 1); Ray(-1, 0); Ray(1, 0);
+                break;
+            }
+            case IconKind.Moon:
+                g.DrawArc(pen, x + w * 0.2f, y + h * 0.08f, w * 0.62f, h * 0.84f, 50, 260);
+                break;
+        }
     }
 }
 

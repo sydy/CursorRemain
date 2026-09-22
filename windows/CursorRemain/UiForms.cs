@@ -33,8 +33,8 @@ sealed class SettingsForm : Form
     readonly TextBox _thresholds = new() { Width = 180 };
     readonly CheckBox _notify = new FlatCheck { Text = "启用用量通知", Margin = Padding.Empty };
     readonly CheckBox _exhaust = new FlatCheck { Text = "启用耗尽风险通知", Margin = Padding.Empty };
-    readonly ComboBox _color = new FlatCombo { Width = 200 };
     readonly ComboBox _mode = new FlatCombo { Width = 200 };
+    readonly AppearanceSegment _appearance = new();
     readonly CheckBox _auto = new FlatCheck { Text = "开机自启", Margin = Padding.Empty };
     readonly CheckBox _autoUpdate = new FlatCheck { Text = "自动检查并安装更新", Margin = Padding.Empty };
     readonly Label _updateVersion = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
@@ -141,7 +141,6 @@ sealed class SettingsForm : Form
         _startRow = FieldRow("开始时间", _startAt, FormTone.FieldWidthCombo);
         _durationRow = FieldRow("有效时间", DurationFields());
         _channel.Items.AddRange(["未标", "自费", "第三方"]);
-        _color.Items.AddRange(["跟随系统", "亮色", "暗色"]);
         _mode.Items.AddRange(["圆环百分比", "纯数字", "仅色点"]);
         _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
         _cloudPasswordRow = FieldRow("密码", _cloudPassword);
@@ -199,7 +198,7 @@ sealed class SettingsForm : Form
             FollowRow(_exhaust)));
         _tabs.AddPage(SettingsLayout.TrayTab, MakeTab(
             UiChrome.Heading("常规", first: true),
-            FieldRow("颜色", _color, FormTone.FieldWidthCombo),
+            FieldRow("颜色", _appearance, AppearanceSegment.DesignWidth),
             FieldRow("托盘图标", _mode, FormTone.FieldWidthCombo),
             FollowRow(_auto),
             FollowRow(_autoUpdate),
@@ -234,6 +233,12 @@ sealed class SettingsForm : Form
         _root.Controls.Add(_footer, 0, 1);
         Controls.Add(_root);
         LoadFrom(_cfg);
+        _appearance.SelectionChanged += (_, _) =>
+        {
+            if (_loading) return;
+            _cfg.ColorMode = _appearance.Value;
+            NotifySaved();
+        };
         _accounts.SelectedIndexChanged += (_, _) =>
         {
             if (_loading) return;
@@ -826,8 +831,8 @@ sealed class SettingsForm : Form
             _thresholds.Text = string.Join(",", cfg.AlertThresholds);
             _notify.Checked = cfg.NotifyEnabled;
             _exhaust.Checked = cfg.NotifyExhaustionRisk;
-            _color.SelectedIndex = cfg.ColorMode switch { "light" => 1, "dark" => 2, _ => 0 };
             _mode.SelectedIndex = cfg.TrayDisplayMode switch { "number" => 1, "dot" => 2, _ => 0 };
+            _appearance.Value = cfg.ColorMode;
             _auto.Checked = cfg.AutostartEnabled;
             _autoUpdate.Checked = cfg.AutoUpdateEnabled;
             _updateVersion.Text = "当前版本  " + AppUpdate.DisplayVersion();
@@ -1191,7 +1196,7 @@ sealed class SettingsForm : Form
         _cfg.AlertThresholds = ConfigStore.ParseThresholds(_thresholds.Text);
         _cfg.NotifyEnabled = _notify.Checked;
         _cfg.NotifyExhaustionRisk = _exhaust.Checked;
-        _cfg.ColorMode = _color.SelectedIndex switch { 1 => "light", 2 => "dark", _ => "system" };
+        _cfg.ColorMode = _appearance.Value;
         _cfg.TrayDisplayMode = _mode.SelectedIndex switch { 1 => "number", 2 => "dot", _ => "ring" };
         _cfg.AutostartEnabled = _auto.Checked;
         _cfg.AutoUpdateEnabled = _autoUpdate.Checked;

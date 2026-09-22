@@ -408,9 +408,14 @@ public class AppUpdateTests
             Assert.Equal("x", loaded.UpdateLastError);
             Assert.Equal("518192b", loaded.UpdateInstalledSha);
             Assert.Equal(101, loaded.UpdateInstalledAssetId);
+            cfg.ColorMode = "dark";
+            ConfigStore.Save(cfg, dir);
+            Assert.Equal("dark", ConfigStore.Load(dir).ColorMode);
 
             var fresh = ConfigStore.Normalize(JsonDocument.Parse("{}").RootElement);
             Assert.True(fresh.AutoUpdateEnabled);
+            Assert.Equal("system", fresh.ColorMode);
+            Assert.Equal("system", AppConfig.NormalizeAppearance("Blue"));
         }
         finally
         {

@@ -86,6 +86,7 @@ public sealed class AppConfig
     public string UpdateInstalledSha { get; set; } = "";
     public long UpdateInstalledAssetId { get; set; }
     public string TrayDisplayMode { get; set; } = "ring";
+    /// <summary><c>system</c>, <c>light</c>, or <c>dark</c>. Local to this machine; not part of cloud sync.</summary>
     public string ColorMode { get; set; } = "system";
     public double MonthlyPlanUsd { get; set; }
     public double ActualCny { get; set; }
@@ -671,8 +672,7 @@ public static class ConfigStore
         }
         var mode = Str(raw, "tray_display_mode", "ring").Trim().ToLowerInvariant();
         cfg.TrayDisplayMode = mode is "ring" or "number" or "dot" ? mode : "ring";
-        var color = Str(raw, "color_mode", "system").Trim().ToLowerInvariant();
-        cfg.ColorMode = color is "system" or "light" or "dark" ? color : "system";
+        cfg.ColorMode = NormalizeAppearance(Str(raw, "color_mode", "system"));
         cfg.MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(DoubleVal(raw, "monthly_plan_usd", 0));
         cfg.ActualCny = UsageEvents.ClampActualCny(DoubleVal(raw, "actual_cny", 0));
         cfg.UsdCnyRate = UsageEvents.ClampUsdCnyRate(DoubleVal(raw, "usd_cny_rate", UsageEvents.DefaultUsdCnyRate));
@@ -872,6 +872,12 @@ public static class ConfigStore
         else fail();
     }
 
+    public static string NormalizeAppearance(string? raw)
+    {
+        var mode = (raw ?? "").Trim().ToLowerInvariant();
+        return mode is "system" or "light" or "dark" ? mode : "system";
+    }
+
     static bool Bool(JsonElement raw, string key, bool fallback) =>
         raw.TryGetProperty(key, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => fallback } : fallback;
 
@@ -942,7 +948,7 @@ public static class ConfigStore
         update_installed_sha = cfg.UpdateInstalledSha,
         update_installed_asset_id = cfg.UpdateInstalledAssetId,
         tray_display_mode = cfg.TrayDisplayMode,
-        color_mode = cfg.ColorMode is "light" or "dark" or "system" ? cfg.ColorMode : "system",
+        color_mode = NormalizeAppearance(cfg.ColorMode),
         monthly_plan_usd = cfg.MonthlyPlanUsd,
         actual_cny = cfg.ActualCny,
         usd_cny_rate = cfg.UsdCnyRate,

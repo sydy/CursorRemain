@@ -240,6 +240,7 @@ struct ReportRootView: View {
         }
         .padding(16)
         .frame(minWidth: 980, minHeight: 620)
+        .preferredColorScheme(ColorModeAppearance.colorScheme(store.app.config.colorMode))
         .onChange(of: store.teamScope) { _ in
             Task { await store.sync() }
         }
@@ -443,6 +444,10 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
         }
         window?.makeKeyAndOrderFront(nil)
         Task { await store?.sync() }
+    }
+
+    func applyAppearance(_ mode: String) {
+        ColorModeAppearance.apply(to: window, mode: mode)
     }
 
     func reloadIfVisible() {

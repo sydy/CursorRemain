@@ -280,8 +280,13 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertEqual(loaded.updateLastError, "x")
         XCTAssertEqual(loaded.updateInstalledSha, "518192b")
         XCTAssertEqual(loaded.updateInstalledAssetId, 101)
+        cfg.colorMode = "dark"
+        XCTAssertTrue(ConfigStore.save(cfg, to: dir))
+        XCTAssertEqual(ConfigStore.load(from: dir).colorMode, "dark")
         let fresh = ConfigStore.normalize([:])
         XCTAssertTrue(fresh.autoUpdateEnabled)
+        XCTAssertEqual(fresh.colorMode, "system")
+        XCTAssertEqual(ConfigStore.normalize(["color_mode": "Blue"]).colorMode, "system")
     }
 
     private func int64(_ raw: Any?) -> Int64 {
