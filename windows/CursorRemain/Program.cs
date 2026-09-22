@@ -168,11 +168,15 @@ sealed partial class TrayContext : ApplicationContext
     long _refreshGeneration;
     (int? Remaining, bool Error, string Mode, int Size)? _iconKey;
     string _lastCloudNotify = "";
+    string _appliedColor = "";
+    bool _appliedLight;
+    bool _appliedTheme;
 
     public TrayContext()
     {
         _config = ConfigStore.Load();
         AppUpdater.ConfirmPending(_config);
+        ApplyTheme();
         if (_config.SyncEnabled)
             _ = TryReconcileAsync(save: true);
         Autostart.Apply(_config.AutostartEnabled);
@@ -200,6 +204,7 @@ sealed partial class TrayContext : ApplicationContext
         };
         _sync.OpenReportRequested += OpenReport;
         _sync.OpenSettingsRequested += () => OpenSettings(false, false);
+        UiChrome.ThemeChanged += OnSystemThemeChanged;
         _sync.BeginInvoke(() =>
         {
             if (string.IsNullOrEmpty(_config.SessionToken))
@@ -473,10 +478,34 @@ sealed partial class TrayContext : ApplicationContext
         });
     }
 
+    void OnSystemThemeChanged() => OnUi(ApplyTheme);
+
+    void ApplyTheme()
+    {
+        var mode = _config.ColorMode is "light" or "dark" ? _config.ColorMode : "system";
+        UiChrome.SetColorMode(mode);
+        var light = UiChrome.UseLightTheme();
+        if (_appliedTheme && _appliedColor == mode && _appliedLight == light) return;
+        _appliedTheme = true;
+        _appliedColor = mode;
+        _appliedLight = light;
+        NativeTheme.PreferAppDarkMode();
+        void Paint()
+        {
+            if (_settings is { IsDisposed: false }) UiChrome.Apply(_settings);
+            if (_report is { IsDisposed: false }) UiChrome.Apply(_report);
+            if (_compare is { IsDisposed: false }) UiChrome.Apply(_compare);
+            _flyout?.RefreshChrome();
+        }
+        if (_sync is { IsDisposed: false, InvokeRequired: true }) OnUi(Paint);
+        else Paint();
+    }
+
     public void ApplyConfig(AppConfig cfg, bool refresh)
     {
         var prevAuto = _config.AutostartEnabled;
         _config = cfg;
+        ApplyTheme();
         if (prevAuto != cfg.AutostartEnabled) Autostart.Apply(cfg.AutostartEnabled);
         if (refresh) RequestRefresh();
         UpdateUi();
@@ -585,6 +614,8 @@ sealed partial class TrayContext : ApplicationContext
 
     void Exit()
     {
+        UiChrome.ThemeChanged -= OnSystemThemeChanged;
+        UiChrome.StopThemeWatch();
         _cts.Cancel();
         try { _delayCts?.Cancel(); } catch (ObjectDisposedException) { }
         _delayCts?.Dispose();

@@ -1513,6 +1513,32 @@ public class FixtureTests
     }
 
     [Fact]
+    public void ColorModeDefaultsToSystemAndRoundTrips()
+    {
+        var fresh = ConfigStore.Normalize(JsonDocument.Parse("{}").RootElement);
+        Assert.Equal("system", fresh.ColorMode);
+        var junk = ConfigStore.Normalize(JsonDocument.Parse("{\"color_mode\":\"blue\"}").RootElement);
+        Assert.Equal("system", junk.ColorMode);
+        Assert.DoesNotContain("color_mode", AccountSync.SettingsFieldKeys);
+
+        var dir = Path.Combine(Path.GetTempPath(), "ctt-color-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cfg = ConfigStore.Normalize(JsonDocument.Parse("{\"color_mode\":\"dark\"}").RootElement);
+            Assert.Equal("dark", cfg.ColorMode);
+            ConfigStore.Save(cfg, dir);
+            Assert.Equal("dark", ConfigStore.Load(dir).ColorMode);
+            cfg.ColorMode = "light";
+            ConfigStore.Save(cfg, dir);
+            Assert.Equal("light", ConfigStore.Load(dir).ColorMode);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
+
+    [Fact]
     public void CrashLogWritesExceptionAndIgnoresNull()
     {
         var dir = Path.Combine(Path.GetTempPath(), "ctt-crash-" + Guid.NewGuid().ToString("N"));

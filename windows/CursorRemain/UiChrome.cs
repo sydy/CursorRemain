@@ -15,6 +15,42 @@ enum UiButtonKind
 
 static class UiChrome
 {
+    static string _colorMode = "system";
+    static bool _watchSystem;
+
+    public static string ColorMode => _colorMode;
+
+    public static event Action? ThemeChanged;
+
+    public static void SetColorMode(string? mode)
+    {
+        _colorMode = mode is "light" or "dark" ? mode : "system";
+        if (_colorMode == "system")
+        {
+            if (_watchSystem) return;
+            SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+            _watchSystem = true;
+            return;
+        }
+        StopThemeWatch();
+    }
+
+    public static void StopThemeWatch()
+    {
+        if (!_watchSystem) return;
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        _watchSystem = false;
+    }
+
+    static void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (_colorMode != "system") return;
+        if (e.Category is not (UserPreferenceCategory.General or UserPreferenceCategory.Color or UserPreferenceCategory.VisualStyle))
+            return;
+        try { ThemeChanged?.Invoke(); }
+        catch { }
+    }
+
     public static bool AppsUseLightTheme()
     {
         try
@@ -28,7 +64,14 @@ static class UiChrome
         }
     }
 
-    public static FormTone.Palette Tone => FormTone.For(AppsUseLightTheme());
+    public static bool UseLightTheme() => _colorMode switch
+    {
+        "light" => true,
+        "dark" => false,
+        _ => AppsUseLightTheme(),
+    };
+
+    public static FormTone.Palette Tone => FormTone.For(UseLightTheme());
 
     public static Color ColorOf(FormTone.Rgb rgb) => Color.FromArgb(rgb.R, rgb.G, rgb.B);
 
@@ -312,7 +355,21 @@ static class UiChrome
         form.ForeColor = ColorOf(pal.Text);
         ApplyTree(form, pal, form.DeviceDpi);
         ApplyTitleBar(form);
+        form.Invalidate(true);
     }
+
+    static bool SameRgb(Color color, FormTone.Rgb rgb) => color.ToArgb() == ColorOf(rgb).ToArgb();
+
+    static bool IsThemeSecondary(Color color) =>
+        color.ToArgb() == Color.DimGray.ToArgb()
+        || SameRgb(color, FormTone.Light.Secondary)
+        || SameRgb(color, FormTone.Dark.Secondary);
+
+    static bool IsThemeText(Color color) =>
+        color.ToArgb() == SystemColors.ControlText.ToArgb()
+        || color.ToArgb() == Color.Black.ToArgb()
+        || SameRgb(color, FormTone.Light.Text)
+        || SameRgb(color, FormTone.Dark.Text);
 
     public static void StyleGrid(DataGridView grid)
     {
@@ -681,9 +738,9 @@ static class UiChrome
                 link.BackColor = Color.Transparent;
                 return;
             case Label label:
-                if (label.ForeColor == Color.DimGray || label.ForeColor.ToArgb() == secondary.ToArgb())
+                if (IsThemeSecondary(label.ForeColor))
                     label.ForeColor = secondary;
-                else if (label.ForeColor == SystemColors.ControlText || label.ForeColor == Color.Black)
+                else if (IsThemeText(label.ForeColor))
                     label.ForeColor = text;
                 label.BackColor = Color.Transparent;
                 break;
@@ -802,7 +859,7 @@ static class UiChrome
     {
         void Apply()
         {
-            var dark = AppsUseLightTheme() ? 0 : 1;
+            var dark = UseLightTheme() ? 0 : 1;
             _ = DwmSetWindowAttribute(form.Handle, DwmwaUseImmersiveDarkMode, ref dark, sizeof(int));
         }
         if (form.IsHandleCreated) Apply();
@@ -920,7 +977,7 @@ static class NativeTheme
     {
         try
         {
-            SetPreferredAppMode(UiChrome.AppsUseLightTheme() ? 0 : 2);
+            SetPreferredAppMode(UiChrome.UseLightTheme() ? 0 : 2);
             RefreshImmersiveColorPolicyState();
         }
         catch
@@ -941,9 +998,9 @@ static class NativeTheme
     public static void DarkExplorer(IntPtr hwnd)
     {
         if (hwnd == IntPtr.Zero) return;
-        try { AllowDarkModeForWindow(hwnd, !UiChrome.AppsUseLightTheme()); }
+        try { AllowDarkModeForWindow(hwnd, !UiChrome.UseLightTheme()); }
         catch { }
-        _ = SetWindowTheme(hwnd, UiChrome.AppsUseLightTheme() ? "Explorer" : "DarkMode_Explorer", null);
+        _ = SetWindowTheme(hwnd, UiChrome.UseLightTheme() ? "Explorer" : "DarkMode_Explorer", null);
         SendMessage(hwnd, WmThemeChanged, IntPtr.Zero, IntPtr.Zero);
     }
 

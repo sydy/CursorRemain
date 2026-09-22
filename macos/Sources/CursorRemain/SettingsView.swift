@@ -304,6 +304,13 @@ struct SettingsRootView: View {
     var menuPage: some View {
         settingsPage(spacing: 14) {
             Text("菜单栏与启动").font(.title3.bold())
+            fieldCaption("颜色")
+            fieldWidth(Picker("颜色", selection: colorBinding) {
+                Text("跟随系统").tag("system")
+                Text("亮色").tag("light")
+                Text("暗色").tag("dark")
+            }
+            .labelsHidden(), max: 220)
             fieldCaption("菜单栏图标")
             settingsMenuPicker(
                 selection: modeBinding,
@@ -469,6 +476,13 @@ struct SettingsRootView: View {
         Binding(
             get: { store.config.notifyExhaustionRisk },
             set: { v in applySetting { $0.notifyExhaustionRisk = v } }
+        )
+    }
+
+    var colorBinding: Binding<String> {
+        Binding(
+            get: { store.config.colorMode },
+            set: { v in applySetting { $0.colorMode = v } }
         )
     }
 

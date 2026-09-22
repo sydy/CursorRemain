@@ -37,6 +37,7 @@ final class AppStore: ObservableObject {
     init(directory: URL? = nil) {
         settingsDirectory = directory
         config = ConfigStore.load(from: directory)
+        ColorModeAppearance.apply(config.colorMode)
     }
 
     func start() {
@@ -114,6 +115,7 @@ final class AppStore: ObservableObject {
         let prevActive = config.activeAccountId
         let prevAuto = config.autostartEnabled
         config = cfg
+        ColorModeAppearance.apply(cfg.colorMode)
         if !ConfigStore.save(cfg, to: settingsDirectory) {
             saveError = "无法写入配置（文件忙碌或加密失败），请稍后再试。"
             notify("保存失败", saveError)
@@ -461,5 +463,18 @@ final class AppStore: ObservableObject {
         content.body = body
         let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
+    }
+}
+
+enum ColorModeAppearance {
+    static func apply(_ mode: String) {
+        switch mode {
+        case "light":
+            NSApp.appearance = NSAppearance(named: .aqua)
+        case "dark":
+            NSApp.appearance = NSAppearance(named: .darkAqua)
+        default:
+            NSApp.appearance = nil
+        }
     }
 }

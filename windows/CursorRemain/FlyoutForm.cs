@@ -461,9 +461,15 @@ sealed class FlyoutForm : Form
         return null;
     }
 
+    public void RefreshChrome()
+    {
+        ApplyPalette();
+        Invalidate();
+    }
+
     void ApplyPalette()
     {
-        Palette = FlyoutPalette.For(UiChrome.AppsUseLightTheme());
+        Palette = FlyoutPalette.For(UiChrome.UseLightTheme());
         BackColor = Palette.Window;
         ForeColor = Palette.Text;
     }

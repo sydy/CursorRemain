@@ -90,6 +90,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "update_installed_sha": "",
     "update_installed_asset_id": 0,
     "tray_display_mode": "ring",  # ring | number | dot
+    "color_mode": "system",  # system | light | dark；本机外观，不进云同步
     "monthly_plan_usd": 0,  # 0 = 按套餐预填
     "actual_cny": 0,  # 跟随当前账号；0 = 用月费×汇率。每个账号可独立设置
     "usd_cny_rate": 7.5,
@@ -113,6 +114,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 _VALID_DISPLAY_MODES = frozenset({"ring", "number", "dot"})
+_VALID_COLOR_MODES = frozenset({"system", "light", "dark"})
 _THREAD_LOCK = threading.RLock()
 
 
@@ -225,6 +227,8 @@ def _normalize_config(cfg: dict[str, Any], *, raw: dict[str, Any]) -> dict[str, 
 
     mode = str(cfg.get("tray_display_mode") or "ring").strip().lower()
     cfg["tray_display_mode"] = mode if mode in _VALID_DISPLAY_MODES else "ring"
+    color = str(cfg.get("color_mode") or "system").strip().lower()
+    cfg["color_mode"] = color if color in _VALID_COLOR_MODES else "system"
 
     from usage_report import clamp_actual_cny, clamp_monthly_plan_usd, clamp_usd_cny_rate
 

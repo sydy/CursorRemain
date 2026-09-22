@@ -265,6 +265,7 @@ public struct AppConfig: Equatable, Sendable {
     public var updateInstalledSha: String
     public var updateInstalledAssetId: Int64
     public var trayDisplayMode: String
+    public var colorMode: String
     public var monthlyPlanUsd: Double
     public var actualCny: Double
     public var usdCnyRate: Double
@@ -294,6 +295,7 @@ public struct AppConfig: Equatable, Sendable {
     public var storedSessionToken: String
 
     public static let displayModes: Set<String> = ["ring", "number", "dot"]
+    public static let colorModes: Set<String> = ["system", "light", "dark"]
 
     public static let `default` = AppConfig(
         sessionToken: "",
@@ -313,6 +315,7 @@ public struct AppConfig: Equatable, Sendable {
         updateInstalledSha: "",
         updateInstalledAssetId: 0,
         trayDisplayMode: "ring",
+        colorMode: "system",
         monthlyPlanUsd: 0,
         actualCny: 0,
         usdCnyRate: UsageEvents.defaultUsdCnyRate,
@@ -788,6 +791,8 @@ public enum ConfigStore {
         }
         let mode = ((raw["tray_display_mode"] as? String) ?? "ring").trimmingCharacters(in: .whitespaces).lowercased()
         cfg.trayDisplayMode = AppConfig.displayModes.contains(mode) ? mode : "ring"
+        let color = ((raw["color_mode"] as? String) ?? "system").trimmingCharacters(in: .whitespaces).lowercased()
+        cfg.colorMode = AppConfig.colorModes.contains(color) ? color : "system"
         if let v = doubleValue(raw["monthly_plan_usd"]) { cfg.monthlyPlanUsd = UsageEvents.clampMonthlyPlanUsd(v) }
         if let v = doubleValue(raw["actual_cny"]) { cfg.actualCny = UsageEvents.clampActualCny(v) }
         if let v = doubleValue(raw["usd_cny_rate"]) {
@@ -1064,6 +1069,7 @@ public enum ConfigStore {
             "update_installed_sha": cfg.updateInstalledSha,
             "update_installed_asset_id": cfg.updateInstalledAssetId,
             "tray_display_mode": cfg.trayDisplayMode,
+            "color_mode": AppConfig.colorModes.contains(cfg.colorMode) ? cfg.colorMode : "system",
             "monthly_plan_usd": cfg.monthlyPlanUsd,
             "actual_cny": cfg.actualCny,
             "usd_cny_rate": cfg.usdCnyRate,

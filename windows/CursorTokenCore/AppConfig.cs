@@ -86,6 +86,7 @@ public sealed class AppConfig
     public string UpdateInstalledSha { get; set; } = "";
     public long UpdateInstalledAssetId { get; set; }
     public string TrayDisplayMode { get; set; } = "ring";
+    public string ColorMode { get; set; } = "system";
     public double MonthlyPlanUsd { get; set; }
     public double ActualCny { get; set; }
     public double UsdCnyRate { get; set; } = UsageEvents.DefaultUsdCnyRate;
@@ -670,6 +671,8 @@ public static class ConfigStore
         }
         var mode = Str(raw, "tray_display_mode", "ring").Trim().ToLowerInvariant();
         cfg.TrayDisplayMode = mode is "ring" or "number" or "dot" ? mode : "ring";
+        var color = Str(raw, "color_mode", "system").Trim().ToLowerInvariant();
+        cfg.ColorMode = color is "system" or "light" or "dark" ? color : "system";
         cfg.MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(DoubleVal(raw, "monthly_plan_usd", 0));
         cfg.ActualCny = UsageEvents.ClampActualCny(DoubleVal(raw, "actual_cny", 0));
         cfg.UsdCnyRate = UsageEvents.ClampUsdCnyRate(DoubleVal(raw, "usd_cny_rate", UsageEvents.DefaultUsdCnyRate));
@@ -939,6 +942,7 @@ public static class ConfigStore
         update_installed_sha = cfg.UpdateInstalledSha,
         update_installed_asset_id = cfg.UpdateInstalledAssetId,
         tray_display_mode = cfg.TrayDisplayMode,
+        color_mode = cfg.ColorMode is "light" or "dark" or "system" ? cfg.ColorMode : "system",
         monthly_plan_usd = cfg.MonthlyPlanUsd,
         actual_cny = cfg.ActualCny,
         usd_cny_rate = cfg.UsdCnyRate,
