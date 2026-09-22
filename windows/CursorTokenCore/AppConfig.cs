@@ -438,6 +438,12 @@ public static class AppPaths
         if (aid.Length == 0) aid = "account";
         return Path.Combine(root, teamScope ? $"usage_events.{aid}.team.jsonl" : $"usage_events.{aid}.jsonl");
     }
+
+    public static string NormalizeAppearance(string? raw)
+    {
+        var mode = (raw ?? "").Trim().ToLowerInvariant();
+        return mode is "system" or "light" or "dark" ? mode : "system";
+    }
 }
 
 public sealed class ConfigLockException : IOException
@@ -672,7 +678,7 @@ public static class ConfigStore
         }
         var mode = Str(raw, "tray_display_mode", "ring").Trim().ToLowerInvariant();
         cfg.TrayDisplayMode = mode is "ring" or "number" or "dot" ? mode : "ring";
-        cfg.ColorMode = NormalizeAppearance(Str(raw, "color_mode", "system"));
+        cfg.ColorMode = AppConfig.NormalizeAppearance(Str(raw, "color_mode", "system"));
         cfg.MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(DoubleVal(raw, "monthly_plan_usd", 0));
         cfg.ActualCny = UsageEvents.ClampActualCny(DoubleVal(raw, "actual_cny", 0));
         cfg.UsdCnyRate = UsageEvents.ClampUsdCnyRate(DoubleVal(raw, "usd_cny_rate", UsageEvents.DefaultUsdCnyRate));
@@ -872,12 +878,6 @@ public static class ConfigStore
         else fail();
     }
 
-    public static string NormalizeAppearance(string? raw)
-    {
-        var mode = (raw ?? "").Trim().ToLowerInvariant();
-        return mode is "system" or "light" or "dark" ? mode : "system";
-    }
-
     static bool Bool(JsonElement raw, string key, bool fallback) =>
         raw.TryGetProperty(key, out var v) ? v.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => fallback } : fallback;
 
@@ -948,7 +948,7 @@ public static class ConfigStore
         update_installed_sha = cfg.UpdateInstalledSha,
         update_installed_asset_id = cfg.UpdateInstalledAssetId,
         tray_display_mode = cfg.TrayDisplayMode,
-        color_mode = NormalizeAppearance(cfg.ColorMode),
+        color_mode = AppConfig.NormalizeAppearance(cfg.ColorMode),
         monthly_plan_usd = cfg.MonthlyPlanUsd,
         actual_cny = cfg.ActualCny,
         usd_cny_rate = cfg.UsdCnyRate,
