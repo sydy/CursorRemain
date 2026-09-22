@@ -1067,8 +1067,8 @@ final class AccountSyncFixtureTests: XCTestCase {
     func testKeepLiveActiveAccountRestoresSwitchDuringMerge() {
         var cfg = AppConfig.default
         cfg.accounts = [
-            Account(id: "user_01A", token: "tok-a", label: "A"),
-            Account(id: "user_01B", token: "tok-b", label: "B"),
+            Account(id: "user_01A", label: "A", token: "tok-a"),
+            Account(id: "user_01B", label: "B", token: "tok-b"),
         ]
         cfg.activeAccountId = "user_01A"
         cfg.syncLegacyFields()
@@ -1085,8 +1085,8 @@ final class AccountSyncFixtureTests: XCTestCase {
     func testKeepLiveActiveAccountLeavesMergedActiveWhenUserDidNotSwitch() {
         var cfg = AppConfig.default
         cfg.accounts = [
-            Account(id: "user_01A", token: "tok-a", label: "A"),
-            Account(id: "user_01B", token: "tok-b", label: "B"),
+            Account(id: "user_01A", label: "A", token: "tok-a"),
+            Account(id: "user_01B", label: "B", token: "tok-b"),
         ]
         cfg.activeAccountId = "user_01A"
         cfg.syncLegacyFields()
