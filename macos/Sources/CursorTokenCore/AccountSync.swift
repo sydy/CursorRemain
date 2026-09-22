@@ -682,6 +682,21 @@ public enum AccountSync {
         return before != after || beforeSettings != settingsIdentity(snapshotSettings(cfg)) || usageChanged
     }
 
+    /// Restore the account the user picked while a merge was applying the snapshot.
+    /// Settings and background reconcile work on a copied `AppConfig`, so callers
+    /// must pass the live store's `activeAccountId` rather than the copy.
+    @discardableResult
+    public static func keepLiveActiveAccount(_ cfg: inout AppConfig, startedActive: String, liveActive: String) -> Bool {
+        let started = startedActive.trimmingCharacters(in: .whitespaces)
+        let live = liveActive.trimmingCharacters(in: .whitespaces)
+        if live.isEmpty || live == started { return false }
+        guard cfg.accounts.contains(where: { $0.id == live }) else { return false }
+        if cfg.activeAccountId == live { return false }
+        cfg.activeAccountId = live
+        cfg.syncLegacyFields()
+        return true
+    }
+
     static func applyUsageFields(_ account: inout Account, _ ident: SyncAccount) {
         guard hasUsageFields(ident) else { return }
         account.lastRemaining = ident.lastRemaining

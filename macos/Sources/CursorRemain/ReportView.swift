@@ -452,7 +452,8 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
 
     func reloadIfVisible() {
         guard window?.isVisible == true else { return }
-        store?.objectWillChange.send()
+        store?.reloadForCurrentAccount()
+        Task { await store?.sync() }
     }
 
     func close() {

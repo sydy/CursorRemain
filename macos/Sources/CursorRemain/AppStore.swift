@@ -302,10 +302,11 @@ final class AppStore: ObservableObject {
         }.value
         if status.ok || status.changed {
             var merged = next
-            if config.activeAccountId != startedActive {
-                merged.activeAccountId = config.activeAccountId
-                merged.syncLegacyFields()
-            }
+            _ = AccountSync.keepLiveActiveAccount(
+                &merged,
+                startedActive: startedActive,
+                liveActive: config.activeAccountId
+            )
             config = merged
             if !ConfigStore.save(merged, to: settingsDirectory) {
                 AppLog.log("云同步结果写入配置失败")

@@ -1064,6 +1064,41 @@ final class AccountSyncFixtureTests: XCTestCase {
         XCTAssertEqual(try AccountSync.maybeGunzip(gz, compression: "gzip"), raw)
     }
 
+    func testKeepLiveActiveAccountRestoresSwitchDuringMerge() {
+        var cfg = AppConfig.default
+        cfg.accounts = [
+            Account(id: "user_01A", label: "A", token: "tok-a"),
+            Account(id: "user_01B", label: "B", token: "tok-b"),
+        ]
+        cfg.activeAccountId = "user_01A"
+        cfg.syncLegacyFields()
+        var snap = AccountSync.snapshotFromConfig(cfg)
+        snap.activeAccountId = "user_01A"
+        XCTAssertTrue(cfg.setActiveAccount("user_01B"))
+        _ = AccountSync.applySnapshotToConfig(&cfg, snap)
+        XCTAssertEqual(cfg.activeAccountId, "user_01A")
+        XCTAssertTrue(AccountSync.keepLiveActiveAccount(&cfg, startedActive: "user_01A", liveActive: "user_01B"))
+        XCTAssertEqual(cfg.activeAccountId, "user_01B")
+        XCTAssertEqual(cfg.sessionToken, "tok-b")
+    }
+
+    func testKeepLiveActiveAccountLeavesMergedActiveWhenUserDidNotSwitch() {
+        var cfg = AppConfig.default
+        cfg.accounts = [
+            Account(id: "user_01A", label: "A", token: "tok-a"),
+            Account(id: "user_01B", label: "B", token: "tok-b"),
+        ]
+        cfg.activeAccountId = "user_01A"
+        cfg.syncLegacyFields()
+        var snap = AccountSync.snapshotFromConfig(cfg)
+        snap.activeAccountId = "user_01B"
+        _ = AccountSync.applySnapshotToConfig(&cfg, snap)
+        XCTAssertFalse(AccountSync.keepLiveActiveAccount(&cfg, startedActive: "user_01A", liveActive: "user_01A"))
+        XCTAssertEqual(cfg.activeAccountId, "user_01B")
+        XCTAssertFalse(AccountSync.keepLiveActiveAccount(&cfg, startedActive: "user_01A", liveActive: "user_missing"))
+        XCTAssertEqual(cfg.activeAccountId, "user_01B")
+    }
+
     func testTrimSnapshotKeepsNewestEvents() {
         let events = (0..<800).map { i in
             UsageEvent(id: "e\(i)", timestampMs: Int64((i + 1) * 1000), model: "opus", kind: "included", tokens: 1)

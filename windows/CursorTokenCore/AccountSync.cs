@@ -638,9 +638,9 @@ public static class AccountSync
     /// Restore the account the user picked while a merge was applying the snapshot.
     /// No-op when they did not switch, or when that account is gone.
     /// </summary>
-    public static bool KeepLiveActiveAccount(AppConfig cfg, string startedActive)
+    public static bool KeepLiveActiveAccount(AppConfig cfg, string startedActive, string? liveActive = null)
     {
-        var live = (cfg.SessionActiveAccountId ?? "").Trim();
+        var live = (liveActive ?? cfg.SessionActiveAccountId ?? "").Trim();
         startedActive = (startedActive ?? "").Trim();
         if (live.Length == 0 || live == startedActive) return false;
         if (!cfg.Accounts.Any(a => a.Id == live)) return false;
