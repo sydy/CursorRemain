@@ -9,16 +9,19 @@ import Security
 /// unavailable Protect throws so a save never replaces ciphertext with plaintext.
 ///
 /// Release builds are ad-hoc signed, so a default keychain ACL binds to that
-/// build's CDHash. 「始终允许」then expires on the next auto-update. New items
-/// use an ACL that any application may read, and a v1 item is copied to v2
-/// after one successful unlock instead of minting a replacement key.
+/// build's CDHash. 「始终允许」then expires on the next auto-update. After one
+/// successful unlock the wrap key is copied to a 0600 file next to config.json
+/// so later launches and updates never touch the keychain again.
 public enum TokenProtector {
     public static let prefix = "enc:v1:"
     public static let decryptFailedMessage = "Token 解密失败，请重新导入"
     public static let service = "com.harker.cursortokentray"
     static let keyAccount = "wrap-key-v2"
     static let legacyKeyAccount = "wrap-key-v1"
+    static let wrapKeyFileName = "wrap-key"
     static let accessDescriptor = "Cursor 余量 Token 密钥"
+    /// Test-only directory so file-key cases do not touch the login keychain.
+    static var testDirectory: URL?
 
     public static func isProtected(_ value: String) -> Bool {
         value.hasPrefix(prefix)
@@ -81,18 +84,52 @@ public enum TokenProtector {
     }
 
     static func wrapKey() -> SymmetricKey? {
+        if let key = readFileKey() { return key }
+
         let current = readKey(account: keyAccount)
-        if case .found(let key) = current { return key }
+        if case .found(let key) = current {
+            _ = writeFileKey(key)
+            return key
+        }
 
         let legacy = readKey(account: legacyKeyAccount)
         if case .found(let key) = legacy {
-            _ = storeKey(key)
+            _ = writeFileKey(key)
             return key
         }
 
         guard shouldMintNewKey(current: current.lookup, legacy: legacy.lookup) else { return nil }
         let key = SymmetricKey(size: .bits256)
-        return storeKey(key) ? key : nil
+        let filed = writeFileKey(key)
+        let chained = storeKey(key)
+        return (filed || chained) ? key : nil
+    }
+
+    static func dataDirectory() -> URL {
+        testDirectory ?? AppPaths.configDirectory()
+    }
+
+    static func wrapKeyURL(directory: URL? = nil) -> URL {
+        (directory ?? dataDirectory()).appendingPathComponent(wrapKeyFileName)
+    }
+
+    static func readFileKey(directory: URL? = nil) -> SymmetricKey? {
+        let url = wrapKeyURL(directory: directory)
+        guard let data = try? Data(contentsOf: url), data.count == 32 else { return nil }
+        return SymmetricKey(data: data)
+    }
+
+    static func writeFileKey(_ key: SymmetricKey, directory: URL? = nil) -> Bool {
+        let url = wrapKeyURL(directory: directory)
+        AppPaths.ensureDirectory(url.deletingLastPathComponent())
+        let data = key.withUnsafeBytes { Data($0) }
+        do {
+            try data.write(to: url, options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
+        } catch {
+            return false
+        }
     }
 
     enum KeyMaterial {

@@ -2,6 +2,9 @@ import Foundation
 import XCTest
 @testable import CursorTokenCore
 
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 #if canImport(Security)
 import Security
 #endif
@@ -53,6 +56,29 @@ final class TokenProtectorTests: XCTestCase {
         XCTAssertEqual(TokenProtector.unprotect(blob), token)
         XCTAssertEqual(TokenProtector.keyAccount, "wrap-key-v2")
         XCTAssertEqual(TokenProtector.legacyKeyAccount, "wrap-key-v1")
+        XCTAssertEqual(TokenProtector.wrapKeyFileName, "wrap-key")
+        #endif
+    }
+
+    func testFileWrapKeyIsPreferredAndMode600() throws {
+        #if canImport(CryptoKit) && canImport(Security)
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ctt-wrap-" + UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        TokenProtector.testDirectory = dir
+        defer {
+            TokenProtector.testDirectory = nil
+            try? FileManager.default.removeItem(at: dir)
+        }
+        let key = SymmetricKey(size: .bits256)
+        XCTAssertTrue(TokenProtector.writeFileKey(key, directory: dir))
+        XCTAssertNotNil(TokenProtector.readFileKey(directory: dir))
+        let path = TokenProtector.wrapKeyURL(directory: dir).path
+        let perms = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual((perms?.intValue ?? 0) & 0o777, 0o600)
+        let token = "user_01FILE%3A%3Aaaa.bbb.ccc"
+        let blob = try TokenProtector.protect(token)
+        XCTAssertEqual(TokenProtector.unprotect(blob), token)
+        XCTAssertNil(TokenProtector.readFileKey(directory: dir.appendingPathComponent("missing")))
         #endif
     }
 }
