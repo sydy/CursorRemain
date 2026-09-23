@@ -4,8 +4,17 @@ public struct CursorClient: Sendable {
     public var session: URLSession
     public var timeout: TimeInterval
 
-    public init(session: URLSession = .shared, timeout: TimeInterval = 30) {
-        self.session = session
+    /// 不使用 URLSession.shared，避免多账号并发时 Set-Cookie 串到别的会话。
+    public static let cookieFreeSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        config.httpCookieStorage = nil
+        return URLSession(configuration: config)
+    }()
+
+    public init(session: URLSession? = nil, timeout: TimeInterval = 30) {
+        self.session = session ?? CursorClient.cookieFreeSession
         self.timeout = timeout
     }
 
@@ -144,6 +153,7 @@ public struct CursorClient: Sendable {
         }
         var lastError: CursorAPIError?
         for attempt in 0..<3 {
+            try Task.checkCancellation()
             let data: Data
             let response: URLResponse
             do {

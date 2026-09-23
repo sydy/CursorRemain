@@ -221,6 +221,51 @@ public class CloudSyncTests
         }
     }
 
+    [Fact]
+    public void CloneDoesNotShareAccountList()
+    {
+        var cfg = new AppConfig
+        {
+            Accounts = [new Account { Id = "user_01A", Token = "tok-a-" + new string('x', 40), Label = "A" }],
+            ActiveAccountId = "user_01A",
+            SessionActiveAccountId = "user_01B",
+            RefreshIntervalMinutes = 12,
+        };
+        var copy = ConfigStore.Clone(cfg);
+        copy.Accounts[0].Label = "B";
+        copy.RefreshIntervalMinutes = 3;
+        Assert.Equal("A", cfg.Accounts[0].Label);
+        Assert.Equal(12, cfg.RefreshIntervalMinutes);
+        Assert.Equal("B", copy.Accounts[0].Label);
+        Assert.Equal("user_01A", copy.ActiveAccountId);
+        Assert.Equal("user_01B", copy.SessionActiveAccountId);
+        Assert.Equal(3, copy.RefreshIntervalMinutes);
+    }
+
+    [Fact]
+    public void DeriveKeyRejectsHugeIterations()
+    {
+        var err = Assert.Throws<CursorApiException>(() => AccountSync.DeriveKey("password1", new byte[16], AccountSync.MaxIterations + 1));
+        Assert.Contains("过高", err.Message);
+    }
+
+    [Fact]
+    public void GzipDecompressRejectsExpansionPastCap()
+    {
+        var previous = AccountSync.MaxGunzipBytes;
+        AccountSync.MaxGunzipBytes = 32;
+        try
+        {
+            var gz = AccountSync.GzipCompress(Encoding.UTF8.GetBytes(new string('x', 64)));
+            var err = Assert.Throws<CursorApiException>(() => AccountSync.GzipDecompress(gz));
+            Assert.Contains("过大", err.Message);
+        }
+        finally
+        {
+            AccountSync.MaxGunzipBytes = previous;
+        }
+    }
+
     static AppConfig LoggedIn() => new()
     {
         SyncEnabled = true,

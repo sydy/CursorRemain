@@ -1059,6 +1059,15 @@ final class AccountSyncFixtureTests: XCTestCase {
         let gz = try GzipCodec.compress(raw)
         XCTAssertEqual(Array(gz.prefix(2)), [0x1f, 0x8b])
         XCTAssertEqual(try GzipCodec.decompress(gz), raw)
+        var broken = gz
+        broken[broken.count - 8] ^= 0xff
+        XCTAssertThrowsError(try GzipCodec.decompress(broken))
+        let previousCap = GzipCodec.maxPlaintext
+        GzipCodec.maxPlaintext = 32
+        let oversized = try GzipCodec.compress(Data(repeating: 1, count: 64))
+        XCTAssertThrowsError(try GzipCodec.decompress(oversized))
+        GzipCodec.maxPlaintext = previousCap
+        XCTAssertThrowsError(try AccountSync.deriveKey(passphrase: "password1", salt: Data(repeating: 1, count: 16), iterations: AccountSync.maxIterations + 1))
         XCTAssertTrue(AccountSync.looksLikeGzip(gz))
         XCTAssertEqual(try AccountSync.maybeGunzip(gz, compression: ""), raw)
         XCTAssertEqual(try AccountSync.maybeGunzip(gz, compression: "gzip"), raw)

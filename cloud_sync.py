@@ -24,6 +24,7 @@ from account_sync import (
 
 API_BASE = "https://sync.harker.cn"
 TIMEOUT = 60
+_MAX_RESPONSE_BYTES = 2_000_000
 
 Requester = Callable[[str, str, dict[str, str] | None, dict[str, Any] | None], tuple[int, Any]]
 Logger = Callable[..., None]
@@ -61,6 +62,20 @@ def clear_session(cfg: dict[str, Any], *, keep_email: bool = True) -> None:
     cfg["sync_enabled"] = False
 
 
+def _read_limited(stream: Any, limit: int = _MAX_RESPONSE_BYTES) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        block = stream.read(65536)
+        if not block:
+            break
+        total += len(block)
+        if total > limit:
+            raise CloudSyncError("同步响应过大")
+        chunks.append(block)
+    return b"".join(chunks)
+
+
 def _http(method: str, url: str, headers: dict[str, str] | None, body: dict[str, Any] | None) -> tuple[int, Any]:
     data = None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=data, method=method)
@@ -71,11 +86,14 @@ def _http(method: str, url: str, headers: dict[str, str] | None, body: dict[str,
         req.add_header(key, value)
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-            raw = resp.read().decode("utf-8")
+            raw = _read_limited(resp).decode("utf-8")
             payload = json.loads(raw) if raw else {}
             return resp.status, payload
     except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8") if exc.fp else ""
+        try:
+            raw = _read_limited(exc).decode("utf-8") if exc.fp else ""
+        except CloudSyncError:
+            return exc.code, {"detail": "同步响应过大"}
         try:
             payload = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
