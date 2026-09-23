@@ -67,7 +67,7 @@ public static class UsageHistory
             }
             catch { }
         }
-        File.WriteAllText(path, kept.Count == 0 ? "" : string.Join("\n", kept) + "\n");
+        ConfigStore.AtomicWrite(path, kept.Count == 0 ? "" : string.Join("\n", kept) + "\n");
     }
 
     public static void Replace(IEnumerable<HistoryPoint> points, string accountId, string? directory = null)
@@ -92,7 +92,7 @@ public static class UsageHistory
             };
             lines.Add(JsonSerializer.Serialize(obj));
         }
-        File.WriteAllText(path, lines.Count == 0 ? "" : string.Join("\n", lines) + "\n");
+        ConfigStore.AtomicWrite(path, lines.Count == 0 ? "" : string.Join("\n", lines) + "\n");
     }
 
     public static List<HistoryPoint> LoadRecent(int days = 7, string? accountId = null, string? directory = null)

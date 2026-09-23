@@ -173,6 +173,7 @@ public enum AccountSync {
     public static let filename = "CursorRemain.accounts.sync"
     public static let kdf = "pbkdf2-sha256"
     public static let defaultIterations = 210_000
+    public static let maxIterations = 600_000
     public static let keyLen = 32
     public static let saltLen = 16
     public static let nonceLen = 12
@@ -712,6 +713,7 @@ public enum AccountSync {
     public static func deriveKey(passphrase: String, salt: Data, iterations: Int = defaultIterations) throws -> Data {
         if passphrase.isEmpty { throw CursorAPIError("同步口令不能为空") }
         if iterations < 1000 { throw CursorAPIError("KDF 迭代次数过低") }
+        if iterations > maxIterations { throw CursorAPIError("KDF 迭代次数过高") }
         #if canImport(CommonCrypto)
         var derived = Data(count: keyLen)
         let status = derived.withUnsafeMutableBytes { derivedPtr in

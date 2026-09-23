@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import secrets
+import sqlite3
+import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -16,6 +19,7 @@ from .db import get_conn, lock
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 HASHER = PasswordHasher()
+log = logging.getLogger("sync")
 
 
 def now() -> datetime:
@@ -72,29 +76,37 @@ def client_ip(request: Request) -> str:
 class RateLimiter:
     def __init__(self) -> None:
         self._hits: dict[str, list[float]] = {}
+        self._lock = threading.Lock()
 
     def check(self, key: str, limit: int) -> None:
         window = now().timestamp()
         cutoff = window - 60
-        bucket = [t for t in self._hits.get(key, []) if t > cutoff]
-        if len(bucket) >= limit:
+        with self._lock:
+            if len(self._hits) > 4096:
+                stale = [name for name, hits in self._hits.items() if not hits or hits[-1] <= cutoff]
+                for name in stale:
+                    del self._hits[name]
+            bucket = [t for t in self._hits.get(key, []) if t > cutoff]
+            if len(bucket) >= limit:
+                self._hits[key] = bucket
+                raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+            bucket.append(window)
             self._hits[key] = bucket
-            raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
-        bucket.append(window)
-        self._hits[key] = bucket
 
     def reset(self) -> None:
-        self._hits.clear()
+        with self._lock:
+            self._hits.clear()
 
 
 LIMITER = RateLimiter()
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
         "type": "access",
+        "tv": int(token_version),
         "exp": now() + timedelta(minutes=settings.ACCESS_MINUTES),
         "iat": now(),
     }
@@ -135,7 +147,7 @@ def maybe_purge_refresh() -> None:
     try:
         purge_refresh_tokens()
     except Exception:
-        return
+        log.exception("清理过期 refresh token 失败")
 
 
 def revoke_refresh(raw: str) -> None:
@@ -170,56 +182,49 @@ def rotate_refresh(raw: str) -> tuple[str, str]:
     user = get_user(user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
-    return create_access_token(user["id"], user["email"]), issue_refresh(user["id"])
+    return create_access_token(user["id"], user["email"], int(user.get("token_version") or 0)), issue_refresh(user["id"])
 
 
 def get_user(user_id: str) -> dict | None:
     with lock():
-        row = get_conn().execute("SELECT id, email, password_hash, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = get_conn().execute(
+            "SELECT id, email, password_hash, created_at, token_version FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
     return dict(row) if row else None
 
 
 def get_user_by_email(email: str) -> dict | None:
     with lock():
         row = get_conn().execute(
-            "SELECT id, email, password_hash, created_at FROM users WHERE email = ?",
+            "SELECT id, email, password_hash, created_at, token_version FROM users WHERE email = ?",
             (email,),
         ).fetchone()
     return dict(row) if row else None
 
 
 def create_user(email: str, password: str) -> dict:
-    if get_user_by_email(email):
-        raise HTTPException(status_code=409, detail="该邮箱已注册")
+    with lock():
+        if get_conn().execute("SELECT 1 FROM users WHERE email = ?", (email,)).fetchone():
+            raise HTTPException(status_code=409, detail="该邮箱已注册")
     user = {
         "id": str(uuid.uuid4()),
         "email": email,
         "password_hash": hash_password(password),
         "created_at": now_iso(),
+        "token_version": 0,
     }
-    with lock():
-        conn = get_conn()
-        conn.execute(
-            "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], user["email"], user["password_hash"], user["created_at"]),
-        )
-        conn.commit()
+    try:
+        with lock():
+            conn = get_conn()
+            conn.execute(
+                "INSERT INTO users (id, email, password_hash, created_at, token_version) VALUES (?, ?, ?, ?, 0)",
+                (user["id"], user["email"], user["password_hash"], user["created_at"]),
+            )
+            conn.commit()
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(status_code=409, detail="该邮箱已注册") from exc
     return user
-
-
-def update_password_hash(user_id: str, password: str) -> None:
-    digest = hash_password(password)
-    with lock():
-        conn = get_conn()
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (digest, user_id))
-        conn.commit()
-
-
-def revoke_all_refresh(user_id: str) -> None:
-    with lock():
-        conn = get_conn()
-        conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user_id,))
-        conn.commit()
 
 
 def purge_refresh_tokens() -> int:
@@ -251,12 +256,18 @@ def bearer_user(request: Request) -> dict:
     user = get_user(str(payload["sub"]))
     if user is None:
         raise HTTPException(status_code=401, detail="请先登录云同步")
+    try:
+        presented = int(payload.get("tv") or 0)
+    except (TypeError, ValueError):
+        presented = -1
+    if presented != int(user.get("token_version") or 0):
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
     return user
 
 
 def token_payload(user: dict, refresh: str) -> dict:
     return {
-        "access_token": create_access_token(user["id"], user["email"]),
+        "access_token": create_access_token(user["id"], user["email"], int(user.get("token_version") or 0)),
         "refresh_token": refresh,
         "email": user["email"],
         "expires_in": settings.ACCESS_MINUTES * 60,

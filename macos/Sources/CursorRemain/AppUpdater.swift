@@ -49,7 +49,7 @@ enum AppUpdater {
                 return "已取消更新"
             }
             let staged = try await downloadAndStage(asset)
-            if !launchHelper(newApp: staged, expectedSha: release.commitSha) {
+            if !(await launchHelper(newApp: staged, expectedSha: release.commitSha)) {
                 let fail = "已下载更新，但无法启动安装脚本"
                 rememberCheck(store: store, error: fail)
                 return fail
@@ -160,7 +160,9 @@ enum AppUpdater {
         try FileManager.default.moveItem(at: temp, to: zip)
         let extract = root.appendingPathComponent("extract", isDirectory: true)
         try FileManager.default.createDirectory(at: extract, withIntermediateDirectories: true)
-        try run("/usr/bin/ditto", ["-x", "-k", zip.path, extract.path])
+        try await Task.detached(priority: .userInitiated) {
+            try Self.run("/usr/bin/ditto", ["-x", "-k", zip.path, extract.path])
+        }.value
         guard let app = findApp(in: extract) else {
             throw CursorAPIError("安装包里没有 CursorRemain.app")
         }
@@ -202,7 +204,7 @@ enum AppUpdater {
         store.settingsDirectory ?? AppPaths.configDirectory()
     }
 
-    private static func launchHelper(newApp: URL, expectedSha: String) -> Bool {
+    private static func launchHelper(newApp: URL, expectedSha: String) async -> Bool {
         let dest = Bundle.main.bundleURL
         let script = FileManager.default.temporaryDirectory
             .appendingPathComponent("CursorRemain-apply-\(UUID().uuidString).sh")
@@ -278,25 +280,26 @@ enum AppUpdater {
             AppPaths.ensureDirectory(log.deletingLastPathComponent())
             try body.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: "/bin/bash")
-            proc.arguments = [
-                "-c",
-                AppUpdate.detachedHelperLaunchCommand(
-                    script: script.path,
-                    pid: String(ProcessInfo.processInfo.processIdentifier),
-                    source: newApp.path,
-                    destination: dest.path,
-                    expectedSha: AppUpdate.normalizeSha(expectedSha),
-                    log: log.path
-                ),
-            ]
-            proc.standardOutput = FileHandle.nullDevice
-            proc.standardError = FileHandle.nullDevice
-            try proc.run()
-            proc.waitUntilExit()
-            if proc.terminationStatus != 0 {
-                AppLog.log("无法启动更新脚本: exit \(proc.terminationStatus)")
+            let command = AppUpdate.detachedHelperLaunchCommand(
+                script: script.path,
+                pid: String(ProcessInfo.processInfo.processIdentifier),
+                source: newApp.path,
+                destination: dest.path,
+                expectedSha: AppUpdate.normalizeSha(expectedSha),
+                log: log.path
+            )
+            let status = try await Task.detached(priority: .userInitiated) { () -> Int32 in
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/bin/bash")
+                proc.arguments = ["-c", command]
+                proc.standardOutput = FileHandle.nullDevice
+                proc.standardError = FileHandle.nullDevice
+                try proc.run()
+                proc.waitUntilExit()
+                return proc.terminationStatus
+            }.value
+            if status != 0 {
+                AppLog.log("无法启动更新脚本: exit \(status)")
                 return false
             }
             return true

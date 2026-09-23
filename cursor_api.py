@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 from value_util import parse_iso as _parse_iso
 
 CURSOR_BASE = "https://cursor.com"
+_MAX_RESPONSE_BYTES = 8_000_000
 USAGE_ENDPOINTS = ("/api/usage-summary", "/api/dashboard/usage-summary")
 AGGREGATED_USAGE_ENDPOINT = "/api/dashboard/get-aggregated-usage-events"
 SAND_USAGE_ENDPOINT = "/api/dashboard/get-sand-usage-status"
@@ -722,6 +723,20 @@ def _ssl_context() -> ssl.SSLContext:
         return ssl.create_default_context()
 
 
+def _read_limited(stream: Any, limit: int = _MAX_RESPONSE_BYTES) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        block = stream.read(65536)
+        if not block:
+            break
+        total += len(block)
+        if total > limit:
+            raise CursorApiError("接口响应过大")
+        chunks.append(block)
+    return b"".join(chunks)
+
+
 def _request_json(
     method: str,
     endpoint: str,
@@ -742,7 +757,7 @@ def _request_json(
     try:
         req = Request(url, data=data, headers=headers, method=method)
         with urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
-            text = resp.read().decode("utf-8", errors="replace")
+            text = _read_limited(resp).decode("utf-8", errors="replace")
             if not text:
                 return {}
             payload = json.loads(text)
@@ -756,7 +771,7 @@ def _request_json(
     except HTTPError as err:
         detail = ""
         try:
-            detail = err.read().decode("utf-8", errors="replace")[:200]
+            detail = err.read(4096).decode("utf-8", errors="replace")[:200]
         except Exception:
             pass
         msg = f"HTTP {err.code}"

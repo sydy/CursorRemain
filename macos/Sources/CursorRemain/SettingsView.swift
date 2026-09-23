@@ -860,12 +860,19 @@ struct SettingsRootView: View {
         guard let url = panel.url else { return }
         var cfg = store.config
         let startedActive = cfg.activeAccountId
-        do {
-            let dest = try AccountSync.exportToFile(&cfg, path: url.path, passphrase: exportPassphrase())
-            applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
-            syncStatus = "已导出到 " + dest
-        } catch {
-            syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+        let passphrase = exportPassphrase()
+        syncStatus = "正在导出…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let dest = try AccountSync.exportToFile(&cfg, path: url.path, passphrase: passphrase)
+                DispatchQueue.main.async {
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
+                    syncStatus = "已导出到 " + dest
+                }
+            } catch {
+                let message = (error as? CursorAPIError)?.message ?? error.localizedDescription
+                DispatchQueue.main.async { syncStatus = message }
+            }
         }
     }
 
@@ -879,13 +886,20 @@ struct SettingsRootView: View {
         guard let url = panel.url else { return }
         var cfg = store.config
         let startedActive = cfg.activeAccountId
-        do {
-            try AccountSync.importFromFile(&cfg, path: url.path, passphrase: exportPassphrase())
-            applySyncedConfig(&cfg, startedActive: startedActive, refresh: true)
-            syncStatus = "已从文件合并账号"
-            hint = "已导入"
-        } catch {
-            syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+        let passphrase = exportPassphrase()
+        syncStatus = "正在导入…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try AccountSync.importFromFile(&cfg, path: url.path, passphrase: passphrase)
+                DispatchQueue.main.async {
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: true)
+                    syncStatus = "已从文件合并账号"
+                    hint = "已导入"
+                }
+            } catch {
+                let message = (error as? CursorAPIError)?.message ?? error.localizedDescription
+                DispatchQueue.main.async { syncStatus = message }
+            }
         }
     }
 

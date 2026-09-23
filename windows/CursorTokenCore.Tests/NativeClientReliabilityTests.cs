@@ -228,4 +228,25 @@ public class NativeClientReliabilityTests
             try { Directory.Delete(dir, true); } catch { }
         }
     }
+
+    [Fact]
+    public void UsageEventsSaveReplacesFileWithoutLeavingTemp()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ctt-ev-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var ev = new UsageEvent { Id = "e1", TimestampMs = 1_700_000_000_000, Model = "gpt" };
+            UsageEvents.Save([ev], "user_01A", false, dir);
+            var path = AppPaths.UsageEventsPath("user_01A", false, dir);
+            Assert.True(File.Exists(path));
+            Assert.False(File.Exists(path + ".tmp"));
+            var loaded = UsageEvents.Load("user_01A", false, dir);
+            Assert.Equal("e1", Assert.Single(loaded).Id);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); } catch { }
+        }
+    }
 }
