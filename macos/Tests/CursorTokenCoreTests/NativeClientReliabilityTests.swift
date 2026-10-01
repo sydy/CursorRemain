@@ -65,6 +65,32 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(report.events.first?.id, "mid")
     }
 
+    func testReportTokenKpiKeepsTotalsAboveInt32() {
+        let start = (UsageEvents.reportDateStartMs("2026-09-14") ?? 0) + 12 * 3600 * 1000
+        let events = (0..<3).map { i in
+            UsageEvent(
+                id: "big-\(i)",
+                timestampMs: start + Int64(i) * 86_400_000,
+                model: "grok-4-6-high-fastast",
+                kind: UsageEvents.kindIncluded,
+                tokens: 1_000_000_000,
+                chargedCents: 99_259.67
+            )
+        }
+        let report = UsageEvents.buildReport(events, filter: UsageReportFilter(startDate: "2026-09-14"))
+        XCTAssertEqual(report.eventCount, 3)
+        XCTAssertEqual(report.totalTokens, 3_000_000_000)
+        XCTAssertEqual(report.daily.reduce(0) { $0 + $1.tokens }, 3_000_000_000)
+        let chart = UsageEvents.buildChart(report.events, hourly: false)
+        XCTAssertEqual(chart.buckets.reduce(0) { $0 + $1.tokens }, 3_000_000_000)
+        XCTAssertEqual(UsageParser.formatTokenCount(Double(report.totalTokens)), "30.0亿")
+        XCTAssertEqual(UsageParser.formatTokenCount(2_147_483_648), "21.5亿")
+        XCTAssertEqual(UsageParser.formatTokenCount(400_000_000), "4.0亿")
+        XCTAssertEqual(StatusText.formatReportPerMillionKpi(totalCny: 150, totalTokens: report.totalTokens), "≈¥0.05")
+        XCTAssertTrue(report.hasCost)
+        XCTAssertEqual(UsageParser.formatUSDCents(report.totalCents), "$2977.79")
+    }
+
     func testPrioritizeKeepsRelativeOrder() {
         let items = ["b", "a", "c", "d"]
         XCTAssertEqual(RefreshGeneration.prioritize(items) { $0 == "a" }, ["a", "b", "c", "d"])

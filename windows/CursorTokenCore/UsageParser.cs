@@ -178,7 +178,8 @@ public static class UsageParser
     public static string FormatTokenCount(double? count)
     {
         if (count is null) return "—";
-        var n = Math.Max(0, (int)Math.Round(count.Value));
+        // Usage-report KPI totals can exceed Int32 (≈21.47亿). Casting to int overflows to 0.
+        var n = Math.Max(0L, (long)Math.Round(count.Value));
         if (n >= 100_000_000) return (n / 100_000_000.0).ToString("0.0", CultureInfo.InvariantCulture) + "亿";
         if (n >= 10_000) return (n / 10_000.0).ToString("0.0", CultureInfo.InvariantCulture) + "万";
         return n.ToString(CultureInfo.InvariantCulture);

@@ -312,7 +312,8 @@ public enum UsageParser {
 
     public static func formatTokenCount(_ count: Double?) -> String {
         guard let count else { return "—" }
-        var n = Int(count.rounded())
+        // Keep Int64 so usage-report KPI totals above Int32.max (≈21.47亿) still format.
+        var n = Int64(count.rounded())
         n = max(0, n)
         if n >= 100_000_000 { return String(format: "%.1f亿", Double(n) / 100_000_000.0) }
         if n >= 10_000 { return String(format: "%.1f万", Double(n) / 10_000.0) }

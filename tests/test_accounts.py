@@ -276,6 +276,52 @@ class AccountStateTests(unittest.TestCase):
         self.assertEqual(empty.event_count, 1)
         self.assertEqual(empty.events[0].id, "mid")
 
+    def test_report_token_kpi_keeps_totals_above_int32(self) -> None:
+        from cursor_api import format_token_count, format_usd_cents
+        from status_text import format_report_per_million_kpi
+        from usage_report import (
+            UsageEvent,
+            UsageReportFilter,
+            build_usage_chart,
+            build_usage_report,
+            report_date_start_ms,
+        )
+
+        start = report_date_start_ms("2026-09-14")
+        self.assertIsNotNone(start)
+        events = [
+            UsageEvent(
+                id=f"big-{i}",
+                timestamp_ms=start + 12 * 3600 * 1000 + i * 86_400_000,
+                model="grok-4-6-high-fastast",
+                kind="included",
+                user_email="",
+                owning_user="",
+                tokens=1_000_000_000,
+                input_tokens=0,
+                output_tokens=0,
+                cache_write_tokens=0,
+                cache_read_tokens=0,
+                charged_cents=99_259.67,
+                total_cents=None,
+                is_headless=False,
+                is_chargeable=False,
+            )
+            for i in range(3)
+        ]
+        report = build_usage_report(events, UsageReportFilter(start_date="2026-09-14"))
+        self.assertEqual(report.event_count, 3)
+        self.assertEqual(report.total_tokens, 3_000_000_000)
+        self.assertEqual(sum(row.tokens for row in report.daily), 3_000_000_000)
+        chart = build_usage_chart(report.events, hourly=False)
+        self.assertEqual(sum(bucket.tokens for bucket in chart.buckets), 3_000_000_000)
+        self.assertEqual(format_token_count(report.total_tokens), "30.0亿")
+        self.assertEqual(format_token_count(2_147_483_648), "21.5亿")
+        self.assertEqual(format_token_count(400_000_000), "4.0亿")
+        self.assertEqual(format_report_per_million_kpi(150, report.total_tokens), "≈¥0.05")
+        self.assertTrue(report.has_cost)
+        self.assertEqual(format_usd_cents(report.total_cents), "$2977.79")
+
     def test_actual_cny_is_per_account(self) -> None:
         from accounts import (
             normalize_account_state,

@@ -52,6 +52,33 @@ public class NativeClientReliabilityTests
     }
 
     [Fact]
+    public void ReportTokenKpiKeepsTotalsAboveInt32()
+    {
+        var start = UsageEvents.ReportDateStartMs("2026-09-14")!.Value + 12L * 3600 * 1000;
+        var events = Enumerable.Range(0, 3).Select(i => new UsageEvent
+        {
+            Id = $"big-{i}",
+            TimestampMs = start + i * 86_400_000L,
+            Model = "grok-4-6-high-fastast",
+            Kind = UsageEvents.KindIncluded,
+            Tokens = 1_000_000_000,
+            ChargedCents = 99_259.67,
+        }).ToList();
+        var report = UsageEvents.BuildReport(events, new UsageReportFilter { StartDate = "2026-09-14" });
+        Assert.Equal(3, report.EventCount);
+        Assert.Equal(3_000_000_000L, report.TotalTokens);
+        Assert.Equal(3_000_000_000L, report.Daily.Sum(d => d.Tokens));
+        var chart = UsageEvents.BuildChart(report.Events, hourly: false);
+        Assert.Equal(3_000_000_000L, chart.Buckets.Sum(b => b.Tokens));
+        Assert.Equal("30.0亿", UsageParser.FormatTokenCount(report.TotalTokens));
+        Assert.Equal("21.5亿", UsageParser.FormatTokenCount(2_147_483_648d));
+        Assert.Equal("4.0亿", UsageParser.FormatTokenCount(400_000_000d));
+        Assert.Equal("≈¥0.05", StatusText.FormatReportPerMillionKpi(150, report.TotalTokens));
+        Assert.True(report.HasCost);
+        Assert.Equal("$2977.79", UsageParser.FormatUsdCents(report.TotalCents));
+    }
+
+    [Fact]
     public void PrioritizeKeepsRelativeOrder()
     {
         var items = new[] { "b", "a", "c", "d" };
