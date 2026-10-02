@@ -596,7 +596,16 @@ public static class ConfigStore
         }
     }
 
-    static void AtomicWrite(string path, string contents)
+    public static AppConfig Clone(AppConfig cfg)
+    {
+        var json = JsonSerializer.Serialize(ToDict(cfg));
+        using var doc = JsonDocument.Parse(json);
+        var copy = Normalize(doc.RootElement);
+        copy.SessionActiveAccountId = cfg.SessionActiveAccountId ?? "";
+        return copy;
+    }
+
+    internal static void AtomicWrite(string path, string contents)
     {
         var tmp = path + ".tmp";
         var bytes = System.Text.Encoding.UTF8.GetBytes(contents);

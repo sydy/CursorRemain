@@ -252,14 +252,18 @@ public enum CloudSync {
         if Thread.isMainThread {
             throw CursorAPIError("同步不能在主线程等待网络")
         }
-        URLSession.shared.dataTask(with: req) { data, response, error in
+        let task = URLSession.shared.dataTask(with: req) { data, response, error in
             box.data = data
             box.response = response
             box.error = error
             sem.signal()
-        }.resume()
-        _ = sem.wait(timeout: .now() + 70)
-        if box.error != nil { throw CursorAPIError("无法连接同步服务器") }
+        }
+        task.resume()
+        if sem.wait(timeout: .now() + 70) == .timedOut {
+            task.cancel()
+            throw CursorAPIError("无法连接同步服务器")
+        }
+        if box.error != nil || box.response == nil { throw CursorAPIError("无法连接同步服务器") }
         let status = (box.response as? HTTPURLResponse)?.statusCode ?? 0
         let obj = (try? JSONSerialization.jsonObject(with: box.data ?? Data())) as? [String: Any] ?? [:]
         if status >= 400 {

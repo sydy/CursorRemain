@@ -46,9 +46,15 @@ async def limit_sync_body(request: Request, call_next):
                     return JSONResponse(status_code=413, content={"detail": "同步数据过大"})
             except ValueError:
                 return JSONResponse(status_code=400, content={"detail": "同步数据损坏"})
-        body = await request.body()
-        if len(body) > limit:
-            return JSONResponse(status_code=413, content={"detail": "同步数据过大"})
+        chunks: list[bytes] = []
+        total = 0
+        async for chunk in request.stream():
+            total += len(chunk)
+            if total > limit:
+                return JSONResponse(status_code=413, content={"detail": "同步数据过大"})
+            chunks.append(chunk)
+        # stream() 会吃掉 body；缓存后路由才能再次读取。
+        request._body = b"".join(chunks)
     return await call_next(request)
 
 
@@ -189,7 +195,7 @@ def change_password(body: ChangePasswordBody, request: Request):
         else:
             next_rev = current
         conn.execute(
-            "UPDATE users SET password_hash = ? WHERE id = ?",
+            "UPDATE users SET password_hash = ?, token_version = token_version + 1 WHERE id = ?",
             (hash_password(new), user["id"]),
         )
         conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user["id"],))

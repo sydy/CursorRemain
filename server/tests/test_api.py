@@ -279,6 +279,11 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(changed.json()["access_token"])
         reused = self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
         self.assertEqual(reused.status_code, 401)
+        old_access = self.client.get("/v1/me", headers={"Authorization": f"Bearer {access}"})
+        self.assertEqual(old_access.status_code, 401)
+        new_access = changed.json()["access_token"]
+        me_new = self.client.get("/v1/me", headers={"Authorization": f"Bearer {new_access}"})
+        self.assertEqual(me_new.status_code, 200)
 
         old_login = self.client.post(
             "/v1/auth/login",
@@ -347,6 +352,105 @@ class ApiTests(unittest.TestCase):
             dest = db.maybe_backup_db()
         self.assertIsNotNone(dest)
         self.assertTrue(dest.is_file())
+
+
+    def test_concurrent_register_is_conflict(self) -> None:
+        import threading
+
+        from fastapi import HTTPException
+
+        from app.auth import create_user
+
+        codes: list[int] = []
+        errors: list[BaseException] = []
+        lock = threading.Lock()
+
+        def once() -> None:
+            try:
+                create_user("race@harker.cn", "password1")
+                code = 200
+            except HTTPException as exc:
+                code = exc.status_code
+            except BaseException as exc:
+                with lock:
+                    errors.append(exc)
+                return
+            with lock:
+                codes.append(code)
+
+        threads = [threading.Thread(target=once) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(codes.count(200), 1)
+        self.assertEqual(codes.count(409), 7)
+
+    def test_auth_rate_limit(self) -> None:
+        with patch.object(settings, "AUTH_RATE_PER_MIN", 3):
+            codes = [
+                self.client.post(
+                    "/v1/auth/login",
+                    json={"email": "limit-rate@harker.cn", "password": "password1"},
+                ).status_code
+                for _ in range(4)
+            ]
+        self.assertEqual(codes[:3], [401, 401, 401])
+        self.assertEqual(codes[3], 429)
+
+    def test_sync_body_without_content_length_is_capped(self) -> None:
+        import asyncio
+
+        from starlette.requests import Request
+
+        from app.main import limit_sync_body
+
+        payload = b'{"revision":0,"envelope":' + (b"x" * 400) + b"}"
+
+        def make_request() -> Request:
+            sent = {"done": False}
+
+            async def receive():
+                if sent["done"]:
+                    return {"type": "http.request", "body": b"", "more_body": False}
+                sent["done"] = True
+                return {"type": "http.request", "body": payload, "more_body": False}
+
+            scope = {
+                "type": "http",
+                "asgi": {"version": "3.0"},
+                "http_version": "1.1",
+                "method": "PUT",
+                "scheme": "http",
+                "path": "/v1/sync",
+                "raw_path": b"/v1/sync",
+                "query_string": b"",
+                "headers": [],
+                "client": ("127.0.0.1", 1234),
+                "server": ("test", 80),
+            }
+            return Request(scope, receive)
+
+        async def reject(_request):
+            raise AssertionError("超限请求不应进入路由")
+
+        with patch.object(settings, "MAX_SYNC_BODY_BYTES", 128):
+            blocked = asyncio.run(limit_sync_body(make_request(), reject))
+        self.assertEqual(blocked.status_code, 413)
+
+        seen: dict[str, int] = {}
+
+        async def accept(request):
+            from fastapi.responses import JSONResponse
+
+            seen["len"] = len(await request.body())
+            return JSONResponse({"ok": True})
+
+        with patch.object(settings, "MAX_SYNC_BODY_BYTES", 4096):
+            allowed = asyncio.run(limit_sync_body(make_request(), accept))
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(seen["len"], len(payload))
 
 
 if __name__ == "__main__":

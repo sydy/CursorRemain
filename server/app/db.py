@@ -82,6 +82,12 @@ def maybe_backup_db(conn: sqlite3.Connection | None = None, path: Path | None = 
     return dest
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
+    if "token_version" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0")
+
+
 def connect(path: Path | None = None) -> sqlite3.Connection:
     global _CONN
     db_path = Path(path or settings.DATABASE_PATH)
@@ -91,6 +97,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    _migrate(conn)
     conn.commit()
     try:
         maybe_backup_db(conn, db_path)

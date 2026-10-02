@@ -852,7 +852,7 @@ public static partial class UsageEvents
         Directory.CreateDirectory(dir);
         var path = AppPaths.UsageEventsPath(accountId, teamScope, dir);
         var lines = events.Select(ev => JsonSerializer.Serialize(ev, JsonOpts));
-        File.WriteAllText(path, string.Join("\n", lines) + (events.Any() ? "\n" : ""));
+        ConfigStore.AtomicWrite(path, string.Join("\n", lines) + (events.Any() ? "\n" : ""));
     }
 
     /// <summary>

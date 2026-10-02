@@ -83,6 +83,8 @@ public static class AccountSync
     public const string Filename = "CursorRemain.accounts.sync";
     public const string Kdf = "pbkdf2-sha256";
     public const int DefaultIterations = 210_000;
+    public const int MaxIterations = 600_000;
+    internal static int MaxGunzipBytes = 8 * 1024 * 1024;
     public const int KeyLen = 32;
     public const int SaltLen = 16;
     public const int NonceLen = 12;
@@ -667,6 +669,7 @@ public static class AccountSync
     {
         if (string.IsNullOrEmpty(passphrase)) throw new CursorApiException("同步口令不能为空");
         if (iterations < 1000) throw new CursorApiException("KDF 迭代次数过低");
+        if (iterations > MaxIterations) throw new CursorApiException("KDF 迭代次数过高");
         return Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(passphrase), salt, iterations, HashAlgorithmName.SHA256, KeyLen);
     }
 
@@ -935,13 +938,14 @@ public static class AccountSync
         if (kind == "gzip" || (kind.Length == 0 && LooksLikeGzip(raw)))
         {
             try { return GzipDecompress(raw); }
+            catch (CursorApiException) { throw; }
             catch { throw new CursorApiException("同步文件损坏"); }
         }
         if (kind.Length > 0) throw new CursorApiException("不支持的同步压缩");
         return raw;
     }
 
-    static byte[] GzipCompress(byte[] raw)
+    internal static byte[] GzipCompress(byte[] raw)
     {
         using var ms = new MemoryStream();
         using (var gz = new GZipStream(ms, CompressionLevel.SmallestSize, leaveOpen: true))
@@ -949,12 +953,19 @@ public static class AccountSync
         return ms.ToArray();
     }
 
-    static byte[] GzipDecompress(byte[] raw)
+    internal static byte[] GzipDecompress(byte[] raw)
     {
         using var input = new MemoryStream(raw);
         using var gz = new GZipStream(input, CompressionMode.Decompress);
         using var output = new MemoryStream();
-        gz.CopyTo(output);
+        var buffer = new byte[8192];
+        int read;
+        while ((read = gz.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            if (output.Length + read > MaxGunzipBytes)
+                throw new CursorApiException("同步文件过大");
+            output.Write(buffer, 0, read);
+        }
         return output.ToArray();
     }
 

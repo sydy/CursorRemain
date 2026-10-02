@@ -4,6 +4,8 @@ import Foundation
 import Compression
 
 enum GzipCodec {
+    static var maxPlaintext = 8 * 1024 * 1024
+
     static func compress(_ data: Data) throws -> Data {
         let deflated = try deflate(data)
         var out = Data([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff])
@@ -37,10 +39,18 @@ enum GzipCodec {
         }
         if flags & 0x02 != 0 { offset += 2 }
         guard data.count >= offset + 8 else { throw CursorAPIError("同步文件损坏") }
-        let tail = [UInt8](data.suffix(4))
-        let isize = Int(UInt32(tail[0]) | UInt32(tail[1]) << 8 | UInt32(tail[2]) << 16 | UInt32(tail[3]) << 24)
+        let trailer = [UInt8](data.suffix(8))
+        let expectedCrc = UInt32(trailer[0]) | (UInt32(trailer[1]) << 8) | (UInt32(trailer[2]) << 16) | (UInt32(trailer[3]) << 24)
+        let isize = Int(UInt32(trailer[4]) | (UInt32(trailer[5]) << 8) | (UInt32(trailer[6]) << 16) | (UInt32(trailer[7]) << 24))
+        if isize > maxPlaintext { throw CursorAPIError("同步文件过大") }
         let payload = data.subdata(in: offset..<(data.count - 8))
-        return try inflate(payload, destHint: isize)
+        let inflated = try inflate(payload, destHint: isize)
+        if inflated.count > maxPlaintext
+            || UInt32(truncatingIfNeeded: inflated.count) != UInt32(truncatingIfNeeded: isize)
+            || crc32(inflated) != expectedCrc {
+            throw CursorAPIError("同步文件损坏")
+        }
+        return inflated
     }
 
     static func deflate(_ data: Data) throws -> Data {
@@ -95,6 +105,8 @@ enum GzipCodec {
 
 #else
 enum GzipCodec {
+    static var maxPlaintext = 8 * 1024 * 1024
+
     static func compress(_ data: Data) throws -> Data {
         throw CursorAPIError("当前平台无法压缩同步文件")
     }

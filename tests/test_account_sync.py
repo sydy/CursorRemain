@@ -390,5 +390,30 @@ class LocalTimeTests(unittest.TestCase):
         self.assertEqual(format_local("not-a-date"), "not-a-date")
 
 
+class EnvelopeLimitTests(unittest.TestCase):
+    def test_derive_key_rejects_huge_iterations(self) -> None:
+        from account_sync import MAX_KDF_ITERATIONS, derive_key
+
+        with self.assertRaises(ValueError) as ctx:
+            derive_key("password1", b"0123456789abcdef", MAX_KDF_ITERATIONS + 1)
+        self.assertIn("过高", str(ctx.exception))
+
+    def test_gunzip_caps_output(self) -> None:
+        import gzip
+
+        import account_sync
+
+        blob = gzip.compress(b"x" * 100)
+        old = account_sync.GUNZIP_MAX_BYTES
+        account_sync.GUNZIP_MAX_BYTES = 16
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                account_sync._maybe_gunzip(blob, "gzip")
+            self.assertIn("过大", str(ctx.exception))
+        finally:
+            account_sync.GUNZIP_MAX_BYTES = old
+        self.assertEqual(account_sync._maybe_gunzip(blob, "gzip"), b"x" * 100)
+
+
 if __name__ == "__main__":
     unittest.main()

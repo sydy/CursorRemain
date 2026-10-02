@@ -320,9 +320,16 @@ public static class CloudSync
         catch { doc = JsonDocument.Parse("{}"); }
         if ((int)res.StatusCode >= 400)
         {
-            var detail = doc.RootElement.TryGetProperty("detail", out var d) && d.ValueKind == JsonValueKind.String
-                ? d.GetString()
-                : null;
+            string? detail = null;
+            try
+            {
+                if (doc.RootElement.TryGetProperty("detail", out var d) && d.ValueKind == JsonValueKind.String)
+                    detail = d.GetString();
+            }
+            finally
+            {
+                doc.Dispose();
+            }
             throw new CursorApiException(string.IsNullOrWhiteSpace(detail) ? "同步失败" : detail!, (int)res.StatusCode);
         }
         return doc;

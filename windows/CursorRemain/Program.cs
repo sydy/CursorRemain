@@ -540,11 +540,31 @@ sealed partial class TrayContext : ApplicationContext
             do
             {
                 _reconcileAgain = false;
-                var status = await Task.Run(() => CloudSync.Reconcile(_config));
-                if (save || status.Changed)
+                // 在副本上合并，避免和刷新、切号共用同一个 AppConfig 后把结果写丢。
+                var snapshot = ConfigStore.Clone(_config);
+                var startedActive = snapshot.ActiveAccountId;
+                var wasLoggedIn = _config.CloudLoggedIn;
+                var status = await Task.Run(() => CloudSync.Reconcile(snapshot));
+                var liveActive = _config.ActiveAccountId;
+                var liveSession = _config.SessionActiveAccountId;
+                var loggedOut = wasLoggedIn && !snapshot.CloudLoggedIn;
+                if (status.Ok || status.Changed || loggedOut)
                 {
-                    try { await Task.Run(() => ConfigStore.Save(_config)); }
-                    catch (Exception ex) { CrashLog.Write(ex); }
+                    if (AccountSync.KeepLiveActiveAccount(snapshot, startedActive, liveActive))
+                        status.Changed = true;
+                    if (!string.IsNullOrEmpty(liveSession))
+                        snapshot.SessionActiveAccountId = liveSession;
+                    _config = snapshot;
+                    if (save || status.Ok || status.Changed || loggedOut)
+                    {
+                        try { await Task.Run(() => ConfigStore.Save(snapshot)); }
+                        catch (Exception ex) { CrashLog.Write(ex); }
+                    }
+                    UpdateUi();
+                }
+                else if (!string.IsNullOrEmpty(status.Message))
+                {
+                    _config.SyncLastError = status.Message;
                 }
                 NotifyCloudSync(status);
                 if (status.Changed) RequestRefresh();

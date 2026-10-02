@@ -11,6 +11,7 @@ from __future__ import annotations
 import base64
 import gzip
 import hashlib
+import io
 import json
 import os
 import secrets
@@ -35,6 +36,8 @@ SYNC_FORMATS = {SYNC_FORMAT, SYNC_FORMAT_V2}
 SYNC_FILENAME = "CursorRemain.accounts.sync"
 SYNC_KDF = "pbkdf2-sha256"
 DEFAULT_ITERATIONS = 210_000
+MAX_KDF_ITERATIONS = 600_000
+GUNZIP_MAX_BYTES = 8 * 1024 * 1024
 KEY_LEN = 32
 SALT_LEN = 16
 NONCE_LEN = 12
@@ -340,11 +343,21 @@ def _snapshot_byte_size(snap: dict[str, Any]) -> int:
 GZIP_MAGIC = b"\x1f\x8b"
 
 
+def _gunzip_limited(raw: bytes) -> bytes:
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as handle:
+        out = handle.read(GUNZIP_MAX_BYTES + 1)
+    if len(out) > GUNZIP_MAX_BYTES:
+        raise ValueError("同步文件过大")
+    return out
+
+
 def _maybe_gunzip(raw: bytes, compression: str) -> bytes:
     kind = (compression or "").strip().lower()
     if kind == "gzip" or (not kind and raw.startswith(GZIP_MAGIC)):
         try:
-            return gzip.decompress(raw)
+            return _gunzip_limited(raw)
+        except ValueError:
+            raise
         except Exception as exc:
             raise ValueError("同步文件损坏") from exc
     if kind:
@@ -878,6 +891,8 @@ def derive_key(passphrase: str, salt: bytes, iterations: int = DEFAULT_ITERATION
         raise ValueError("同步口令不能为空")
     if iterations < 1000:
         raise ValueError("KDF 迭代次数过低")
+    if iterations > MAX_KDF_ITERATIONS:
+        raise ValueError("KDF 迭代次数过高")
     return hashlib.pbkdf2_hmac("sha256", secret, salt, iterations, dklen=KEY_LEN)
 
 
