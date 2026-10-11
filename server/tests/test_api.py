@@ -34,10 +34,24 @@ class ApiTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         reset_for_tests(Path(self.tmp.name) / "sync.db")
         LIMITER.reset()
+        self.sent_codes: dict[tuple[str, str], str] = {}
+        self.mail_patch = patch("app.main.send_code", side_effect=self._capture_mail)
+        self.mail_patch.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self.mail_patch.stop()
         self.tmp.cleanup()
+
+    def _capture_mail(self, email: str, code: str, purpose: str) -> None:
+        self.sent_codes[(email, purpose)] = code
+
+    def _verify(self, email: str) -> None:
+        result = self.client.post(
+            "/v1/auth/verify-email",
+            json={"email": email, "code": self.sent_codes[(email.lower(), "verify")]},
+        )
+        self.assertEqual(result.status_code, 200, result.text)
 
     def test_health(self) -> None:
         res = self.client.get("/health")
@@ -56,9 +70,13 @@ class ApiTests(unittest.TestCase):
             json={"email": "User@Harker.cn", "password": "password1"},
         )
         self.assertEqual(created.status_code, 200, created.text)
-        tokens = created.json()
-        self.assertEqual(tokens["email"], "user@harker.cn")
-        access = tokens["access_token"]
+        self.assertTrue(created.json()["ok"])
+        blocked = self.client.post(
+            "/v1/auth/login",
+            json={"email": "user@harker.cn", "password": "password1"},
+        )
+        self.assertEqual(blocked.status_code, 403)
+        self._verify("user@harker.cn")
 
         again = self.client.post(
             "/v1/auth/register",
@@ -120,11 +138,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(reused.status_code, 401)
 
     def test_rejects_plaintext_blob(self) -> None:
-        created = self.client.post(
-            "/v1/auth/register",
-            json={"email": "b@harker.cn", "password": "password1"},
-        )
-        access = created.json()["access_token"]
+        access = self._register("b@harker.cn")
         res = self.client.put(
             "/v1/sync",
             headers={"Authorization": f"Bearer {access}"},
@@ -138,7 +152,11 @@ class ApiTests(unittest.TestCase):
             json={"email": email, "password": "password1"},
         )
         self.assertEqual(created.status_code, 200, created.text)
-        return created.json()["access_token"]
+        self._verify(email)
+        logged = self.client.post("/v1/auth/login", json={"email": email, "password": "password1"})
+        self.assertEqual(logged.status_code, 200, logged.text)
+        self.last_tokens = logged.json()
+        return self.last_tokens["access_token"]
 
     def test_rejects_weak_jwt_secret(self) -> None:
         with self.assertRaises(RuntimeError):
@@ -244,12 +262,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(bad.status_code, 400)
 
     def test_change_password_reseals_and_revokes_refresh(self) -> None:
-        created = self.client.post(
-            "/v1/auth/register",
-            json={"email": "pw@harker.cn", "password": "password1"},
-        )
-        access = created.json()["access_token"]
-        refresh = created.json()["refresh_token"]
+        access = self._register("pw@harker.cn")
+        refresh = self.last_tokens["refresh_token"]
         put = self.client.put(
             "/v1/sync",
             headers={"Authorization": f"Bearer {access}"},
@@ -292,11 +306,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(new_login.status_code, 200)
 
     def test_delete_account_wipes_blob(self) -> None:
-        created = self.client.post(
-            "/v1/auth/register",
-            json={"email": "gone@harker.cn", "password": "password1"},
-        )
-        access = created.json()["access_token"]
+        access = self._register("gone@harker.cn")
         self.client.put(
             "/v1/sync",
             headers={"Authorization": f"Bearer {access}"},
@@ -328,11 +338,8 @@ class ApiTests(unittest.TestCase):
         from app.auth import purge_refresh_tokens
         from app.db import get_conn
 
-        created = self.client.post(
-            "/v1/auth/register",
-            json={"email": "purge@harker.cn", "password": "password1"},
-        )
-        refresh = created.json()["refresh_token"]
+        self._register("purge@harker.cn")
+        refresh = self.last_tokens["refresh_token"]
         self.client.post("/v1/auth/logout", json={"refresh_token": refresh})
         removed = purge_refresh_tokens()
         self.assertGreaterEqual(removed, 1)

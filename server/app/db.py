@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    email_verified INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -31,6 +32,21 @@ CREATE TABLE IF NOT EXISTS sync_blobs (
     revision INTEGER NOT NULL,
     envelope TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_codes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_code_limits (
+    user_id TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    last_sent_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, purpose)
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_refresh_user ON refresh_tokens(user_id);
@@ -91,6 +107,12 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    # Keep existing installations working: accounts created before email
+    # verification was introduced are treated as verified.
+    columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if "email_verified" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_email_codes_user_purpose ON email_codes(user_id, purpose)")
     conn.commit()
     try:
         maybe_backup_db(conn, db_path)

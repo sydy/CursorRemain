@@ -1,12 +1,12 @@
 # CursorRemain 云同步服务
 
-FastAPI + SQLite。客户端把账号、配置和用量封进 PBKDF2 + AES-256-GCM 信封后上传，**服务器不解密，也看不到 Token**。
+FastAPI + SQLite。客户端用独立数据加密口令经 PBKDF2-SHA256（600,000 次迭代）派生密钥，把账号、配置和用量封进 AES-256-GCM 信封后上传。登录密码只用于账户认证。**服务器不解密，也看不到 Token 或数据加密口令**。
 
 对外地址写死在客户端：`https://sync.harker.cn`
 
 ## 本地运行
 
-`JWT_SECRET` 至少 32 个字符，且不能是 `dev-only-change-me`。只有显式设置 `ALLOW_DEV_JWT=1` 时才允许开发默认值（仅限本机/单测）。
+`JWT_SECRET` 至少 32 个字符，且不能是 `dev-only-change-me`。只有显式设置 `ALLOW_DEV_JWT=1` 时才允许开发默认值（仅限本机/单测）。生产环境必须配置 SMTP，否则注册验证邮件和密码重置邮件无法发送。用 `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM` 配置邮件；465 端口自动使用 TLS，其他端口默认使用 STARTTLS（`SMTP_STARTTLS=0` 可关闭）。
 
 ```bash
 cd server
@@ -14,6 +14,11 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 export JWT_SECRET=请换成至少32位的随机串
+export SMTP_HOST=smtp.example.com
+export SMTP_PORT=587
+export SMTP_USER=sync@example.com
+export SMTP_PASSWORD=邮件服务授权码
+export SMTP_FROM='CursorRemain <sync@example.com>'
 export DATABASE_PATH=./data/sync.db
 PYTHONPATH=. uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -46,17 +51,21 @@ docker compose up -d
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/health` | 健康检查 |
-| POST | `/v1/auth/register` | 开放注册，`{email,password}` |
+| POST | `/v1/auth/register` | 创建待验证账号并发验证邮件，`{email,password}` |
+| POST | `/v1/auth/verify-email` | 验证邮箱，`{email,code}` |
+| POST | `/v1/auth/verification-email` | 重发验证邮件，`{email,password}` |
 | POST | `/v1/auth/login` | 登录 |
+| POST | `/v1/auth/password-reset/request` | 请求重置邮件，`{email}`；不泄露邮箱是否注册 |
+| POST | `/v1/auth/password-reset/confirm` | 校验验证码并更新登录密码，`{email,code,new_password}` |
 | POST | `/v1/auth/refresh` | `{refresh_token}` |
 | POST | `/v1/auth/logout` | 作废 refresh |
-| POST | `/v1/auth/password` | 改密：`{old_password,new_password,revision,envelope?}`。有云端密文时必须带用新密码重封的信封；成功后作废全部 refresh |
+| POST | `/v1/auth/password` | 修改登录密码：`{old_password,new_password,revision,envelope?}`。有云端密文时客户端需带上用当前数据加密口令重封的信封；成功后作废全部 refresh |
 | GET | `/v1/me` | 当前用户 |
 | DELETE | `/v1/me` | `{password}` 注销账号并删除云端密文 |
 | GET | `/v1/sync` | 取加密信封 + revision |
 | PUT | `/v1/sync` | `{revision, envelope}`，revision 不对返回 409 |
 
-密码至少 8 位，邮箱小写去重，无需验证。Access token 默认 15 分钟，refresh 30 天；过期或已作废的 refresh 会在登录 / 刷新时清掉。
+登录密码至少 8 位，邮箱小写去重。新注册账号必须先验证邮箱；数据库升级时旧账号视为已验证。验证码 15 分钟过期，最多尝试 5 次；密码重置会撤销所有 refresh token。**密码重置只恢复账户登录，不会重置数据加密口令**。Access token 默认 15 分钟，refresh 30 天；过期或已作废的 refresh 会在登录 / 刷新时清掉。
 `PUT /v1/sync` 限制 JSON 约 1MB、ciphertext 长度，以及 KDF iterations 在 1000–600000。信封可带 `compression=gzip`。超限返回 413 或 400。
 
 SQLite 启动时若距上次备份超过 24 小时，会复制到 `data/backups/sync-*.db`，最多保留 7 份。

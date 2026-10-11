@@ -45,11 +45,19 @@ def resolve_jwt_secret(raw: str | None = None, *, allow_dev: bool | None = None)
 JWT_SECRET = resolve_jwt_secret()
 ACCESS_MINUTES = max(5, _int("ACCESS_MINUTES", 15))
 REFRESH_DAYS = max(1, _int("REFRESH_DAYS", 30))
+VERIFY_CODE_MINUTES = max(5, _int("VERIFY_CODE_MINUTES", 15))
+SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
+SMTP_PORT = max(1, _int("SMTP_PORT", 587))
+SMTP_USER = os.environ.get("SMTP_USER", "").strip()
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
+SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
+SMTP_STARTTLS = _flag("SMTP_STARTTLS") if "SMTP_STARTTLS" in os.environ else SMTP_PORT != 465
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/sync.db")).expanduser()
 TRUST_PROXY = _flag("TRUST_PROXY")
 AUTH_RATE_PER_MIN = max(3, _int("AUTH_RATE_PER_MIN", 20))
 SYNC_RATE_PER_MIN = max(10, _int("SYNC_RATE_PER_MIN", 60))
 PASSWORD_MIN = 8
+DATA_PASSPHRASE_MIN = 16
 PASSWORD_MAX = 128
 MAX_SYNC_BODY_BYTES = max(1024, _int("MAX_SYNC_BODY_BYTES", 1_048_576))
 MAX_CIPHERTEXT_CHARS = max(256, _int("MAX_CIPHERTEXT_CHARS", 512_000))

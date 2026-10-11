@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -14,6 +15,9 @@ from .auth import (
     bearer_user,
     client_ip,
     create_user,
+    create_email_code,
+    consume_email_code,
+    discard_email_code,
     delete_user,
     get_user,
     get_user_by_email,
@@ -29,6 +33,9 @@ from .auth import (
     verify_password,
 )
 from .db import get_conn, lock
+from .mail import send_code
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_FORMATS = {"cursortokentray.accounts.v1", "cursortokentray.sync.v2"}
 
@@ -55,6 +62,19 @@ async def limit_sync_body(request: Request, call_next):
 class AuthBody(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
+
+
+class EmailCodeBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class EmailBody(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class ResetPasswordBody(EmailCodeBody):
+    new_password: str = Field(min_length=1, max_length=settings.PASSWORD_MAX)
 
 
 class RefreshBody(BaseModel):
@@ -97,8 +117,69 @@ def register(body: AuthBody, request: Request):
     maybe_purge_refresh()
     email = validate_email(body.email)
     password = validate_password(body.password)
-    user = create_user(email, password)
-    return token_payload(user, issue_refresh(user["id"]))
+    user = create_user(email, password, email_verified=False)
+    code = create_email_code(user["id"], "verify")
+    try:
+        send_code(user["email"], code, "verify")
+    except Exception as exc:
+        discard_email_code(user["id"], "verify")
+        raise HTTPException(status_code=503, detail="无法发送验证邮件，请稍后重试") from None
+    return {"ok": True, "message": "验证邮件已发送"}
+
+
+@app.post("/v1/auth/verify-email")
+def verify_email(body: EmailCodeBody, request: Request):
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    user = consume_email_code(validate_email(body.email), "verify", body.code)
+    if user is None:
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+    return {"ok": True, "email": user["email"]}
+
+
+@app.post("/v1/auth/verification-email")
+def resend_verification(body: AuthBody, request: Request):
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    email = validate_email(body.email)
+    user = get_user_by_email(email)
+    if user is not None and not int(user.get("email_verified", 1)) and verify_password(user["password_hash"], body.password):
+        code = create_email_code(user["id"], "verify")
+        try:
+            send_code(user["email"], code, "verify")
+        except Exception:
+            discard_email_code(user["id"], "verify")
+            logger.exception("verification email delivery failed")
+    return {"ok": True, "message": "如果账号需要验证，验证邮件将发送到该邮箱"}
+
+
+@app.post("/v1/auth/password-reset/request")
+def request_password_reset(body: EmailBody, request: Request):
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    email = validate_email(body.email)
+    user = get_user_by_email(email)
+    if user is not None and int(user.get("email_verified", 1)):
+        code = create_email_code(user["id"], "reset")
+        try:
+            send_code(user["email"], code, "reset")
+        except Exception:
+            discard_email_code(user["id"], "reset")
+            logger.exception("password reset email delivery failed")
+    return {"ok": True, "message": "如果该邮箱已注册并验证，密码重置邮件将发送到该邮箱"}
+
+
+@app.post("/v1/auth/password-reset/confirm")
+def confirm_password_reset(body: ResetPasswordBody, request: Request):
+    LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
+    email = validate_email(body.email)
+    new_password = validate_password(body.new_password)
+    user = consume_email_code(email, "reset", body.code)
+    if user is None or not int(user.get("email_verified", 1)):
+        raise HTTPException(status_code=400, detail="验证码无效或已过期")
+    with lock():
+        conn = get_conn()
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (hash_password(new_password), user["id"]))
+        conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?", (user["id"],))
+        conn.commit()
+    return {"ok": True, "message": "登录密码已重置；端到端加密口令不会随之重置"}
 
 
 @app.post("/v1/auth/login")
@@ -110,6 +191,8 @@ def login(body: AuthBody, request: Request):
     user = get_user_by_email(email)
     if user is None or not verify_password(user["password_hash"], password):
         raise HTTPException(status_code=401, detail="邮箱或密码不正确")
+    if not int(user.get("email_verified", 1)):
+        raise HTTPException(status_code=403, detail="请先验证邮箱；可在设置中重发验证邮件")
     return token_payload(user, issue_refresh(user["id"]))
 
 

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -172,7 +173,8 @@ public enum AccountSync {
     public static let formatV2 = "cursortokentray.sync.v2"
     public static let filename = "CursorRemain.accounts.sync"
     public static let kdf = "pbkdf2-sha256"
-    public static let defaultIterations = 210_000
+    public static let defaultIterations = 600_000
+    public static let minimumDataPassphraseLength = 16
     public static let keyLen = 32
     public static let saltLen = 16
     public static let nonceLen = 12
@@ -736,6 +738,17 @@ public enum AccountSync {
         #else
         throw CursorAPIError("当前平台无法加密同步文件")
         #endif
+    }
+
+    public static func generateDataPassphrase() -> String {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+            return UUID().uuidString + UUID().uuidString
+        }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     public static func canonicalJSON(_ snap: SyncSnapshot) -> String {

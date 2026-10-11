@@ -30,12 +30,12 @@ public static class CloudSync
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    public static void ApplySession(AppConfig cfg, string email, string password, string access, string refresh)
+    public static void ApplySession(AppConfig cfg, string email, string dataPassphrase, string access, string refresh)
     {
         cfg.CloudEmail = (email ?? "").Trim().ToLowerInvariant();
         cfg.CloudAccessToken = access ?? "";
         cfg.CloudRefreshToken = refresh ?? "";
-        cfg.SyncSecret = password ?? "";
+        cfg.SyncSecret = dataPassphrase ?? "";
         cfg.SyncEnabled = cfg.CloudLoggedIn;
         cfg.SyncLastError = "";
         cfg.SyncSecretDecryptFailed = false;
@@ -55,10 +55,29 @@ public static class CloudSync
     public static SyncStatus Reconcile(AppConfig cfg, DateTimeOffset? now = null, bool write = true) =>
         ReconcileAsync(cfg, now, write).GetAwaiter().GetResult();
 
-    public static async Task<(string Email, string Access, string Refresh)> RegisterAsync(string email, string password, CancellationToken ct = default)
+    public static async Task RegisterAsync(string email, string password, CancellationToken ct = default)
     {
-        var payload = await SendAsync("POST", "/v1/auth/register", null, new { email, password }, ct);
-        return ReadAuth(payload);
+        await SendAsync("POST", "/v1/auth/register", null, new { email, password }, ct);
+    }
+
+    public static async Task VerifyEmailAsync(string email, string code, CancellationToken ct = default)
+    {
+        await SendAsync("POST", "/v1/auth/verify-email", null, new { email, code }, ct);
+    }
+
+    public static async Task ResendVerificationAsync(string email, string password, CancellationToken ct = default)
+    {
+        await SendAsync("POST", "/v1/auth/verification-email", null, new { email, password }, ct);
+    }
+
+    public static async Task RequestPasswordResetAsync(string email, CancellationToken ct = default)
+    {
+        await SendAsync("POST", "/v1/auth/password-reset/request", null, new { email }, ct);
+    }
+
+    public static async Task ConfirmPasswordResetAsync(string email, string code, string newPassword, CancellationToken ct = default)
+    {
+        await SendAsync("POST", "/v1/auth/password-reset/confirm", null, new { email, code, new_password = newPassword }, ct);
     }
 
     public static async Task<(string Email, string Access, string Refresh)> LoginAsync(string email, string password, CancellationToken ct = default)
@@ -77,7 +96,7 @@ public static class CloudSync
         var revision = ReadRevision(got, 0);
         object? envelope = null;
         if (got.RootElement.TryGetProperty("envelope", out var env) && env.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-            envelope = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(env, old), next);
+                envelope = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(env, cfg.SyncSecret), cfg.SyncSecret);
         var body = new Dictionary<string, object?>
         {
             ["old_password"] = old,
@@ -88,7 +107,7 @@ public static class CloudSync
         try
         {
             using var put = await AuthedAsync(cfg, HttpMethod.Post, "/v1/auth/password", body, ct);
-            ApplyPasswordResult(cfg, next, put, revision);
+            ApplyPasswordResult(cfg, cfg.SyncSecret, put, revision);
         }
         catch (CursorApiException ex) when (ex.StatusCode == 409)
         {
@@ -96,10 +115,44 @@ public static class CloudSync
             revision = ReadRevision(retryGot, 0);
             body["revision"] = revision;
             if (retryGot.RootElement.TryGetProperty("envelope", out var retryEnv) && retryEnv.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-                body["envelope"] = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(retryEnv, old), next);
+                body["envelope"] = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(retryEnv, cfg.SyncSecret), cfg.SyncSecret);
             using var put = await AuthedAsync(cfg, HttpMethod.Post, "/v1/auth/password", body, ct);
-            ApplyPasswordResult(cfg, next, put, revision);
+            ApplyPasswordResult(cfg, cfg.SyncSecret, put, revision);
         }
+    }
+
+    public static async Task ChangeDataPassphraseAsync(AppConfig cfg, string newPassphrase, CancellationToken ct = default)
+    {
+        var next = (newPassphrase ?? "").Trim();
+        if (next.Length < AccountSync.MinimumDataPassphraseLength)
+            throw new CursorApiException("数据加密口令至少 16 位");
+        var current = cfg.SyncSecret;
+        if (string.IsNullOrWhiteSpace(current)) throw new CursorApiException("当前设备没有解锁数据加密口令");
+        using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
+        var revision = ReadRevision(got, 0);
+        var remote = ParseRemote(got.RootElement, current);
+        var local = AccountSync.SnapshotFromConfig(cfg);
+        local.DeviceId = cfg.SyncDeviceId;
+        var merged = AccountSync.MergeSnapshots(local, remote);
+        var envelope = AccountSync.EncryptEnvelope(merged, next);
+        try
+        {
+            using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/sync", new { revision, envelope }, ct);
+            cfg.CloudRevision = ReadRevision(put, revision + 1);
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 409)
+        {
+            using var retryGet = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
+            revision = ReadRevision(retryGet, 0);
+            remote = ParseRemote(retryGet.RootElement, current);
+            local = AccountSync.SnapshotFromConfig(cfg);
+            local.DeviceId = cfg.SyncDeviceId;
+            merged = AccountSync.MergeSnapshots(local, remote);
+            envelope = AccountSync.EncryptEnvelope(merged, next);
+            using var retryPut = await AuthedAsync(cfg, HttpMethod.Put, "/v1/sync", new { revision, envelope }, ct);
+            cfg.CloudRevision = ReadRevision(retryPut, revision + 1);
+        }
+        cfg.SyncSecret = next;
     }
 
     static void ApplyPasswordResult(AppConfig cfg, string password, JsonDocument doc, int fallbackRevision)
@@ -109,7 +162,7 @@ public static class CloudSync
         var refresh = root.TryGetProperty("refresh_token", out var r) ? r.GetString() ?? "" : "";
         var email = root.TryGetProperty("email", out var e) ? e.GetString() ?? "" : cfg.CloudEmail;
         if (access.Length == 0) throw new CursorApiException("修改密码失败");
-        ApplySession(cfg, email, password, access, refresh);
+            ApplySession(cfg, email, password, access, refresh);
         cfg.CloudRevision = ReadRevision(doc, fallbackRevision);
     }
 

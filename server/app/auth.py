@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import re
 import secrets
 import uuid
@@ -175,36 +176,110 @@ def rotate_refresh(raw: str) -> tuple[str, str]:
 
 def get_user(user_id: str) -> dict | None:
     with lock():
-        row = get_conn().execute("SELECT id, email, password_hash, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = get_conn().execute("SELECT id, email, password_hash, email_verified, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
     return dict(row) if row else None
 
 
 def get_user_by_email(email: str) -> dict | None:
     with lock():
         row = get_conn().execute(
-            "SELECT id, email, password_hash, created_at FROM users WHERE email = ?",
+            "SELECT id, email, password_hash, email_verified, created_at FROM users WHERE email = ?",
             (email,),
         ).fetchone()
     return dict(row) if row else None
 
 
-def create_user(email: str, password: str) -> dict:
+def create_user(email: str, password: str, *, email_verified: bool = True) -> dict:
     if get_user_by_email(email):
         raise HTTPException(status_code=409, detail="该邮箱已注册")
     user = {
         "id": str(uuid.uuid4()),
         "email": email,
         "password_hash": hash_password(password),
+        "email_verified": int(email_verified),
         "created_at": now_iso(),
     }
     with lock():
         conn = get_conn()
         conn.execute(
-            "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
-            (user["id"], user["email"], user["password_hash"], user["created_at"]),
+            "INSERT INTO users (id, email, password_hash, email_verified, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user["id"], user["email"], user["password_hash"], user["email_verified"], user["created_at"]),
         )
         conn.commit()
     return user
+
+
+def create_email_code(user_id: str, purpose: str) -> str:
+    raw = f"{secrets.randbelow(1_000_000):06d}"
+    digest = hmac.new(settings.JWT_SECRET.encode(), f"{purpose}:{user_id}:{raw}".encode(), hashlib.sha256).hexdigest()
+    stamp = now()
+    expires = stamp + timedelta(minutes=settings.VERIFY_CODE_MINUTES)
+    with lock():
+        conn = get_conn()
+        previous = conn.execute(
+            "SELECT last_sent_at FROM email_code_limits WHERE user_id = ? AND purpose = ?",
+            (user_id, purpose),
+        ).fetchone()
+        if previous is not None:
+            try:
+                last_sent = datetime.fromisoformat(str(previous["last_sent_at"]).replace("Z", "+00:00"))
+            except ValueError:
+                last_sent = stamp - timedelta(seconds=61)
+            if (stamp - last_sent).total_seconds() < 60:
+                raise HTTPException(status_code=429, detail="验证码发送过于频繁，请稍后再试")
+        conn.execute("DELETE FROM email_codes WHERE user_id = ? AND purpose = ?", (user_id, purpose))
+        conn.execute(
+            "INSERT INTO email_codes (id, user_id, purpose, code_hash, expires_at, attempts, created_at) VALUES (?, ?, ?, ?, ?, 0, ?)",
+            (str(uuid.uuid4()), user_id, purpose, digest, now_iso(expires), now_iso(stamp)),
+        )
+        conn.execute(
+            "INSERT INTO email_code_limits (user_id, purpose, last_sent_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(user_id, purpose) DO UPDATE SET last_sent_at = excluded.last_sent_at",
+            (user_id, purpose, now_iso(stamp)),
+        )
+        conn.commit()
+    return raw
+
+
+def consume_email_code(email: str, purpose: str, raw: str) -> dict | None:
+    user = get_user_by_email(email)
+    if user is None:
+        return None
+    with lock():
+        conn = get_conn()
+        row = conn.execute(
+            "SELECT id, code_hash, expires_at, attempts FROM email_codes WHERE user_id = ? AND purpose = ?",
+            (user["id"], purpose),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            expires = datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00"))
+        except ValueError:
+            expires = now() - timedelta(seconds=1)
+        if int(row["attempts"]) >= 5 or expires < now():
+            conn.execute("DELETE FROM email_codes WHERE id = ?", (row["id"],))
+            conn.commit()
+            return None
+        digest = hmac.new(settings.JWT_SECRET.encode(), f"{purpose}:{user['id']}:{(raw or '').strip()}".encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(str(row["code_hash"]), digest):
+            conn.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            return None
+        conn.execute("DELETE FROM email_codes WHERE id = ?", (row["id"],))
+        if purpose == "verify":
+            conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user["id"],))
+            user["email_verified"] = 1
+        conn.commit()
+    return user
+
+
+def discard_email_code(user_id: str, purpose: str) -> None:
+    with lock():
+        conn = get_conn()
+        conn.execute("DELETE FROM email_codes WHERE user_id = ? AND purpose = ?", (user_id, purpose))
+        conn.execute("DELETE FROM email_code_limits WHERE user_id = ? AND purpose = ?", (user_id, purpose))
+        conn.commit()
 
 
 def update_password_hash(user_id: str, password: str) -> None:
@@ -239,6 +314,8 @@ def delete_user(user_id: str) -> None:
         conn = get_conn()
         conn.execute("DELETE FROM sync_blobs WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM email_codes WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM email_code_limits WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
         conn.commit()
 

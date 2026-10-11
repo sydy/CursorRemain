@@ -18,8 +18,19 @@ struct SettingsRootView: View {
     @State private var thresholdText = "50,20,5"
     @State private var cloudEmail = ""
     @State private var cloudPassword = ""
+    @State private var cloudDataPassphrase = ""
+    @State private var cloudDataPassphraseConfirm = ""
+    @State private var generatedDataPassphrase = ""
+    @State private var verificationCode = ""
+    @State private var showVerification = false
+    @State private var resetCode = ""
+    @State private var resetNewPassword = ""
+    @State private var showPasswordReset = false
     @State private var syncStatus = ""
     @State private var showChangePassword = false
+    @State private var showChangeDataPassphrase = false
+    @State private var newDataPassphrase = ""
+    @State private var confirmDataPassphrase = ""
     @State private var oldCloudPassword = ""
     @State private var newCloudPassword = ""
     @State private var confirmCloudPassword = ""
@@ -346,6 +357,7 @@ struct SettingsRootView: View {
                     Button("立即同步") { syncNow() }
                     Button("退出登录") { logoutCloud() }
                     Button("修改密码") { showChangePassword.toggle() }
+                    Button("更改数据加密口令") { showChangeDataPassphrase.toggle() }
                     Button("注销账号") { showDeleteConfirm.toggle() }
                     Button("导出…") { exportFile() }
                     Button("导入…") { importFile() }
@@ -356,6 +368,11 @@ struct SettingsRootView: View {
                     SecureField("确认新密码", text: $confirmCloudPassword)
                     Button("确认修改") { changePassword() }
                 }
+                if showChangeDataPassphrase {
+                    SecureField("新数据加密口令（至少 16 位）", text: $newDataPassphrase)
+                    SecureField("确认新口令", text: $confirmDataPassphrase)
+                    Button("重封云端数据") { changeDataPassphrase() }
+                }
                 if showDeleteConfirm {
                     Text("将删除云端账号和加密数据，本机账号不受影响。忘记密码也不能恢复云端数据。")
                         .font(.caption)
@@ -365,15 +382,34 @@ struct SettingsRootView: View {
                 }
             } else {
                 TextField("邮箱", text: $cloudEmail)
-                SecureField("密码（至少 8 位，也用于加密）", text: $cloudPassword)
+                SecureField("登录密码（至少 8 位）", text: $cloudPassword)
+                SecureField("数据加密口令（至少 16 位随机短语）", text: $cloudDataPassphrase)
+                SecureField("确认数据加密口令", text: $cloudDataPassphraseConfirm)
                 HStack {
                     Button("登录") { authCloud(register: false) }
                     Button("注册") { authCloud(register: true) }
+                    Button("生成随机加密口令") { generateDataPassphrase() }
+                    Button("忘记密码") { requestPasswordReset() }
                     Button("导出…") { exportFile() }
                     Button("导入…") { importFile() }
                 }
+                if !generatedDataPassphrase.isEmpty {
+                    Text("请复制并保存到密码管理器；其他设备需要此口令：\n\(generatedDataPassphrase)")
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
+                if showVerification {
+                    TextField("邮件中的 6 位验证码", text: $verificationCode)
+                    Button("验证邮箱并登录") { verifyCloudEmail() }
+                    Button("重发验证邮件") { resendVerificationEmail() }
+                }
+                if showPasswordReset {
+                    TextField("邮件中的 6 位重置码", text: $resetCode)
+                    SecureField("新登录密码", text: $resetNewPassword)
+                    Button("重置登录密码") { confirmPasswordReset() }
+                }
             }
-            Text("登录密码就是加密密钥：数据在本机用它封成密文再上传，服务器看不到 Token。忘记密码后云端无法解密，只能靠本机「导出」的备份恢复。改密会先用旧密码解开，再用新密码重封后上传。")
+            Text("登录密码只用于账户认证；同步数据由独立口令在本机加密，服务器只保存密文。登录密码可通过验证邮箱重置；数据加密口令至少 16 位并需自行保存，遗失后无法解密云端数据。请定期导出加密备份。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(syncStatus.isEmpty ? " " : syncStatus)
@@ -512,7 +548,7 @@ struct SettingsRootView: View {
         if !store.config.syncSecret.trimmingCharacters(in: .whitespaces).isEmpty {
             return store.config.syncSecret
         }
-        return cloudPassword.trimmingCharacters(in: .whitespaces)
+        return cloudDataPassphrase.trimmingCharacters(in: .whitespaces)
     }
 
     func addPastedAccounts() async {
@@ -734,6 +770,8 @@ struct SettingsRootView: View {
     func authCloud(register: Bool) {
         let email = cloudEmail.trimmingCharacters(in: .whitespaces)
         let password = cloudPassword.trimmingCharacters(in: .whitespaces)
+        let dataPassphrase = cloudDataPassphrase.trimmingCharacters(in: .whitespaces)
+        let confirmDataPassphrase = cloudDataPassphraseConfirm.trimmingCharacters(in: .whitespaces)
         if email.isEmpty || password.isEmpty {
             syncStatus = "请填写邮箱和密码"
             return
@@ -743,10 +781,22 @@ struct SettingsRootView: View {
         let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             do {
-                let result = register
-                    ? try CloudSync.register(email: email, password: password)
-                    : try CloudSync.login(email: email, password: password)
-                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, password: password, access: result.access, refresh: result.refresh)
+                if register {
+                    guard dataPassphrase.count >= AccountSync.minimumDataPassphraseLength else {
+                        throw CursorAPIError("数据加密口令至少 16 位；建议使用与登录密码不同的随机短语")
+                    }
+                    guard dataPassphrase == confirmDataPassphrase else { throw CursorAPIError("两次输入的数据加密口令不一致") }
+                    try CloudSync.register(email: email, password: password)
+                    DispatchQueue.main.async {
+                        showVerification = true
+                        syncStatus = "验证邮件已发送。输入邮件中的 6 位验证码后验证邮箱。"
+                    }
+                    return
+                }
+                let key = dataPassphrase.isEmpty ? cfg.syncSecret : dataPassphrase
+                guard !key.isEmpty else { throw CursorAPIError("请输入数据加密口令；旧账号可暂用原登录密码") }
+                let result = try CloudSync.login(email: email, password: password)
+                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: key, access: result.access, refresh: result.refresh)
                 DispatchQueue.main.async { syncStatus = "正在从云端导入账号和用量…" }
                 let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
@@ -759,6 +809,95 @@ struct SettingsRootView: View {
                 DispatchQueue.main.async {
                     syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
                 }
+            }
+        }
+    }
+
+    func verifyCloudEmail() {
+        let email = cloudEmail.trimmingCharacters(in: .whitespaces)
+        let password = cloudPassword.trimmingCharacters(in: .whitespaces)
+        let key = cloudDataPassphrase.trimmingCharacters(in: .whitespaces)
+        let confirmKey = cloudDataPassphraseConfirm.trimmingCharacters(in: .whitespaces)
+        let code = verificationCode.trimmingCharacters(in: .whitespaces)
+        guard key.count >= AccountSync.minimumDataPassphraseLength else { syncStatus = "数据加密口令至少 16 位"; return }
+        guard key == confirmKey else { syncStatus = "两次输入的数据加密口令不一致"; return }
+        guard !code.isEmpty else { syncStatus = "请输入验证码"; return }
+        var cfg = store.config
+        let startedActive = cfg.activeAccountId
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.verifyEmail(email: email, code: code)
+                let result = try CloudSync.login(email: email, password: password)
+                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: key, access: result.access, refresh: result.refresh)
+                let status = AccountSync.reconcile(&cfg)
+                DispatchQueue.main.async {
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
+                    showVerification = false
+                    verificationCode = ""
+                    cloudPassword = ""
+                    cloudDataPassphrase = ""
+                    cloudDataPassphraseConfirm = ""
+                    syncStatus = status.message
+                    hint = status.message
+                }
+            } catch {
+                DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }
+            }
+        }
+    }
+
+    func generateDataPassphrase() {
+        let key = AccountSync.generateDataPassphrase()
+        cloudDataPassphrase = key
+        cloudDataPassphraseConfirm = key
+        generatedDataPassphrase = key
+    }
+
+    func resendVerificationEmail() {
+        let email = cloudEmail.trimmingCharacters(in: .whitespaces)
+        let password = cloudPassword.trimmingCharacters(in: .whitespaces)
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.resendVerification(email: email, password: password)
+                DispatchQueue.main.async { syncStatus = "如果账号尚未验证，新的验证码已发送。" }
+            } catch {
+                DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }
+            }
+        }
+    }
+
+    func requestPasswordReset() {
+        let email = cloudEmail.trimmingCharacters(in: .whitespaces)
+        guard !email.isEmpty else { syncStatus = "请先填写注册邮箱"; return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.requestPasswordReset(email: email)
+                DispatchQueue.main.async {
+                    showPasswordReset = true
+                    syncStatus = "如果邮箱已验证，重置验证码已发送。"
+                }
+            } catch {
+                DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }
+            }
+        }
+    }
+
+    func confirmPasswordReset() {
+        let email = cloudEmail.trimmingCharacters(in: .whitespaces)
+        let code = resetCode.trimmingCharacters(in: .whitespaces)
+        let password = resetNewPassword
+        guard password.count >= 8 else { syncStatus = "登录密码至少 8 位"; return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.confirmPasswordReset(email: email, code: code, newPassword: password)
+                DispatchQueue.main.async {
+                    showPasswordReset = false
+                    resetCode = ""
+                    resetNewPassword = ""
+                    syncStatus = "登录密码已重置。请重新登录；数据加密口令保持不变。"
+                }
+            } catch {
+                DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }
             }
         }
     }
@@ -787,12 +926,36 @@ struct SettingsRootView: View {
                     newCloudPassword = ""
                     confirmCloudPassword = ""
                     showChangePassword = false
-                    syncStatus = "密码已更新，云端数据已用新密码重封。请在其他设备用新密码重新登录云同步。"
+                    syncStatus = "登录密码已更新；数据加密口令未改变。请在其他设备用新登录密码登录，并输入原数据加密口令。"
                 }
             } catch {
                 DispatchQueue.main.async {
                     syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
                 }
+            }
+        }
+    }
+
+    func changeDataPassphrase() {
+        let next = newDataPassphrase.trimmingCharacters(in: .whitespaces)
+        let confirm = confirmDataPassphrase.trimmingCharacters(in: .whitespaces)
+        guard next.count >= AccountSync.minimumDataPassphraseLength else { syncStatus = "数据加密口令至少 16 位"; return }
+        guard next == confirm else { syncStatus = "两次输入的加密口令不一致"; return }
+        syncStatus = "正在用新口令重封云端数据…"
+        var cfg = store.config
+        let startedActive = cfg.activeAccountId
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                try CloudSync.changeDataPassphrase(&cfg, newPassphrase: next)
+                DispatchQueue.main.async {
+                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
+                    newDataPassphrase = ""
+                    confirmDataPassphrase = ""
+                    showChangeDataPassphrase = false
+                    syncStatus = "数据已用新口令重封；其他设备请退出云同步后重新登录，并输入新口令。"
+                }
+            } catch {
+                DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }
             }
         }
     }

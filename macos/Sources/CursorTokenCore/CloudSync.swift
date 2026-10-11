@@ -5,11 +5,11 @@ public enum CloudSyncApi {
 }
 
 public enum CloudSync {
-    public static func applySession(_ cfg: inout AppConfig, email: String, password: String, access: String, refresh: String) {
+    public static func applySession(_ cfg: inout AppConfig, email: String, dataPassphrase: String, access: String, refresh: String) {
         cfg.cloudEmail = email.trimmingCharacters(in: .whitespaces).lowercased()
         cfg.cloudAccessToken = access
         cfg.cloudRefreshToken = refresh
-        cfg.syncSecret = password
+        cfg.syncSecret = dataPassphrase
         cfg.syncEnabled = cfg.cloudLoggedIn
         cfg.syncLastError = ""
         cfg.syncSecretDecryptFailed = false
@@ -24,9 +24,24 @@ public enum CloudSync {
         cfg.syncEnabled = false
     }
 
-    public static func register(email: String, password: String) throws -> (email: String, access: String, refresh: String) {
-        let payload = try send(method: "POST", path: "/v1/auth/register", access: nil, body: ["email": email, "password": password])
-        return try readAuth(payload)
+    public static func register(email: String, password: String) throws {
+        _ = try send(method: "POST", path: "/v1/auth/register", access: nil, body: ["email": email, "password": password])
+    }
+
+    public static func verifyEmail(email: String, code: String) throws {
+        _ = try send(method: "POST", path: "/v1/auth/verify-email", access: nil, body: ["email": email, "code": code])
+    }
+
+    public static func resendVerification(email: String, password: String) throws {
+        _ = try send(method: "POST", path: "/v1/auth/verification-email", access: nil, body: ["email": email, "password": password])
+    }
+
+    public static func requestPasswordReset(email: String) throws {
+        _ = try send(method: "POST", path: "/v1/auth/password-reset/request", access: nil, body: ["email": email])
+    }
+
+    public static func confirmPasswordReset(email: String, code: String, newPassword: String) throws {
+        _ = try send(method: "POST", path: "/v1/auth/password-reset/confirm", access: nil, body: ["email": email, "code": code, "new_password": newPassword])
     }
 
     public static func login(email: String, password: String) throws -> (email: String, access: String, refresh: String) {
@@ -37,6 +52,7 @@ public enum CloudSync {
     public static func changePassword(_ cfg: inout AppConfig, oldPassword: String, newPassword: String) throws {
         let old = oldPassword.trimmingCharacters(in: .whitespaces)
         let next = newPassword.trimmingCharacters(in: .whitespaces)
+        let dataKey = cfg.syncSecret
         if next.count < 8 { throw CursorAPIError("密码至少 8 位") }
         if old == next { throw CursorAPIError("新密码不能与当前密码相同") }
         let got = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
@@ -47,30 +63,59 @@ public enum CloudSync {
             "revision": revision,
         ]
         if let envelope = got["envelope"] as? [String: Any] {
-            let remote = try AccountSync.decryptEnvelope(envelope, passphrase: old)
-            body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: next)
+            let remote = try AccountSync.decryptEnvelope(envelope, passphrase: dataKey)
+            body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: dataKey)
         }
         do {
             let put = try authed(&cfg, method: "POST", path: "/v1/auth/password", body: body)
-            applyPasswordResult(&cfg, password: next, payload: put, fallbackRevision: revision)
+            applyPasswordResult(&cfg, password: dataKey, payload: put, fallbackRevision: revision)
         } catch let err as CursorAPIError where err.statusCode == 409 {
             let retry = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
             revision = intValue(retry["revision"]) ?? 0
             body["revision"] = revision
             if let envelope = retry["envelope"] as? [String: Any] {
-                let remote = try AccountSync.decryptEnvelope(envelope, passphrase: old)
-                body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: next)
+                let remote = try AccountSync.decryptEnvelope(envelope, passphrase: dataKey)
+                body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: dataKey)
             }
             let put = try authed(&cfg, method: "POST", path: "/v1/auth/password", body: body)
-            applyPasswordResult(&cfg, password: next, payload: put, fallbackRevision: revision)
+            applyPasswordResult(&cfg, password: dataKey, payload: put, fallbackRevision: revision)
         }
+    }
+
+    public static func changeDataPassphrase(_ cfg: inout AppConfig, newPassphrase: String) throws {
+        let next = newPassphrase.trimmingCharacters(in: .whitespaces)
+        guard next.count >= AccountSync.minimumDataPassphraseLength else { throw CursorAPIError("数据加密口令至少 16 位") }
+        let current = cfg.syncSecret
+        guard !current.isEmpty else { throw CursorAPIError("当前设备没有解锁数据加密口令") }
+        let got = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
+        var revision = intValue(got["revision"]) ?? 0
+        var remote = try parseRemote(got, passphrase: current)
+        var local = AccountSync.snapshotFromConfig(cfg)
+        local.deviceId = cfg.syncDeviceId
+        var merged = AccountSync.mergeSnapshots(local, remote)
+        var envelope = try AccountSync.encryptEnvelope(merged, passphrase: next)
+        do {
+            let put = try authed(&cfg, method: "PUT", path: "/v1/sync", body: ["revision": revision, "envelope": envelope])
+            cfg.cloudRevision = intValue(put["revision"]) ?? (revision + 1)
+        } catch let err as CursorAPIError where err.statusCode == 409 {
+            let retry = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
+            revision = intValue(retry["revision"]) ?? 0
+            remote = try parseRemote(retry, passphrase: current)
+            local = AccountSync.snapshotFromConfig(cfg)
+            local.deviceId = cfg.syncDeviceId
+            merged = AccountSync.mergeSnapshots(local, remote)
+            envelope = try AccountSync.encryptEnvelope(merged, passphrase: next)
+            let put = try authed(&cfg, method: "PUT", path: "/v1/sync", body: ["revision": revision, "envelope": envelope])
+            cfg.cloudRevision = intValue(put["revision"]) ?? (revision + 1)
+        }
+        cfg.syncSecret = next
     }
 
     static func applyPasswordResult(_ cfg: inout AppConfig, password: String, payload: [String: Any], fallbackRevision: Int) {
         let access = str(payload["access_token"])
         let refresh = str(payload["refresh_token"])
         let email = str(payload["email"]).isEmpty ? cfg.cloudEmail : str(payload["email"])
-        applySession(&cfg, email: email, password: password, access: access, refresh: refresh)
+        applySession(&cfg, email: email, dataPassphrase: password, access: access, refresh: refresh)
         cfg.cloudRevision = intValue(payload["revision"]) ?? fallbackRevision
     }
 

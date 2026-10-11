@@ -82,7 +82,8 @@ public static class AccountSync
     public const string FormatV2 = "cursortokentray.sync.v2";
     public const string Filename = "CursorRemain.accounts.sync";
     public const string Kdf = "pbkdf2-sha256";
-    public const int DefaultIterations = 210_000;
+    public const int DefaultIterations = 600_000;
+    public const int MinimumDataPassphraseLength = 16;
     public const int KeyLen = 32;
     public const int SaltLen = 16;
     public const int NonceLen = 12;
@@ -669,6 +670,9 @@ public static class AccountSync
         if (iterations < 1000) throw new CursorApiException("KDF 迭代次数过低");
         return Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(passphrase), salt, iterations, HashAlgorithmName.SHA256, KeyLen);
     }
+
+    public static string GenerateDataPassphrase() =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     public static string CanonicalJson(SyncSnapshot snap)
     {
