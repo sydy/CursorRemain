@@ -22,6 +22,7 @@ SAND_USAGE_ENDPOINT = "/api/dashboard/get-sand-usage-status"
 SAND_USAGE_TIMEOUT = 8.0
 USAGE_URL = "https://cursor.com/dashboard/usage"
 BILLING_URL = "https://cursor.com/dashboard/billing"
+GROK_DASHBOARD_URL = "https://grok.com/dashboard"
 
 # 企业 / 团队套餐：Dashboard 只有 Usage 页，额度按金额（美分）计费
 _TEAM_MEMBERSHIPS = frozenset(
@@ -40,7 +41,18 @@ _MEMBERSHIP_LABELS = {
     "teams": "Team",
     "business": "Business",
     "unpaid": "Free",
+    "plus": "Plus",
+    "premium": "Premium",
+    "super": "Super",
+    "x_plus": "Plus",
+    "x_premium": "Premium",
+    "x_super": "Super",
+    "x_ultra": "Ultra",
+    "x-ultra": "Ultra",
 }
+_X_MEMBERSHIPS = frozenset(
+    {"plus", "premium", "super", "x_plus", "x_premium", "x_super", "x_ultra"}
+)
 
 # Dashboard Included Usage：tier 2 = Cursor 模型，其余为其他模型
 CURSOR_MODEL_TIER = 2
@@ -110,8 +122,13 @@ class UsageSnapshot:
     grok_bot_period_start: str | None = None
     grok_bot_reset_at: str | None = None
     grok_bot_days_remaining: int | None = None
+    is_x_subscription: bool = False
+    usage_reset_at: str | None = None
+    prepaid_remaining_cents: float | None = None
 
     def is_team_account(self) -> bool:
+        if self.is_x_subscription or is_x_membership(self.membership_type):
+            return False
         return is_team_membership(self.membership_type, self.limit_type)
 
     def shows_grok_bot(self) -> bool:
@@ -142,6 +159,27 @@ def is_team_membership(membership: str | None, limit_type: str | None = None) ->
     return (membership or "").strip().lower() in _TEAM_MEMBERSHIPS
 
 
+def membership_key(raw: str | None) -> str:
+    key = (raw or "").strip().lower().replace(" ", "").replace("-", "_")
+    if key.endswith("套餐"):
+        key = key[:-2]
+    return key
+
+
+def is_x_membership(raw: str | None) -> bool:
+    """The X Subscription：Plus / Premium / Super，以及带 x_ 前缀的档位。"""
+    return membership_key(raw) in _X_MEMBERSHIPS
+
+
+def _prefer_grok_dashboard(
+    usage: UsageSnapshot | None,
+    membership: str,
+) -> bool:
+    if usage is not None and (usage.is_x_subscription or is_x_membership(usage.membership_type)):
+        return True
+    return is_x_membership(membership)
+
+
 def dashboard_url_for(
     usage: UsageSnapshot | None = None,
     *,
@@ -151,6 +189,8 @@ def dashboard_url_for(
     if usage is not None:
         membership = usage.membership_type
         limit_type = usage.limit_type
+    if _prefer_grok_dashboard(usage, membership):
+        return GROK_DASHBOARD_URL
     if is_team_membership(membership, limit_type):
         return USAGE_URL
     return BILLING_URL
@@ -165,6 +205,8 @@ def dashboard_menu_label(
     if usage is not None:
         membership = usage.membership_type
         limit_type = usage.limit_type
+    if _prefer_grok_dashboard(usage, membership):
+        return "打开用量"
     if is_team_membership(membership, limit_type):
         return "打开用量"
     return "打开用量账单"
@@ -179,13 +221,17 @@ def dashboard_button_label(
     if usage is not None:
         membership = usage.membership_type
         limit_type = usage.limit_type
+    if _prefer_grok_dashboard(usage, membership):
+        return "用量"
     if is_team_membership(membership, limit_type):
         return "用量"
     return "账单"
 
 
 def dashboard_link_label(usage: UsageSnapshot | None = None) -> str:
-    if usage is not None and usage.is_team_account():
+    if usage is not None and (
+        usage.is_x_subscription or is_x_membership(usage.membership_type) or usage.is_team_account()
+    ):
         return "查看用量 →"
     return "查看用量账单 →"
 
@@ -534,10 +580,12 @@ def parse_usage_summary(payload: dict[str, Any]) -> UsageSnapshot:
     if api is None:
         api = _percent_from_display_message(payload.get("namedModelSelectedDisplayMessage"))
 
-    membership = format_membership_type(
-        str(payload.get("membershipType") or payload.get("plan") or "")
-    )
+    raw_membership = str(payload.get("membershipType") or payload.get("plan") or "")
+    membership = format_membership_type(raw_membership)
     limit_type = str(payload.get("limitType") or "").strip()
+    cycle_start_raw = payload.get("billingCycleStart") or payload.get("startOfMonth")
+    cycle_end_raw = payload.get("billingCycleEnd")
+    x_plan = looks_like_x_plan(raw_membership, payload, cycle_start_raw, cycle_end_raw)
     is_unlimited = bool(payload.get("isUnlimited"))
 
     plan_meter = _spend_meter(plan)
@@ -561,7 +609,7 @@ def parse_usage_summary(payload: dict[str, Any]) -> UsageSnapshot:
         # 团队用量页「Your monthly usage $X / $Y」来自 overall / pooled / plan 金额。
         # plan.totalPercentUsed 是另一套内部缓存指标，可能冻在 0% 或 100%，
         # 不能拿来画托盘剩余环，否则会出现本地 100% 但 Dashboard 已用 $71 / $1000。
-        if is_team_membership(membership, limit_type):
+        if is_team_membership(membership, limit_type) and not x_plan:
             for meter in (overall_meter, pooled_meter, plan_meter):
                 applied = _percent_from_spend_meter(meter)
                 if applied is None:
@@ -597,8 +645,8 @@ def parse_usage_summary(payload: dict[str, Any]) -> UsageSnapshot:
                     break
                 if used_percent is None:
                     used_percent = 0.0
-                elif picked_source in {"overall", "pooled", "on_demand"} or is_team_membership(
-                    membership, limit_type
+                elif picked_source in {"overall", "pooled", "on_demand"} or (
+                    is_team_membership(membership, limit_type) and not x_plan
                 ):
                     billing_mode = "amount"
                 else:
@@ -631,7 +679,7 @@ def parse_usage_summary(payload: dict[str, Any]) -> UsageSnapshot:
     if od_meter:
         od_used, od_limit, _ = od_meter
 
-    return UsageSnapshot(
+    snap = UsageSnapshot(
         used_percent=round(used_percent, 1),
         remaining_percent=round(remaining_percent, 1),
         auto_percent_used=None if auto is None else round(auto, 1),
@@ -655,6 +703,109 @@ def parse_usage_summary(payload: dict[str, Any]) -> UsageSnapshot:
         limit_type=limit_type,
         is_unlimited=is_unlimited,
     )
+    _apply_x_subscription(snap, payload)
+    return snap
+
+
+def _weekly_block(payload: dict[str, Any]) -> dict[str, Any]:
+    individual = _as_dict(payload.get("individualUsage"))
+    weekly = _as_dict(individual.get("weekly"))
+    if weekly:
+        return weekly
+    return _as_dict(payload.get("weeklyUsage"))
+
+
+def _cycle_span_days(start: Any, end: Any) -> float | None:
+    opened = _parse_iso(start)
+    closed = _parse_iso(end)
+    if opened is None or closed is None:
+        return None
+    return (closed - opened).total_seconds() / 86400.0
+
+
+def _has_explicit_weekly(payload: dict[str, Any]) -> bool:
+    for key in (
+        "usageResetAt",
+        "usage_reset_at",
+        "usagePeriodStart",
+        "usage_period_start",
+        "weeklyPercentUsed",
+    ):
+        if payload.get(key) not in (None, ""):
+            return True
+    cadence = str(
+        payload.get("usageCadence") or payload.get("billingInterval") or payload.get("resetInterval") or ""
+    ).strip().lower()
+    if cadence in {"week", "weekly"}:
+        return True
+    return bool(_weekly_block(payload))
+
+
+def looks_like_x_plan(membership: str | None, payload: dict[str, Any], cycle_start: Any = None, cycle_end: Any = None) -> bool:
+    """新套餐是每周一个共享额度。Plus / Premium / Super 直接认；Ultra 仍可能是旧月度套餐。"""
+    if is_x_membership(membership):
+        return True
+    key = membership_key(membership)
+    if key not in {"ultra", "free", "hobby"}:
+        return False
+    span = _cycle_span_days(cycle_start, cycle_end)
+    short = span is not None and 1 <= span <= 8
+    return short or _has_explicit_weekly(payload)
+
+
+def _apply_x_subscription(snap: UsageSnapshot, payload: dict[str, Any]) -> None:
+    if not looks_like_x_plan(snap.membership_type, payload, snap.billing_cycle_start, snap.billing_cycle_end):
+        raw = str(payload.get("membershipType") or payload.get("plan") or "")
+        if not looks_like_x_plan(raw, payload, snap.billing_cycle_start, snap.billing_cycle_end):
+            return
+    snap.is_x_subscription = True
+    snap.billing_mode = "percent"
+    weekly = _weekly_block(payload)
+    percent = _as_float(weekly.get("percentUsed")) if weekly else None
+    if percent is None and weekly:
+        percent = _as_float(weekly.get("usagePercent"))
+    if percent is None:
+        percent = _as_float(payload.get("weeklyPercentUsed"))
+    if percent is not None:
+        used = min(100.0, max(0.0, float(percent)))
+        snap.used_percent = round(used, 1)
+        snap.remaining_percent = round(min(100.0, max(0.0, 100.0 - used)), 1)
+        snap.total_percent_used = snap.used_percent
+    snap.auto_percent_used = None
+    snap.api_percent_used = None
+    snap.used_cents = None
+    snap.limit_cents = None
+    snap.remaining_cents = None
+
+    reset = _iso_or_none(payload.get("usageResetAt") or payload.get("usage_reset_at"))
+    if reset is None and weekly:
+        reset = _iso_or_none(weekly.get("resetAt") or weekly.get("nextReset"))
+    period = _iso_or_none(payload.get("usagePeriodStart") or payload.get("usage_period_start"))
+    if period is None and weekly:
+        period = _iso_or_none(weekly.get("periodStart") or weekly.get("currentPeriodStart"))
+    span = _cycle_span_days(snap.billing_cycle_start, snap.billing_cycle_end)
+    if reset is None and span is not None and 1 <= span <= 8:
+        reset = snap.billing_cycle_end
+        period = period or snap.billing_cycle_start
+    snap.usage_reset_at = reset
+    if reset:
+        snap.days_remaining = _days_until(reset)
+    if period:
+        elapsed = _days_since(period)
+        snap.days_elapsed = None if elapsed is None else round(elapsed, 2)
+    if reset or period:
+        snap.estimated_usable_days = _estimate_usable_days(
+            snap.used_percent, snap.remaining_percent, snap.days_elapsed
+        )
+
+    individual = _as_dict(payload.get("individualUsage"))
+    prepaid = _as_dict(individual.get("prepaid")) or _as_dict(individual.get("additionalUsage"))
+    remaining = _as_float(prepaid.get("remaining")) if prepaid else None
+    if remaining is None and prepaid:
+        remaining = _as_float(prepaid.get("remainingCents"))
+    if remaining is None:
+        remaining = _as_float(payload.get("prepaidRemainingCents"))
+    snap.prepaid_remaining_cents = remaining
 
 
 def is_grok_bot_model(name: str | None) -> bool:
@@ -666,7 +817,16 @@ def is_first_party_model(name: str | None) -> bool:
     key = (name or "").strip().lower()
     if not key or is_grok_bot_model(key):
         return False
-    return key in {"auto", "default"} or key.startswith("cursor-") or key.startswith("composer-")
+    return (
+        key in {"auto", "default"}
+        or key.startswith("cursor-")
+        or key.startswith("composer-")
+        or key.startswith("grok-")
+    )
+
+
+def _is_unified_weekly(payload: dict[str, Any]) -> bool:
+    return _first_bool(payload, "isUnified", "is_unified") is True
 
 
 def apply_sand_usage_status(
@@ -674,6 +834,11 @@ def apply_sand_usage_status(
     payload: dict[str, Any],
     now: datetime | None = None,
 ) -> None:
+    if isinstance(payload, dict) and _is_unified_weekly(payload):
+        _apply_unified_weekly(snapshot, payload, now)
+        return
+    if snapshot.is_x_subscription:
+        return
     parsed = parse_sand_usage_status(payload, now=now)
     if parsed is None:
         return
@@ -684,12 +849,45 @@ def apply_sand_usage_status(
     snapshot.grok_bot_days_remaining = parsed["days_remaining"]
 
 
+def _apply_unified_weekly(snapshot: UsageSnapshot, payload: dict[str, Any], now: datetime | None) -> None:
+    """新套餐的每周共享额度走这个接口，不再是单独的 Grok Bot 条。"""
+    percent = _as_float(_first_present(payload, "usagePercent", "usage_percent"))
+    if percent is None:
+        return
+    used = min(100.0, max(0.0, float(percent)))
+    snapshot.is_x_subscription = True
+    snapshot.billing_mode = "percent"
+    snapshot.used_percent = round(used, 1)
+    snapshot.remaining_percent = round(100.0 - used, 1)
+    snapshot.total_percent_used = snapshot.used_percent
+    snapshot.auto_percent_used = None
+    snapshot.api_percent_used = None
+    snapshot.grok_bot_percent_used = None
+    snapshot.grok_bot_remaining_percent = None
+    snapshot.grok_bot_period_start = None
+    snapshot.grok_bot_reset_at = None
+    snapshot.grok_bot_days_remaining = None
+    start = _timestamp_to_iso(_first_present(payload, "currentPeriodStart", "current_period_start"))
+    reset = _timestamp_to_iso(_first_present(payload, "nextResetTimestampUtc", "next_reset_timestamp_utc"))
+    snapshot.usage_reset_at = reset
+    if reset:
+        snapshot.days_remaining = days_until(reset, now)
+    if start:
+        elapsed = _days_since(start) if now is None else _days_since_at(start, now)
+        snapshot.days_elapsed = None if elapsed is None else round(elapsed, 2)
+    snapshot.estimated_usable_days = _estimate_usable_days(
+        snapshot.used_percent, snapshot.remaining_percent, snapshot.days_elapsed
+    )
+
+
 def parse_sand_usage_status(
     payload: dict[str, Any] | None,
     now: datetime | None = None,
 ) -> dict[str, Any] | None:
     """Grok Bot 独立周额度。无套餐内额度 / 企业池化账号不画环。"""
     if not isinstance(payload, dict) or not payload:
+        return None
+    if _is_unified_weekly(payload):
         return None
     if _first_bool(payload, "usesPooledEnterpriseAllowance", "uses_pooled_enterprise_allowance"):
         return None
@@ -1037,10 +1235,15 @@ def _days_until(iso_value: Any) -> int | None:
 
 
 def _days_since(iso_value: Any) -> float | None:
+    return _days_since_at(iso_value, datetime.now(timezone.utc))
+
+
+def _days_since_at(iso_value: Any, now: datetime) -> float | None:
     start = _parse_iso(iso_value)
     if start is None:
         return None
-    delta = datetime.now(timezone.utc) - start
+    clock = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    delta = clock.astimezone(timezone.utc) - start
     hours = delta.total_seconds() / 3600.0
     if hours < 0:
         return 0.0

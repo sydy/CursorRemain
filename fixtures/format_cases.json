@@ -11,6 +11,18 @@
     {
       "input": "ultra",
       "output": "Ultra"
+    },
+    {
+      "input": "plus",
+      "output": "Plus"
+    },
+    {
+      "input": "premium",
+      "output": "Premium"
+    },
+    {
+      "input": "super",
+      "output": "Super"
     }
   ],
   "usd": [

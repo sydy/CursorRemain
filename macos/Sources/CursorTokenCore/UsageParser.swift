@@ -11,6 +11,7 @@ public let usageEventsMaxPages = 50
 public let usageURL = "https://cursor.com/dashboard/usage"
 public let spendingURL = "https://cursor.com/dashboard/spending"
 public let billingURL = "https://cursor.com/dashboard/billing"
+public let grokDashboardURL = "https://grok.com/dashboard"
 
 public let cursorModelTier = 2
 
@@ -30,6 +31,17 @@ private let membershipLabels: [String: String] = [
     "teams": "Team",
     "business": "Business",
     "unpaid": "Free",
+    "plus": "Plus",
+    "premium": "Premium",
+    "super": "Super",
+    "x_plus": "Plus",
+    "x_premium": "Premium",
+    "x_super": "Super",
+    "x_ultra": "Ultra",
+    "x-ultra": "Ultra",
+]
+private let xMemberships: Set<String> = [
+    "plus", "premium", "super", "x_plus", "x_premium", "x_super", "x_ultra",
 ]
 private let modelNameAliases: [String: String] = ["default": "auto"]
 
@@ -84,6 +96,9 @@ public struct UsageSnapshot: Equatable {
     public var grokBotPeriodStart: String?
     public var grokBotResetAt: String?
     public var grokBotDaysRemaining: Int?
+    public var isXSubscription: Bool
+    public var usageResetAt: String?
+    public var prepaidRemainingCents: Double?
 
     public init(
         usedPercent: Double,
@@ -116,7 +131,10 @@ public struct UsageSnapshot: Equatable {
         grokBotRemainingPercent: Double? = nil,
         grokBotPeriodStart: String? = nil,
         grokBotResetAt: String? = nil,
-        grokBotDaysRemaining: Int? = nil
+        grokBotDaysRemaining: Int? = nil,
+        isXSubscription: Bool = false,
+        usageResetAt: String? = nil,
+        prepaidRemainingCents: Double? = nil
     ) {
         self.usedPercent = usedPercent
         self.remainingPercent = remainingPercent
@@ -149,10 +167,14 @@ public struct UsageSnapshot: Equatable {
         self.grokBotPeriodStart = grokBotPeriodStart
         self.grokBotResetAt = grokBotResetAt
         self.grokBotDaysRemaining = grokBotDaysRemaining
+        self.isXSubscription = isXSubscription
+        self.usageResetAt = usageResetAt
+        self.prepaidRemainingCents = prepaidRemainingCents
     }
 
     public var isTeamAccount: Bool {
-        UsageParser.isTeamMembership(membershipType, limitType: limitType)
+        if isXSubscription || UsageParser.isXMembership(membershipType) { return false }
+        return UsageParser.isTeamMembership(membershipType, limitType: limitType)
     }
 
     public var showsAmount: Bool {
@@ -224,6 +246,7 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
+        if preferGrokDashboard(usage, membership: memb) { return grokDashboardURL }
         return isTeamMembership(memb, limitType: limit) ? usageURL : billingURL
     }
 
@@ -234,6 +257,7 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
+        if preferGrokDashboard(usage, membership: memb) { return "打开用量" }
         return isTeamMembership(memb, limitType: limit) ? "打开用量" : "打开用量账单"
     }
 
@@ -244,11 +268,14 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
+        if preferGrokDashboard(usage, membership: memb) { return "用量" }
         return isTeamMembership(memb, limitType: limit) ? "用量" : "账单"
     }
 
     public static func dashboardLinkLabel(_ usage: UsageSnapshot?) -> String {
-        if let usage, usage.isTeamAccount { return "查看用量 →" }
+        if let usage, usage.isXSubscription || isXMembership(usage.membershipType) || usage.isTeamAccount {
+            return "查看用量 →"
+        }
         return "查看用量账单 →"
     }
 
@@ -274,7 +301,7 @@ public enum UsageParser {
     public static func isFirstPartyModel(_ name: String?) -> Bool {
         let key = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if key.isEmpty || isGrokBotModel(key) { return false }
-        return key == "auto" || key == "default" || key.hasPrefix("cursor-") || key.hasPrefix("composer-")
+        return key == "auto" || key == "default" || key.hasPrefix("cursor-") || key.hasPrefix("composer-") || key.hasPrefix("grok-")
     }
 
     public static func usageCategory(_ name: String?) -> String {
@@ -284,6 +311,11 @@ public enum UsageParser {
     }
 
     public static func applySandUsage(_ snapshot: inout UsageSnapshot, _ payload: JSONValue, now: Date = Date()) {
+        if isUnifiedWeekly(payload) {
+            applyUnifiedWeekly(&snapshot, payload, now: now)
+            return
+        }
+        if snapshot.isXSubscription { return }
         guard let parsed = parseSandUsageStatus(payload, now: now) else { return }
         snapshot.grokBotPercentUsed = parsed.percentUsed
         snapshot.grokBotRemainingPercent = parsed.remainingPercent
@@ -292,8 +324,40 @@ public enum UsageParser {
         snapshot.grokBotDaysRemaining = parsed.daysRemaining
     }
 
+    static func isUnifiedWeekly(_ payload: JSONValue) -> Bool {
+        optBool(payload, "isUnified", "is_unified") == true
+    }
+
+    static func applyUnifiedWeekly(_ snapshot: inout UsageSnapshot, _ payload: JSONValue, now: Date) {
+        guard let percent = firstPresent(payload, "usagePercent", "usage_percent").asDouble() else { return }
+        let used = clampPercent(percent)
+        snapshot.isXSubscription = true
+        snapshot.billingMode = "percent"
+        snapshot.usedPercent = round1(used)
+        snapshot.remainingPercent = round1(clampPercent(100.0 - used))
+        snapshot.totalPercentUsed = snapshot.usedPercent
+        snapshot.autoPercentUsed = nil
+        snapshot.apiPercentUsed = nil
+        snapshot.grokBotPercentUsed = nil
+        snapshot.grokBotRemainingPercent = nil
+        snapshot.grokBotPeriodStart = nil
+        snapshot.grokBotResetAt = nil
+        snapshot.grokBotDaysRemaining = nil
+        let start = timestampToIso(firstPresent(payload, "currentPeriodStart", "current_period_start"))
+        let reset = timestampToIso(firstPresent(payload, "nextResetTimestampUtc", "next_reset_timestamp_utc"))
+        snapshot.usageResetAt = reset
+        if let reset { snapshot.daysRemaining = daysUntil(reset, now: now) }
+        if let start { snapshot.daysElapsed = daysSince(start, now: now).map { round2($0) } }
+        snapshot.estimatedUsableDays = estimateUsableDays(
+            usedPercent: snapshot.usedPercent,
+            remainingPercent: snapshot.remainingPercent,
+            daysElapsed: snapshot.daysElapsed
+        )
+    }
+
     public static func parseSandUsageStatus(_ payload: JSONValue, now: Date = Date()) -> GrokBotUsage? {
         guard payload.isObject, !payload.isEmpty else { return nil }
+        if isUnifiedWeekly(payload) { return nil }
         if optBool(payload, "usesPooledEnterpriseAllowance", "uses_pooled_enterprise_allowance") == true { return nil }
         if optBool(payload, "includedLimitZero", "included_limit_zero") == true { return nil }
         if optBool(payload, "hasNonZeroIncludedLimit", "has_non_zero_included_limit") != true { return nil }
@@ -339,11 +403,13 @@ public enum UsageParser {
             api = percentFromDisplayMessage(payload["namedModelSelectedDisplayMessage"].asString())
         }
 
-        let membership = formatMembershipType(
-            payload["membershipType"].asString() ?? payload["plan"].asString() ?? ""
-        )
+        let rawMembership = payload["membershipType"].asString() ?? payload["plan"].asString() ?? ""
+        let membership = formatMembershipType(rawMembership)
         let limitType = (payload["limitType"].asString() ?? "").trimmingCharacters(in: .whitespaces)
         let isUnlimited = payload["isUnlimited"].asBool()
+        let cycleStartRaw = payload["billingCycleStart"].asString() ?? payload["startOfMonth"].asString()
+        let cycleEndRaw = payload["billingCycleEnd"].asString()
+        let xPlan = looksLikeXPlan(rawMembership, payload, cycleStart: cycleStartRaw, cycleEnd: cycleEndRaw)
 
         let planMeter = spendMeter(plan)
         let planMeterBreakdown = spendMeter(plan, allowBreakdown: true)
@@ -366,7 +432,7 @@ public enum UsageParser {
         } else {
             // Team usage page "Your monthly usage $X / $Y" comes from overall/pooled/plan cents.
             // plan.totalPercentUsed is a separate cached metric and can freeze at 0% or 100%.
-            if isTeamMembership(membership, limitType: limitType) {
+            if isTeamMembership(membership, limitType: limitType) && !xPlan {
                 for meter in [overallMeter, pooledMeter, planMeter] {
                     guard let applied = percentFromSpendMeter(meter) else { continue }
                     usedCents = applied.used
@@ -413,7 +479,7 @@ public enum UsageParser {
                     if usedPercent == nil {
                         usedPercent = 0
                     } else if ["overall", "pooled", "on_demand"].contains(pickedSource)
-                        || isTeamMembership(membership, limitType: limitType)
+                        || (isTeamMembership(membership, limitType: limitType) && !xPlan)
                     {
                         billingMode = "amount"
                     } else {
@@ -459,7 +525,7 @@ public enum UsageParser {
             odLimit = odMeter.1
         }
 
-        return UsageSnapshot(
+        var snap = UsageSnapshot(
             usedPercent: round1(used),
             remainingPercent: round1(remaining),
             autoPercentUsed: auto.map(round1),
@@ -483,6 +549,110 @@ public enum UsageParser {
             limitType: limitType,
             isUnlimited: isUnlimited
         )
+        applyXSubscription(&snap, payload, now: now)
+        return snap
+    }
+
+    public static func membershipKey(_ raw: String?) -> String {
+        var key = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "_")
+        if key.hasSuffix("套餐") { key = String(key.dropLast(2)) }
+        return key
+    }
+
+    public static func isXMembership(_ raw: String?) -> Bool {
+        xMemberships.contains(membershipKey(raw))
+    }
+
+    static func preferGrokDashboard(_ usage: UsageSnapshot?, membership: String) -> Bool {
+        if let usage, usage.isXSubscription || isXMembership(usage.membershipType) { return true }
+        return isXMembership(membership)
+    }
+
+    static func looksLikeXPlan(_ membership: String?, _ payload: JSONValue, cycleStart: String?, cycleEnd: String?) -> Bool {
+        if isXMembership(membership) { return true }
+        let key = membershipKey(membership)
+        if key != "ultra" && key != "free" && key != "hobby" { return false }
+        let span = cycleSpanDays(cycleStart, cycleEnd)
+        let shortCycle = span.map { $0 >= 1 && $0 <= 8 } ?? false
+        return shortCycle || hasExplicitWeekly(payload)
+    }
+
+    static func applyXSubscription(_ snap: inout UsageSnapshot, _ payload: JSONValue, now: Date) {
+        let raw = payload["membershipType"].asString() ?? payload["plan"].asString()
+        if !looksLikeXPlan(snap.membershipType, payload, cycleStart: snap.billingCycleStart, cycleEnd: snap.billingCycleEnd)
+            && !looksLikeXPlan(raw, payload, cycleStart: snap.billingCycleStart, cycleEnd: snap.billingCycleEnd)
+        {
+            return
+        }
+        snap.isXSubscription = true
+        snap.billingMode = "percent"
+        let weekly = weeklyBlock(payload)
+        let percent = weekly["percentUsed"].asDouble() ?? weekly["usagePercent"].asDouble() ?? payload["weeklyPercentUsed"].asDouble()
+        if let percent {
+            let used = clampPercent(percent)
+            snap.usedPercent = round1(used)
+            snap.remainingPercent = round1(clampPercent(100.0 - used))
+            snap.totalPercentUsed = snap.usedPercent
+        }
+        snap.autoPercentUsed = nil
+        snap.apiPercentUsed = nil
+        snap.usedCents = nil
+        snap.limitCents = nil
+        snap.remainingCents = nil
+
+        var reset = isoOrNone(payload["usageResetAt"].asString() ?? payload["usage_reset_at"].asString())
+            ?? isoOrNone(weekly["resetAt"].asString() ?? weekly["nextReset"].asString())
+        var period = isoOrNone(payload["usagePeriodStart"].asString() ?? payload["usage_period_start"].asString())
+            ?? isoOrNone(weekly["periodStart"].asString() ?? weekly["currentPeriodStart"].asString())
+        let span = cycleSpanDays(snap.billingCycleStart, snap.billingCycleEnd)
+        if reset == nil, let span, span >= 1, span <= 8 {
+            reset = snap.billingCycleEnd
+            if period == nil { period = snap.billingCycleStart }
+        }
+        snap.usageResetAt = reset
+        if let reset { snap.daysRemaining = daysUntil(reset, now: now) }
+        if let period { snap.daysElapsed = daysSince(period, now: now).map { round2($0) } }
+        if reset != nil || period != nil {
+            snap.estimatedUsableDays = estimateUsableDays(
+                usedPercent: snap.usedPercent,
+                remainingPercent: snap.remainingPercent,
+                daysElapsed: snap.daysElapsed
+            )
+        }
+        let individual = object(payload["individualUsage"])
+        var prepaid = object(individual["prepaid"])
+        if !prepaid.isObject || prepaid.isEmpty { prepaid = object(individual["additionalUsage"]) }
+        snap.prepaidRemainingCents = prepaid["remaining"].asDouble() ?? prepaid["remainingCents"].asDouble() ?? payload["prepaidRemainingCents"].asDouble()
+    }
+
+    static func weeklyBlock(_ payload: JSONValue) -> JSONValue {
+        let individual = object(payload["individualUsage"])
+        let weekly = object(individual["weekly"])
+        if weekly.isObject && !weekly.isEmpty { return weekly }
+        let top = object(payload["weeklyUsage"])
+        return top.isObject && !top.isEmpty ? top : .null
+    }
+
+    static func hasExplicitWeekly(_ payload: JSONValue) -> Bool {
+        for key in ["usageResetAt", "usage_reset_at", "usagePeriodStart", "usage_period_start", "weeklyPercentUsed"] {
+            if payload.object[key] != nil {
+                if let text = payload[key].asString(), !text.isEmpty { return true }
+                if payload[key].asDouble() != nil { return true }
+            }
+        }
+        let cadence = (payload["usageCadence"].asString() ?? payload["billingInterval"].asString() ?? payload["resetInterval"].asString() ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if cadence == "week" || cadence == "weekly" { return true }
+        let weekly = weeklyBlock(payload)
+        return weekly.isObject && !weekly.isEmpty
+    }
+
+    static func cycleSpanDays(_ start: String?, _ end: String?) -> Double? {
+        guard let opened = parseISO(start), let closed = parseISO(end) else { return nil }
+        return closed.timeIntervalSince(opened) / 86_400.0
     }
 
     public static func parseAggregatedUsage(

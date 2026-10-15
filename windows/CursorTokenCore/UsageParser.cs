@@ -44,9 +44,12 @@ public sealed class UsageSnapshot
     public string? GrokBotPeriodStart { get; set; }
     public string? GrokBotResetAt { get; set; }
     public int? GrokBotDaysRemaining { get; set; }
-    public bool IsTeamAccount => UsageParser.IsTeamMembership(MembershipType, LimitType);
     public bool ShowsAmount => UsedCents is not null && LimitCents is > 0 && (BillingMode == "amount" || IsTeamAccount);
     public bool ShowsGrokBot => GrokBotPercentUsed is not null;
+    public bool IsXSubscription { get; set; }
+    public string? UsageResetAt { get; set; }
+    public double? PrepaidRemainingCents { get; set; }
+    public bool IsTeamAccount => !IsXSubscription && !UsageParser.IsXMembership(MembershipType) && UsageParser.IsTeamMembership(MembershipType, LimitType);
 }
 
 public sealed record GrokBotUsage(
@@ -61,6 +64,7 @@ public static class UsageParser
     public const string CursorBase = "https://cursor.com";
     public const string UsageUrl = "https://cursor.com/dashboard/usage";
     public const string BillingUrl = "https://cursor.com/dashboard/billing";
+    public const string GrokDashboardUrl = "https://grok.com/dashboard";
     public const int CursorModelTier = 2;
     public static readonly string[] UsageEndpoints = ["/api/usage-summary", "/api/dashboard/usage-summary"];
     public const string AggregatedEndpoint = "/api/dashboard/get-aggregated-usage-events";
@@ -77,7 +81,11 @@ public static class UsageParser
         ["free"] = "Free", ["hobby"] = "Hobby", ["enterprise"] = "Enterprise",
         ["enterprise_trial"] = "Enterprise", ["team"] = "Team", ["teams"] = "Team",
         ["business"] = "Business", ["unpaid"] = "Free",
+        ["plus"] = "Plus", ["premium"] = "Premium", ["super"] = "Super",
+        ["x_plus"] = "Plus", ["x_premium"] = "Premium", ["x_super"] = "Super",
+        ["x_ultra"] = "Ultra", ["x-ultra"] = "Ultra",
     };
+    static readonly HashSet<string> XMemberships = ["plus", "premium", "super", "x_plus", "x_premium", "x_super", "x_ultra"];
 
     public static string FormatMembershipType(string? raw)
     {
@@ -92,26 +100,43 @@ public static class UsageParser
         return TeamMemberships.Contains((membership ?? "").Trim().ToLowerInvariant());
     }
 
+    public static string MembershipKey(string? raw)
+    {
+        var key = (raw ?? "").Trim().ToLowerInvariant().Replace(" ", "").Replace("-", "_");
+        if (key.EndsWith("套餐", StringComparison.Ordinal)) key = key[..^2];
+        return key;
+    }
+
+    public static bool IsXMembership(string? raw) => XMemberships.Contains(MembershipKey(raw));
+
+    static bool PreferGrokDashboard(UsageSnapshot? usage, string membership) =>
+        usage is { IsXSubscription: true } || IsXMembership(usage?.MembershipType) || IsXMembership(membership);
+
     public static string DashboardUrl(UsageSnapshot? usage = null, string membership = "", string limitType = "")
     {
         if (usage is not null) { membership = usage.MembershipType; limitType = usage.LimitType; }
+        if (PreferGrokDashboard(usage, membership)) return GrokDashboardUrl;
         return IsTeamMembership(membership, limitType) ? UsageUrl : BillingUrl;
     }
 
     public static string DashboardMenuLabel(UsageSnapshot? usage = null, string membership = "", string limitType = "")
     {
         if (usage is not null) { membership = usage.MembershipType; limitType = usage.LimitType; }
+        if (PreferGrokDashboard(usage, membership)) return "打开用量";
         return IsTeamMembership(membership, limitType) ? "打开用量" : "打开用量账单";
     }
 
     public static string DashboardButtonLabel(UsageSnapshot? usage = null, string membership = "", string limitType = "")
     {
         if (usage is not null) { membership = usage.MembershipType; limitType = usage.LimitType; }
+        if (PreferGrokDashboard(usage, membership)) return "用量";
         return IsTeamMembership(membership, limitType) ? "用量" : "账单";
     }
 
     public static string DashboardLinkLabel(UsageSnapshot? usage) =>
-        usage?.IsTeamAccount == true ? "查看用量 →" : "查看用量账单 →";
+        usage is not null && (usage.IsXSubscription || IsXMembership(usage.MembershipType) || usage.IsTeamAccount)
+            ? "查看用量 →"
+            : "查看用量账单 →";
 
     public static string FormatUsdCents(double? cents)
     {
@@ -134,7 +159,7 @@ public static class UsageParser
     {
         var key = (name ?? "").Trim().ToLowerInvariant();
         if (key.Length == 0 || IsGrokBotModel(key)) return false;
-        return key is "auto" or "default" || key.StartsWith("cursor-") || key.StartsWith("composer-");
+        return key is "auto" or "default" || key.StartsWith("cursor-") || key.StartsWith("composer-") || key.StartsWith("grok-");
     }
 
     public static string UsageCategory(string? name)
@@ -146,6 +171,13 @@ public static class UsageParser
 
     public static void ApplySandUsage(UsageSnapshot snapshot, JsonBag payload, DateTimeOffset? now = null)
     {
+        var clock = now ?? DateTimeOffset.UtcNow;
+        if (IsUnifiedWeekly(payload))
+        {
+            ApplyUnifiedWeekly(snapshot, payload, clock);
+            return;
+        }
+        if (snapshot.IsXSubscription) return;
         var parsed = ParseSandUsageStatus(payload, now);
         if (parsed is null) return;
         snapshot.GrokBotPercentUsed = parsed.PercentUsed;
@@ -155,9 +187,39 @@ public static class UsageParser
         snapshot.GrokBotDaysRemaining = parsed.DaysRemaining;
     }
 
+    static bool IsUnifiedWeekly(JsonBag payload) =>
+        OptBool(payload, "isUnified", "is_unified") == true;
+
+    static void ApplyUnifiedWeekly(UsageSnapshot snapshot, JsonBag payload, DateTimeOffset clock)
+    {
+        var percent = FirstPresent(payload, "usagePercent", "usage_percent").AsDouble();
+        if (percent is null) return;
+        var used = Numbers.ClampPercent(percent.Value);
+        snapshot.IsXSubscription = true;
+        snapshot.BillingMode = "percent";
+        snapshot.UsedPercent = Numbers.Round1(used);
+        snapshot.RemainingPercent = Numbers.Round1(Numbers.ClampPercent(100 - used));
+        snapshot.TotalPercentUsed = snapshot.UsedPercent;
+        snapshot.AutoPercentUsed = null;
+        snapshot.ApiPercentUsed = null;
+        snapshot.GrokBotPercentUsed = null;
+        snapshot.GrokBotRemainingPercent = null;
+        snapshot.GrokBotPeriodStart = null;
+        snapshot.GrokBotResetAt = null;
+        snapshot.GrokBotDaysRemaining = null;
+        var start = TimestampToIso(FirstPresent(payload, "currentPeriodStart", "current_period_start"));
+        var reset = TimestampToIso(FirstPresent(payload, "nextResetTimestampUtc", "next_reset_timestamp_utc"));
+        snapshot.UsageResetAt = reset;
+        if (reset is not null) snapshot.DaysRemaining = DaysUntil(reset, clock);
+        if (start is not null)
+            snapshot.DaysElapsed = DaysSince(start, clock) is { } elapsed ? Numbers.Round2(elapsed) : null;
+        snapshot.EstimatedUsableDays = EstimateUsableDays(snapshot.UsedPercent, snapshot.RemainingPercent, snapshot.DaysElapsed);
+    }
+
     public static GrokBotUsage? ParseSandUsageStatus(JsonBag payload, DateTimeOffset? now = null)
     {
         if (!payload.IsObject || payload.IsEmpty) return null;
+        if (IsUnifiedWeekly(payload)) return null;
         if (OptBool(payload, "usesPooledEnterpriseAllowance", "uses_pooled_enterprise_allowance") == true) return null;
         if (OptBool(payload, "includedLimitZero", "included_limit_zero") == true) return null;
         if (OptBool(payload, "hasNonZeroIncludedLimit", "has_non_zero_included_limit") != true) return null;
@@ -200,8 +262,12 @@ public static class UsageParser
         var total = plan["totalPercentUsed"].AsDouble();
         auto ??= PercentFromDisplay(payload["autoModelSelectedDisplayMessage"].AsString());
         api ??= PercentFromDisplay(payload["namedModelSelectedDisplayMessage"].AsString());
-        var membership = FormatMembershipType(payload["membershipType"].AsString() ?? payload["plan"].AsString() ?? "");
+        var rawMembership = payload["membershipType"].AsString() ?? payload["plan"].AsString() ?? "";
+        var membership = FormatMembershipType(rawMembership);
         var limitType = (payload["limitType"].AsString() ?? "").Trim();
+        var cycleStartRaw = payload["billingCycleStart"].AsString() ?? payload["startOfMonth"].AsString();
+        var cycleEndRaw = payload["billingCycleEnd"].AsString();
+        var xPlan = LooksLikeXPlan(rawMembership, payload, cycleStartRaw, cycleEndRaw);
         var isUnlimited = payload["isUnlimited"].AsBool();
         var planMeter = SpendMeter(plan);
         var planMeterBreakdown = SpendMeter(plan, true);
@@ -218,7 +284,7 @@ public static class UsageParser
         {
             // Team usage page "Your monthly usage $X / $Y" comes from overall/pooled/plan cents.
             // plan.totalPercentUsed is a separate cached metric and can freeze at 0% or 100%.
-            if (IsTeamMembership(membership, limitType))
+            if (IsTeamMembership(membership, limitType) && !xPlan)
             {
                 foreach (var meter in new[] { overallMeter, pooledMeter, planMeter })
                 {
@@ -259,7 +325,7 @@ public static class UsageParser
                         break;
                     }
                     if (usedPercent is null) usedPercent = 0;
-                    else if (pickedSource is "overall" or "pooled" or "on_demand" || IsTeamMembership(membership, limitType))
+                    else if (pickedSource is "overall" or "pooled" or "on_demand" || (IsTeamMembership(membership, limitType) && !xPlan))
                         billingMode = "amount";
                     else { usedCents = limitCents = remainingCents = null; billingMode = "percent"; }
                 }
@@ -278,7 +344,7 @@ public static class UsageParser
         var cycleEnd = payload["billingCycleEnd"].AsString();
         double? pooledUsed = pooledMeter?.used, pooledLimit = pooledMeter?.limit;
         double? odUsed = odMeter?.used, odLimit = odMeter?.limit;
-        return new UsageSnapshot
+        var snap = new UsageSnapshot
         {
             UsedPercent = Numbers.Round1(used),
             RemainingPercent = Numbers.Round1(remaining),
@@ -303,7 +369,93 @@ public static class UsageParser
             LimitType = limitType,
             IsUnlimited = isUnlimited,
         };
+        ApplyXSubscription(snap, payload, clock);
+        return snap;
     }
+
+    static bool LooksLikeXPlan(string? membership, JsonBag payload, string? cycleStart, string? cycleEnd)
+    {
+        if (IsXMembership(membership)) return true;
+        var key = MembershipKey(membership);
+        if (key is not ("ultra" or "free" or "hobby")) return false;
+        var span = CycleSpanDays(cycleStart, cycleEnd);
+        var shortCycle = span is >= 1 and <= 8;
+        return shortCycle || HasExplicitWeekly(payload);
+    }
+
+    static void ApplyXSubscription(UsageSnapshot snap, JsonBag payload, DateTimeOffset clock)
+    {
+        if (!LooksLikeXPlan(snap.MembershipType, payload, snap.BillingCycleStart, snap.BillingCycleEnd)
+            && !LooksLikeXPlan(payload["membershipType"].AsString() ?? payload["plan"].AsString(), payload, snap.BillingCycleStart, snap.BillingCycleEnd))
+            return;
+        snap.IsXSubscription = true;
+        snap.BillingMode = "percent";
+        var weekly = WeeklyBlock(payload);
+        var percent = weekly["percentUsed"].AsDouble() ?? weekly["usagePercent"].AsDouble() ?? payload["weeklyPercentUsed"].AsDouble();
+        if (percent is { } weeklyUsed)
+        {
+            var used = Numbers.ClampPercent(weeklyUsed);
+            snap.UsedPercent = Numbers.Round1(used);
+            snap.RemainingPercent = Numbers.Round1(Numbers.ClampPercent(100 - used));
+            snap.TotalPercentUsed = snap.UsedPercent;
+        }
+        snap.AutoPercentUsed = null;
+        snap.ApiPercentUsed = null;
+        snap.UsedCents = snap.LimitCents = snap.RemainingCents = null;
+
+        var reset = IsoOrNone(payload["usageResetAt"].AsString() ?? payload["usage_reset_at"].AsString())
+            ?? IsoOrNone(weekly["resetAt"].AsString() ?? weekly["nextReset"].AsString());
+        var period = IsoOrNone(payload["usagePeriodStart"].AsString() ?? payload["usage_period_start"].AsString())
+            ?? IsoOrNone(weekly["periodStart"].AsString() ?? weekly["currentPeriodStart"].AsString());
+        var span = CycleSpanDays(snap.BillingCycleStart, snap.BillingCycleEnd);
+        if (reset is null && span is >= 1 and <= 8)
+        {
+            reset = snap.BillingCycleEnd;
+            period ??= snap.BillingCycleStart;
+        }
+        snap.UsageResetAt = reset;
+        if (reset is not null) snap.DaysRemaining = DaysUntil(reset, clock);
+        if (period is not null)
+            snap.DaysElapsed = DaysSince(period, clock) is { } elapsed ? Numbers.Round2(elapsed) : null;
+        if (reset is not null || period is not null)
+            snap.EstimatedUsableDays = EstimateUsableDays(snap.UsedPercent, snap.RemainingPercent, snap.DaysElapsed);
+
+        var individual = Obj(payload["individualUsage"]);
+        var prepaid = Obj(individual["prepaid"]);
+        if (!prepaid.IsObject || prepaid.IsEmpty) prepaid = Obj(individual["additionalUsage"]);
+        snap.PrepaidRemainingCents = prepaid["remaining"].AsDouble() ?? prepaid["remainingCents"].AsDouble() ?? payload["prepaidRemainingCents"].AsDouble();
+    }
+
+    static JsonBag WeeklyBlock(JsonBag payload)
+    {
+        var individual = Obj(payload["individualUsage"]);
+        var weekly = Obj(individual["weekly"]);
+        if (weekly.IsObject && !weekly.IsEmpty) return weekly;
+        var top = Obj(payload["weeklyUsage"]);
+        return top.IsObject && !top.IsEmpty ? top : JsonBag.Null;
+    }
+
+    static bool HasExplicitWeekly(JsonBag payload)
+    {
+        foreach (var key in new[] { "usageResetAt", "usage_reset_at", "usagePeriodStart", "usage_period_start", "weeklyPercentUsed" })
+            if (payload.Has(key) && payload[key].AsString() is { Length: > 0 } || payload.Has(key) && payload[key].AsDouble() is not null)
+                return true;
+        var cadence = (payload["usageCadence"].AsString() ?? payload["billingInterval"].AsString() ?? payload["resetInterval"].AsString() ?? "").Trim();
+        if (cadence.Equals("week", StringComparison.OrdinalIgnoreCase) || cadence.Equals("weekly", StringComparison.OrdinalIgnoreCase))
+            return true;
+        var weekly = WeeklyBlock(payload);
+        return weekly.IsObject && !weekly.IsEmpty;
+    }
+
+    static double? CycleSpanDays(string? start, string? end)
+    {
+        var opened = ParseIso(start);
+        var closed = ParseIso(end);
+        if (opened is null || closed is null) return null;
+        return (closed.Value - opened.Value).TotalDays;
+    }
+
+    static string? IsoOrNone(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     public static (List<ModelTokenUsage> models, int total) ParseAggregatedUsage(JsonBag payload, double? autoPercent = null, double? apiPercent = null)
     {

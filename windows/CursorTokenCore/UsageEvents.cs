@@ -309,6 +309,9 @@ public static partial class UsageEvents
         {
             "pro" => 20,
             "pro+" or "pro_plus" or "proplus" => 60,
+            "plus" => 8,
+            "premium" => 30,
+            "super" => 100,
             "ultra" => 200,
             _ => 0,
         };

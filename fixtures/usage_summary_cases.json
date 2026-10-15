@@ -437,5 +437,150 @@
       "dashboard_menu_label": "打开用量",
       "dashboard_link_label": "查看用量 →"
     }
+  },
+  {
+    "name": "x_premium_weekly",
+    "payload": {
+      "billingCycleStart": "2026-10-01T00:00:00.000Z",
+      "billingCycleEnd": "2026-11-01T00:00:00.000Z",
+      "membershipType": "premium",
+      "limitType": "user",
+      "isUnlimited": false,
+      "usagePeriodStart": "2026-10-11T00:00:00.000Z",
+      "usageResetAt": "2026-10-18T00:00:00.000Z",
+      "individualUsage": {
+        "plan": {
+          "enabled": true,
+          "autoPercentUsed": 10,
+          "apiPercentUsed": 80,
+          "totalPercentUsed": 99
+        },
+        "prepaid": { "remaining": 1500 },
+        "weekly": { "percentUsed": 42.5 }
+      },
+      "teamUsage": {}
+    },
+    "expected": {
+      "used_percent": 42.5,
+      "remaining_percent": 57.5,
+      "auto_percent_used": null,
+      "api_percent_used": null,
+      "total_percent_used": 42.5,
+      "membership_type": "Premium",
+      "billing_mode": "percent",
+      "used_cents": null,
+      "limit_cents": null,
+      "remaining_cents": null,
+      "on_demand_used_cents": null,
+      "on_demand_limit_cents": null,
+      "pooled_used_cents": null,
+      "pooled_limit_cents": null,
+      "limit_type": "user",
+      "is_unlimited": false,
+      "is_team_account": false,
+      "shows_amount": false,
+      "is_x_subscription": true,
+      "usage_reset_at": "2026-10-18T00:00:00.000Z",
+      "prepaid_remaining_cents": 1500,
+      "dashboard_url": "https://grok.com/dashboard",
+      "dashboard_button_label": "用量",
+      "dashboard_menu_label": "打开用量",
+      "dashboard_link_label": "查看用量 →"
+    }
+  },
+  {
+    "name": "x_premium_team_seat",
+    "payload": {
+      "billingCycleStart": "2026-10-01T00:00:00.000Z",
+      "billingCycleEnd": "2026-11-01T00:00:00.000Z",
+      "membershipType": "premium",
+      "limitType": "team",
+      "isUnlimited": false,
+      "individualUsage": {
+        "plan": {
+          "enabled": true,
+          "autoPercentUsed": 15,
+          "apiPercentUsed": 0,
+          "totalPercentUsed": 15
+        },
+        "overall": {
+          "enabled": true,
+          "used": 500,
+          "limit": 10000,
+          "remaining": 9500
+        }
+      },
+      "teamUsage": {}
+    },
+    "expected": {
+      "used_percent": 15.0,
+      "remaining_percent": 85.0,
+      "auto_percent_used": null,
+      "api_percent_used": null,
+      "total_percent_used": 15.0,
+      "membership_type": "Premium",
+      "billing_mode": "percent",
+      "used_cents": null,
+      "limit_cents": null,
+      "remaining_cents": null,
+      "on_demand_used_cents": null,
+      "on_demand_limit_cents": null,
+      "pooled_used_cents": null,
+      "pooled_limit_cents": null,
+      "limit_type": "team",
+      "is_unlimited": false,
+      "is_team_account": false,
+      "shows_amount": false,
+      "is_x_subscription": true,
+      "dashboard_url": "https://grok.com/dashboard",
+      "dashboard_button_label": "用量",
+      "dashboard_menu_label": "打开用量",
+      "dashboard_link_label": "查看用量 →"
+    }
+  },
+  {
+    "name": "x_ultra_weekly_cycle",
+    "payload": {
+      "billingCycleStart": "2026-10-11T00:00:00.000Z",
+      "billingCycleEnd": "2026-10-18T00:00:00.000Z",
+      "membershipType": "ultra",
+      "limitType": "user",
+      "isUnlimited": false,
+      "individualUsage": {
+        "plan": {
+          "enabled": true,
+          "autoPercentUsed": 12,
+          "apiPercentUsed": 40,
+          "totalPercentUsed": 18
+        }
+      },
+      "teamUsage": {}
+    },
+    "expected": {
+      "used_percent": 18.0,
+      "remaining_percent": 82.0,
+      "auto_percent_used": null,
+      "api_percent_used": null,
+      "total_percent_used": 18.0,
+      "membership_type": "Ultra",
+      "billing_mode": "percent",
+      "used_cents": null,
+      "limit_cents": null,
+      "remaining_cents": null,
+      "on_demand_used_cents": null,
+      "on_demand_limit_cents": null,
+      "pooled_used_cents": null,
+      "pooled_limit_cents": null,
+      "limit_type": "user",
+      "is_unlimited": false,
+      "is_team_account": false,
+      "shows_amount": false,
+      "is_x_subscription": true,
+      "usage_reset_at": "2026-10-18T00:00:00.000Z",
+      "dashboard_url": "https://grok.com/dashboard",
+      "dashboard_button_label": "用量",
+      "dashboard_menu_label": "打开用量",
+      "dashboard_link_label": "查看用量 →"
+    }
   }
 ]

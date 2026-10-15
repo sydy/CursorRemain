@@ -59,6 +59,13 @@ final class UsageParserFixtureTests: XCTestCase {
             XCTAssertEqual(UsageParser.dashboardButtonLabel(snap), str(expected["dashboard_button_label"]), name)
             XCTAssertEqual(UsageParser.dashboardMenuLabel(snap), str(expected["dashboard_menu_label"]), name)
             XCTAssertEqual(UsageParser.dashboardLinkLabel(snap), str(expected["dashboard_link_label"]), name)
+            XCTAssertEqual(snap.isXSubscription, (expected["is_x_subscription"] as? Bool) ?? false, name)
+            if let reset = expected["usage_reset_at"] as? String {
+                XCTAssertEqual(snap.usageResetAt, reset, name)
+            }
+            if let prepaid = num(expected["prepaid_remaining_cents"]) {
+                XCTAssertEqual(snap.prepaidRemainingCents ?? -1, prepaid, accuracy: 0.001, name)
+            }
         }
     }
 
@@ -172,6 +179,15 @@ final class UsageParserFixtureTests: XCTestCase {
             let exp = cse["expected"] as! [String: Any]
             if bool(exp["shows_grok_bot"]) == false {
                 XCTAssertNil(got, name)
+                if let ring = num(exp["ring_percent_used"]) {
+                    var snap = UsageSnapshot(usedPercent: 0, remainingPercent: 100, membershipType: "Premium", isXSubscription: true)
+                    UsageParser.applySandUsage(&snap, payload, now: now)
+                    XCTAssertEqual(snap.usedPercent, ring, accuracy: 0.001, name)
+                    XCTAssertEqual(snap.remainingPercent, try XCTUnwrap(num(exp["ring_remaining_percent"])), accuracy: 0.001, name)
+                    XCTAssertEqual(snap.usageResetAt, exp["usage_reset_at"] as? String, name)
+                    XCTAssertNil(snap.grokBotPercentUsed, name)
+                    XCTAssertTrue(snap.isXSubscription, name)
+                }
                 continue
             }
             let parsed = try XCTUnwrap(got, name)

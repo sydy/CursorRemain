@@ -308,7 +308,7 @@ struct SettingsRootView: View {
             fieldWidth(TextField("20", text: $planUsdText).textFieldStyle(.plain), max: 96)
             fieldCaption("美元兑人民币")
             fieldWidth(TextField("7.5", text: $cnyRateText).textFieldStyle(.plain), max: 96)
-            Text("月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。")
+            Text("月费填 0 则按套餐预填：Plus $8 / Premium $30 / Super $100 / Ultra $200，旧套餐 Pro $20 / Pro+ $60。年付请填折合月费。实际成本在「账户」里按账号填写。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             fieldCaption("告警阈值，例如 50,20,5")

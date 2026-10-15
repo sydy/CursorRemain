@@ -3,6 +3,7 @@ import unittest
 from cursor_api import (
     USAGE_URL,
     BILLING_URL,
+    GROK_DASHBOARD_URL,
     apply_sand_usage_status,
     dashboard_button_label,
     dashboard_link_label,
@@ -298,6 +299,53 @@ class FormatHelpersTests(unittest.TestCase):
         self.assertEqual(dashboard_url_for(membership="enterprise"), USAGE_URL)
         self.assertEqual(dashboard_url_for(membership="Pro"), BILLING_URL)
         self.assertEqual(dashboard_url_for(membership="ultra", limit_type="team"), USAGE_URL)
+        self.assertEqual(dashboard_url_for(membership="premium"), GROK_DASHBOARD_URL)
+        self.assertEqual(dashboard_url_for(membership="plus", limit_type="team"), GROK_DASHBOARD_URL)
+
+    def test_x_subscription_weekly_pool(self) -> None:
+        from status_text import build_status_lines, format_summary_text
+        from usage_report import classify_usage_category, default_monthly_plan_usd
+
+        snap = parse_usage_summary(
+            {
+                "membershipType": "premium",
+                "billingCycleStart": "2026-10-01T00:00:00.000Z",
+                "billingCycleEnd": "2026-11-01T00:00:00.000Z",
+                "usageResetAt": "2026-10-18T00:00:00.000Z",
+                "individualUsage": {
+                    "plan": {"totalPercentUsed": 10, "autoPercentUsed": 1, "apiPercentUsed": 2},
+                    "weekly": {"percentUsed": 25},
+                    "prepaid": {"remaining": 2500},
+                },
+            }
+        )
+        self.assertTrue(snap.is_x_subscription)
+        self.assertEqual(snap.used_percent, 25)
+        self.assertIsNone(snap.auto_percent_used)
+        self.assertEqual(snap.prepaid_remaining_cents, 2500)
+        self.assertEqual(dashboard_url_for(snap), GROK_DASHBOARD_URL)
+        text = format_summary_text(snap, None, "12:00")
+        self.assertIn("每周额度 25.0%", text)
+        self.assertIn("预付余额 $25", text)
+        self.assertNotIn("First-party", text)
+        rows = dict(build_status_lines(snap, None, "12:00"))
+        self.assertNotIn("明细", rows)
+        self.assertNotIn("Grok Bot", rows)
+        self.assertEqual(rows["预付余额"], "$25")
+        apply_sand_usage_status(
+            snap,
+            {"usagePercent": 40, "hasNonZeroIncludedLimit": True},
+        )
+        self.assertIsNone(snap.grok_bot_percent_used)
+        legacy = parse_usage_summary(PERSONAL_ULTRA)
+        self.assertFalse(legacy.is_x_subscription)
+        self.assertEqual(legacy.auto_percent_used, 98.1)
+        self.assertEqual(default_monthly_plan_usd("premium"), 30)
+        self.assertEqual(default_monthly_plan_usd("plus"), 8)
+        self.assertEqual(default_monthly_plan_usd("super"), 100)
+        self.assertEqual(default_monthly_plan_usd("ultra"), 200)
+        self.assertEqual(classify_usage_category("grok-4.7"), "first_party")
+        self.assertEqual(classify_usage_category("grok-bot-1"), "grok_bot")
 
 
 class StatusTextEnterpriseTests(unittest.TestCase):

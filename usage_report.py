@@ -105,6 +105,9 @@ _PLAN_USD = {
     "pro": 20.0,
     "pro_plus": 60.0,
     "pro+": 60.0,
+    "plus": 8.0,
+    "premium": 30.0,
+    "super": 100.0,
     "ultra": 200.0,
 }
 

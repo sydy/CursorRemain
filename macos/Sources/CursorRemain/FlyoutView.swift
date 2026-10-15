@@ -112,6 +112,11 @@ struct FlyoutView: View {
     var rightColumn: some View {
         VStack(alignment: .leading, spacing: FlyoutLayout.cardGap) {
             if let usage = store.usage, !isError {
+                if usage.isXSubscription, let prepaid = usage.prepaidRemainingCents {
+                    card {
+                        labeled("预付余额", UsageParser.formatUSDCents(prepaid))
+                    }
+                }
                 if usage.showsAmount {
                     card {
                         labeled("金额", UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents))
@@ -120,7 +125,7 @@ struct FlyoutView: View {
                         }
                     }
                 }
-                if usage.autoPercentUsed != nil || usage.apiPercentUsed != nil || usage.showsGrokBot {
+                if !usage.isXSubscription && (usage.autoPercentUsed != nil || usage.apiPercentUsed != nil || usage.showsGrokBot) {
                     card {
                         if let auto = usage.autoPercentUsed {
                             meterRow("First-party", auto, color: Color(red: 50 / 255, green: 180 / 255, blue: 170 / 255))
@@ -255,10 +260,12 @@ struct FlyoutView: View {
 
     func infoMeta(_ usage: UsageSnapshot) -> String {
         var parts: [String] = []
-        if let tokens = usage.totalTokens, tokens > 0 {
+        if !usage.isXSubscription, let tokens = usage.totalTokens, tokens > 0 {
             parts.append("Token \(UsageParser.formatTokenCount(Double(tokens)))")
         }
-        if let end = usage.billingCycleEnd {
+        if usage.isXSubscription, let reset = usage.usageResetAt {
+            parts.append("重置 \(StatusText.formatResetDate(reset))")
+        } else if !usage.isXSubscription, let end = usage.billingCycleEnd {
             parts.append("\(StatusText.cycleEndLabel(usage)) \(StatusText.formatResetDate(end, includeTime: usage.billingCycleEndOverridden))")
         }
         return parts.joined(separator: " · ")

@@ -26,7 +26,7 @@ sealed class SettingsForm : Form
     readonly TextBox _cnyRate = new() { Width = 80 };
     readonly HintBlock _spendHint = UiChrome.Hint(
         "月费填 0 则按套餐预填。",
-        "月费填 0 则按套餐预填：Pro $20 / Pro+ $60 / Ultra $200。年付请填折合月费。实际成本在「账户」里按账号填写。");
+        "月费填 0 则按套餐预填：Plus $8 / Premium $30 / Super $100 / Ultra $200，旧套餐 Pro $20 / Pro+ $60。年付请填折合月费。实际成本在「账户」里按账号填写。");
     readonly HintBlock _actualHint = UiChrome.Hint(
         "仅当前账号。短期号请买价÷天数×30。",
         "仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。");

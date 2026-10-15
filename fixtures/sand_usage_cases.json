@@ -121,5 +121,23 @@
     "expected": {
       "shows_grok_bot": false
     }
+  },
+  {
+    "name": "unified_weekly_pool",
+    "now": "2026-10-15T00:00:00.000Z",
+    "payload": {
+      "currentPeriodStart": "2026-10-14T11:42:40.710Z",
+      "nextResetTimestampUtc": "2026-10-21T11:42:40.710Z",
+      "usagePercent": 13.196099674972915,
+      "hasNonZeroIncludedLimit": true,
+      "isUnified": true,
+      "cursorPlanName": "Premium"
+    },
+    "expected": {
+      "shows_grok_bot": false,
+      "ring_percent_used": 13.2,
+      "ring_remaining_percent": 86.8,
+      "usage_reset_at": "2026-10-21T11:42:40.710Z"
+    }
   }
 ]

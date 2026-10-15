@@ -74,6 +74,12 @@ public class FixtureTests
             Assert.Equal(exp.GetProperty("dashboard_button_label").GetString(), UsageParser.DashboardButtonLabel(snap));
             Assert.Equal(exp.GetProperty("dashboard_menu_label").GetString(), UsageParser.DashboardMenuLabel(snap));
             Assert.Equal(exp.GetProperty("dashboard_link_label").GetString(), UsageParser.DashboardLinkLabel(snap));
+            var expectX = exp.TryGetProperty("is_x_subscription", out var xEl) && xEl.ValueKind == JsonValueKind.True;
+            Assert.Equal(expectX, snap.IsXSubscription);
+            if (exp.TryGetProperty("usage_reset_at", out var reset) && reset.ValueKind == JsonValueKind.String)
+                Assert.Equal(reset.GetString(), snap.UsageResetAt);
+            if (exp.TryGetProperty("prepaid_remaining_cents", out var prepaid) && prepaid.ValueKind == JsonValueKind.Number)
+                Assert.Equal(prepaid.GetDouble(), snap.PrepaidRemainingCents);
             _ = name;
         }
     }
@@ -159,6 +165,16 @@ public class FixtureTests
             if (!exp.GetProperty("shows_grok_bot").GetBoolean())
             {
                 Assert.Null(got);
+                if (exp.TryGetProperty("ring_percent_used", out var ring) && ring.ValueKind == JsonValueKind.Number)
+                {
+                    var snap = new UsageSnapshot { RemainingPercent = 100, IsXSubscription = true, MembershipType = "Premium" };
+                    UsageParser.ApplySandUsage(snap, JsonBag.Parse(cse.GetProperty("payload").GetRawText()), now);
+                    Assert.Equal(ring.GetDouble(), snap.UsedPercent, 3);
+                    Assert.Equal(exp.GetProperty("ring_remaining_percent").GetDouble(), snap.RemainingPercent, 3);
+                    Assert.Equal(exp.GetProperty("usage_reset_at").GetString(), snap.UsageResetAt);
+                    Assert.Null(snap.GrokBotPercentUsed);
+                    Assert.True(snap.IsXSubscription);
+                }
                 continue;
             }
             Assert.NotNull(got);

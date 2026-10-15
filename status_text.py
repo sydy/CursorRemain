@@ -9,6 +9,7 @@ from cursor_api import (
     format_membership_type,
     format_spend_range,
     format_token_count,
+    format_usd_cents,
 )
 
 
@@ -34,6 +35,15 @@ def format_summary_text(
     plan = format_plan_caption(usage.membership_type, account_label)
     if usage.is_unlimited:
         plan = f"{plan} · 不限量"
+    if usage.is_x_subscription:
+        prepaid = ""
+        if usage.prepaid_remaining_cents is not None:
+            prepaid = f" | 预付余额 {format_usd_cents(usage.prepaid_remaining_cents)}"
+        weekly = f"每周额度 {usage.used_percent:.1f}%"
+        return (
+            f"剩余 {usage.remaining_percent:.1f}% | {plan} | "
+            f"{weekly}{prepaid} | 预计可用 {est} | 更新 {updated_at or '—'}"
+        )
     grok = ""
     if usage.shows_grok_bot() and usage.grok_bot_remaining_percent is not None:
         grok = f" | Grok Bot 剩余 {usage.grok_bot_remaining_percent:.1f}%"
@@ -189,6 +199,18 @@ def build_status_lines(
     if usage.is_unlimited:
         plan = f"{plan} · 不限量"
     rows.append(("计划", plan))
+    if usage.is_x_subscription and usage.prepaid_remaining_cents is not None:
+        rows.append(("预付余额", format_usd_cents(usage.prepaid_remaining_cents)))
+    if usage.is_x_subscription:
+        if usage.usage_reset_at:
+            end_text = format_reset_date(usage.usage_reset_at)
+            remaining = format_cycle_remaining(usage.usage_reset_at, usage.days_remaining)
+            rows.append(("重置", f"{end_text}（{remaining}）" if remaining else end_text))
+            rows.append(("预计可用", format_estimated_days(usage)))
+        elif usage.estimated_usable_days is not None:
+            rows.append(("预计可用", format_estimated_days(usage)))
+        rows.append(("更新", updated_at or datetime.now().strftime("%H:%M:%S")))
+        return rows
     if usage.shows_amount():
         rows.append(("金额", format_spend_range(usage.used_cents, usage.limit_cents)))
     if (

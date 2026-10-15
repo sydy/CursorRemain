@@ -309,7 +309,12 @@ sealed class FlyoutForm : Form
                         DrawBar(g, new RectangleF(inner.X, inner.Y + 20 * s, inner.Width, barH), used / limit, Color.FromArgb(48, 209, 88), pal);
                 });
             }
-            if (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null || usage.ShowsGrokBot)
+            if (usage.IsXSubscription && usage.PrepaidRemainingCents is { } prepaid)
+            {
+                y = DrawCard(g, box.X, y, box.Width, pal, 16 * s, inner =>
+                    DrawLabeled(g, "预付余额", UsageParser.FormatUsdCents(prepaid), capFont, valueFont, pal, inner));
+            }
+            if (!usage.IsXSubscription && (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null || usage.ShowsGrokBot))
             {
                 var rows = (usage.AutoPercentUsed is null ? 0 : 1) + (usage.ApiPercentUsed is null ? 0 : 1) + (usage.ShowsGrokBot ? 1 : 0);
                 var meterH = rows * (18 * s + barH) + Math.Max(0, rows - 1) * 8 * s;
@@ -330,9 +335,11 @@ sealed class FlyoutForm : Form
                 });
             }
             var parts = new List<string>();
-            if (usage.TotalTokens is > 0)
+            if (!usage.IsXSubscription && usage.TotalTokens is > 0)
                 parts.Add("Token " + UsageParser.FormatTokenCount(usage.TotalTokens));
-            if (usage.BillingCycleEnd is { } end)
+            if (usage.IsXSubscription && usage.UsageResetAt is { } weeklyReset)
+                parts.Add("重置 " + StatusText.FormatResetDate(weeklyReset));
+            else if (!usage.IsXSubscription && usage.BillingCycleEnd is { } end)
                 parts.Add(StatusText.CycleEndLabel(usage) + " " + StatusText.FormatResetDate(end, usage.BillingCycleEndOverridden));
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var trend = SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now);

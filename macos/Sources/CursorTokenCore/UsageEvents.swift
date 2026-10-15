@@ -524,6 +524,9 @@ public enum UsageEvents {
         switch key {
         case "pro": return 20
         case "pro+", "pro_plus", "proplus": return 60
+        case "plus": return 8
+        case "premium": return 30
+        case "super": return 100
         case "ultra": return 200
         default: return 0
         }

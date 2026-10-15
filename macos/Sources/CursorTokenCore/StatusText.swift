@@ -24,6 +24,11 @@ public enum StatusText {
         }
         var plan = formatPlanCaption(usage.membershipType, accountLabel: accountLabel)
         if usage.isUnlimited { plan += " · 不限量" }
+        if usage.isXSubscription {
+            let prepaid = usage.prepaidRemainingCents.map { " | 预付余额 \(UsageParser.formatUSDCents($0))" } ?? ""
+            let weekly = String(format: "每周额度 %.1f%%", usage.usedPercent)
+            return "剩余 \(String(format: "%.1f", usage.remainingPercent))% | \(plan) | \(weekly)\(prepaid) | 预计可用 \(est) | 更新 \(updatedAt ?? "—")"
+        }
         var grok = ""
         if usage.showsGrokBot, let left = usage.grokBotRemainingPercent {
             grok = String(format: " | Grok Bot 剩余 %.1f%%", left)
@@ -170,6 +175,26 @@ public enum StatusText {
         var plan = memb.isEmpty ? "—" : memb
         if usage.isUnlimited { plan += " · 不限量" }
         rows.append(("计划", plan))
+        if usage.isXSubscription, let prepaid = usage.prepaidRemainingCents {
+            rows.append(("预付余额", UsageParser.formatUSDCents(prepaid)))
+        }
+        if usage.isXSubscription {
+            if let reset = usage.usageResetAt {
+                let resetText = formatResetDate(reset)
+                let left = formatCycleRemaining(reset, daysRemaining: usage.daysRemaining)
+                rows.append(("重置", left.isEmpty ? resetText : "\(resetText)（\(left)）"))
+                rows.append(("预计可用", formatEstimatedDays(usage)))
+            } else if usage.estimatedUsableDays != nil {
+                rows.append(("预计可用", formatEstimatedDays(usage)))
+            }
+            let stamp = updatedAt ?? {
+                let f = DateFormatter()
+                f.dateFormat = "HH:mm:ss"
+                return f.string(from: Date())
+            }()
+            rows.append(("更新", stamp))
+            return rows
+        }
         if usage.showsAmount {
             rows.append(("金额", UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents)))
         }

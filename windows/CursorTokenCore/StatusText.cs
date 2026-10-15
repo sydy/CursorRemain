@@ -16,6 +16,12 @@ public static class StatusText
         var spend = usage.ShowsAmount ? $"金额 {UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)} | " : "";
         var plan = FormatPlanCaption(usage.MembershipType, accountLabel);
         if (usage.IsUnlimited) plan += " · 不限量";
+        if (usage.IsXSubscription)
+        {
+            var prepaid = usage.PrepaidRemainingCents is { } cents ? $" | 预付余额 {UsageParser.FormatUsdCents(cents)}" : "";
+            var weekly = $"每周额度 {usage.UsedPercent.ToString("0.0", CultureInfo.InvariantCulture)}%";
+            return $"剩余 {usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}% | {plan} | {weekly}{prepaid} | 预计可用 {est} | 更新 {updatedAt ?? "—"}";
+        }
         var grok = usage.ShowsGrokBot && usage.GrokBotRemainingPercent is { } grokLeft
             ? $" | Grok Bot 剩余 {grokLeft.ToString("0.0", CultureInfo.InvariantCulture)}%"
             : "";
@@ -136,6 +142,21 @@ public static class StatusText
         var plan = string.IsNullOrEmpty(memb) ? "—" : memb;
         if (usage.IsUnlimited) plan += " · 不限量";
         rows.Add(("计划", plan));
+        if (usage.IsXSubscription && usage.PrepaidRemainingCents is { } prepaidCents)
+            rows.Add(("预付余额", UsageParser.FormatUsdCents(prepaidCents)));
+        if (usage.IsXSubscription)
+        {
+            if (usage.UsageResetAt is { } reset)
+            {
+                var resetText = FormatResetDate(reset);
+                var left = FormatCycleRemaining(reset, usage.DaysRemaining);
+                rows.Add(("重置", string.IsNullOrEmpty(left) ? resetText : $"{resetText}（{left}）"));
+                rows.Add(("预计可用", FormatEstimatedDays(usage)));
+            }
+            else if (usage.EstimatedUsableDays is not null) rows.Add(("预计可用", FormatEstimatedDays(usage)));
+            rows.Add(("更新", updatedAt ?? DateTime.Now.ToString("HH:mm:ss")));
+            return rows;
+        }
         if (usage.ShowsAmount) rows.Add(("金额", UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)));
         if (usage.PooledUsedCents is { } pu && usage.PooledLimitCents is { } pl && pl > 0 && (usage.UsedCents != pu || usage.LimitCents != pl))
             rows.Add(("团队额度", UsageParser.FormatSpendRange(pu, pl)));

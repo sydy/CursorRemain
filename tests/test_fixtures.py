@@ -35,6 +35,11 @@ class GoldenFixtureTests(unittest.TestCase):
                 self.assertEqual(dashboard_button_label(snap), exp["dashboard_button_label"])
                 self.assertEqual(dashboard_menu_label(snap), exp["dashboard_menu_label"])
                 self.assertEqual(dashboard_link_label(snap), exp["dashboard_link_label"])
+                self.assertEqual(snap.is_x_subscription, bool(exp.get("is_x_subscription", False)))
+                if "usage_reset_at" in exp:
+                    self.assertEqual(snap.usage_reset_at, exp["usage_reset_at"])
+                if "prepaid_remaining_cents" in exp:
+                    self.assertEqual(snap.prepaid_remaining_cents, exp["prepaid_remaining_cents"])
 
     def test_token_fixtures_match_python(self) -> None:
         from cursor_api import CursorApiError, account_id_from_token, normalize_workos_token, session_token_variants
@@ -102,6 +107,30 @@ class GoldenFixtureTests(unittest.TestCase):
                 exp = cse["expected"]
                 if not exp["shows_grok_bot"]:
                     self.assertIsNone(got)
+                    if "ring_percent_used" in exp:
+                        from cursor_api import UsageSnapshot, apply_sand_usage_status
+
+                        snap = UsageSnapshot(
+                            used_percent=0,
+                            remaining_percent=100,
+                            auto_percent_used=0,
+                            api_percent_used=0,
+                            total_percent_used=0,
+                            membership_type="Premium",
+                            billing_cycle_start=None,
+                            billing_cycle_end=None,
+                            days_remaining=None,
+                            days_elapsed=None,
+                            estimated_usable_days=None,
+                            raw={},
+                            is_x_subscription=True,
+                        )
+                        apply_sand_usage_status(snap, cse["payload"], now=now)
+                        self.assertEqual(snap.used_percent, exp["ring_percent_used"])
+                        self.assertEqual(snap.remaining_percent, exp["ring_remaining_percent"])
+                        self.assertEqual(snap.usage_reset_at, exp["usage_reset_at"])
+                        self.assertIsNone(snap.grok_bot_percent_used)
+                        self.assertTrue(snap.is_x_subscription)
                     continue
                 assert got is not None
                 self.assertEqual(got["percent_used"], exp["percent_used"])
