@@ -248,6 +248,23 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertNil(AppUpdate.readPendingInstall(directory: dir))
     }
 
+    func testStagedBundleMustMatchReleaseBeforeQuit() {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0"><dict><key>GitCommit</key><string>9846682E32AA0903479150E994AEF782FA32AB1D</string></dict></plist>
+        """
+        let staged = AppUpdate.gitCommitFromInfoPlist(Data(xml.utf8))
+        XCTAssertEqual(staged, "9846682e32aa0903479150e994aef782fa32ab1d")
+        XCTAssertFalse(AppUpdate.stagedBundleMatchesRelease(
+            expectedSha: "11ed2b91657f8f24f907757172238b5447eb6b19",
+            stagedSha: staged
+        ))
+        XCTAssertTrue(AppUpdate.stagedBundleMatchesRelease(expectedSha: "9846682", stagedSha: staged))
+        XCTAssertTrue(AppUpdate.stagedBundleMatchesRelease(expectedSha: "", stagedSha: staged))
+        XCTAssertEqual(AppUpdate.gitCommitFromInfoPlist(Data()), "")
+    }
+
     func testDetachedHelperCommandKeepsExternalVolumePathsQuoted() {
         let cmd = AppUpdate.detachedHelperLaunchCommand(
             script: "/tmp/apply.sh",

@@ -166,6 +166,23 @@ public enum AppUpdate {
         return a.hasPrefix(b) || b.hasPrefix(a)
     }
 
+    /// The rolling release notes can move to a new commit while the macOS zip is still
+    /// the previous build. Quitting in that case leaves no process running, because the
+    /// helper refuses to relaunch when the bundle hash does not match the notes.
+    public static func stagedBundleMatchesRelease(expectedSha: String, stagedSha: String) -> Bool {
+        let expected = normalizeSha(expectedSha)
+        if expected.isEmpty { return true }
+        return sameSha(stagedSha, expected)
+    }
+
+    public static func gitCommitFromInfoPlist(_ data: Data) -> String {
+        guard let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        else { return "" }
+        let commit = normalizeSha(stringValue(obj["GitCommit"]))
+        if !commit.isEmpty { return commit }
+        return normalizeSha(stringValue(obj["SourceRevision"]))
+    }
+
     public static func shaFromInformationalVersion(_ informational: String?) -> String {
         let info = informational ?? ""
         guard let plus = info.lastIndex(of: "+") else { return "" }
