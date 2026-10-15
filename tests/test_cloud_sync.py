@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "server"))
@@ -34,17 +35,37 @@ class CloudSyncTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         reset_for_tests(Path(self.tmp.name) / "sync.db")
         LIMITER.reset()
+        self.sent_codes: dict[tuple[str, str], str] = {}
+        self.mail_patch = patch("app.main.send_code", side_effect=self._capture_mail)
+        self.mail_patch.start()
         self.client = TestClient(app)
 
     def tearDown(self) -> None:
+        self.mail_patch.stop()
         self.tmp.cleanup()
+
+    def _capture_mail(self, email: str, code: str, purpose: str) -> None:
+        self.sent_codes[(email.lower(), purpose)] = code
+
+    def _register_and_login(self, email: str, password: str, requester):
+        from cloud_sync import login, register
+
+        register(email, password, requester=requester)
+        status, payload = requester(
+            "POST",
+            "http://test/v1/auth/verify-email",
+            None,
+            {"email": email, "code": self.sent_codes[(email.lower(), "verify")]},
+        )
+        self.assertEqual(status, 200, payload)
+        return login(email, password, requester=requester)
 
     def test_register_then_second_device_pulls(self) -> None:
         from accounts import upsert_account
-        from cloud_sync import apply_session, login, register, reconcile
+        from cloud_sync import apply_session, login, reconcile
 
         http = _requester(self.client)
-        tokens = register("a@harker.cn", "password1", requester=http)
+        tokens = self._register_and_login("a@harker.cn", "password1", http)
         a = {
             "accounts": [],
             "active_account_id": "",
@@ -213,10 +234,10 @@ class CloudSyncTests(unittest.TestCase):
 
     def test_change_password_reseals_cloud_blob(self) -> None:
         from accounts import upsert_account
-        from cloud_sync import apply_session, change_password, login, reconcile, register
+        from cloud_sync import apply_session, change_password, login, reconcile
 
         http = _requester(self.client)
-        tokens = register("pw@harker.cn", "password1", requester=http)
+        tokens = self._register_and_login("pw@harker.cn", "password1", http)
         a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
         upsert_account(a, "user_01PW%3A%3Ajwt.part.sig", label="改密号", activate=True)
         apply_session(a, "pw@harker.cn", "password1", tokens)
@@ -235,10 +256,10 @@ class CloudSyncTests(unittest.TestCase):
 
     def test_delete_account_wipes_cloud(self) -> None:
         from accounts import upsert_account
-        from cloud_sync import apply_session, delete_account, login, reconcile, register
+        from cloud_sync import apply_session, delete_account, login, reconcile
 
         http = _requester(self.client)
-        tokens = register("gone@harker.cn", "password1", requester=http)
+        tokens = self._register_and_login("gone@harker.cn", "password1", http)
         a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
         upsert_account(a, "user_01DEL%3A%3Ajwt.part.sig", label="注销号", activate=True)
         apply_session(a, "gone@harker.cn", "password1", tokens)
