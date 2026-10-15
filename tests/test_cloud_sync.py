@@ -100,6 +100,8 @@ class CloudSyncTests(unittest.TestCase):
         self.assertEqual(b["accounts"][0]["billing_cycle_end"], "2026-10-01T00:00:00.000Z")
         self.assertEqual(b["refresh_interval_minutes"], 12)
         self.assertEqual(b["tray_display_mode"], "dot")
+        self.assertEqual(a["sync_storage"], "server")
+        self.assertEqual(b["sync_storage"], "server")
 
     def test_reconcile_retries_on_409(self) -> None:
         from urllib.parse import urlparse
@@ -241,6 +243,10 @@ class CloudSyncTests(unittest.TestCase):
         a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
         upsert_account(a, "user_01PW%3A%3Ajwt.part.sig", label="改密号", activate=True)
         apply_session(a, "pw@harker.cn", "password1", tokens)
+        from cloud_sync import set_storage
+
+        set_storage(a, "envelope", requester=http)
+        a["sync_secret"] = "password1"
         _, status = reconcile(a, requester=http)
         self.assertTrue(status["ok"], status["message"])
 
@@ -269,6 +275,77 @@ class CloudSyncTests(unittest.TestCase):
         self.assertEqual(a["cloud_email"], "")
         with self.assertRaises(Exception):
             login("gone@harker.cn", "password1", requester=http)
+
+    def test_server_password_change_keeps_rows(self) -> None:
+        from accounts import upsert_account
+        from cloud_sync import apply_session, change_password, login, reconcile
+
+        http = _requester(self.client)
+        tokens = self._register_and_login("rows@harker.cn", "password1", http)
+        self.assertEqual(tokens["sync_storage"], "server")
+        a = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
+        upsert_account(a, "user_01ROW%3A%3Ajwt.part.sig", label="明细号", activate=True)
+        apply_session(a, "rows@harker.cn", "password1", tokens)
+        self.assertFalse(str(a.get("sync_secret") or "").strip())
+        _, status = reconcile(a, requester=http)
+        self.assertTrue(status["ok"], status["message"])
+        self.assertTrue(status["pushed"])
+
+        change_password(a, "password1", "password2", requester=http)
+        self.assertEqual(a["sync_storage"], "server")
+        self.assertFalse(str(a.get("sync_secret") or "").strip())
+
+        b = {"accounts": [], "active_account_id": "", "session_token": "", "deleted_accounts": []}
+        apply_session(b, "rows@harker.cn", "password2", login("rows@harker.cn", "password2", requester=http))
+        _, status_b = reconcile(b, requester=http)
+        self.assertTrue(status_b["ok"], status_b["message"])
+        self.assertEqual(b["accounts"][0]["label"], "明细号")
+
+    def test_server_store_retries_on_409(self) -> None:
+        from urllib.parse import urlparse
+
+        from account_sync import snapshot_from_config
+        from accounts import upsert_account
+        from cloud_sync import reconcile
+
+        local = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+            "sync_enabled": True,
+            "sync_storage": "server",
+            "cloud_access_token": "access",
+            "cloud_refresh_token": "refresh",
+            "sync_device_id": "dev-local",
+        }
+        upsert_account(local, "user_01L%3A%3Ajwt.part.sig", label="本机", activate=True)
+        remote_cfg = {
+            "accounts": [],
+            "active_account_id": "",
+            "session_token": "",
+            "deleted_accounts": [],
+        }
+        upsert_account(remote_cfg, "user_01R%3A%3Ajwt.part.sig", label="云端", activate=True)
+        remote = snapshot_from_config(remote_cfg)
+        calls: list[str] = []
+        responses = [
+            (200, {"revision": 1, "snapshot": remote}),
+            (409, {"detail": "同步冲突，请重试"}),
+            (200, {"revision": 2, "snapshot": remote}),
+            (200, {"revision": 3, "snapshot": remote}),
+        ]
+
+        def requester(method, url, headers, body):
+            calls.append(method + " " + urlparse(url).path)
+            return responses.pop(0)
+
+        _, status = reconcile(local, requester=requester)
+        self.assertTrue(status["ok"], status["message"])
+        self.assertTrue(status["pushed"])
+        self.assertEqual(calls, ["GET /v1/store", "PUT /v1/store", "GET /v1/store", "PUT /v1/store"])
+        self.assertEqual({item["id"] for item in local["accounts"]}, {"user_01L", "user_01R"})
+        self.assertEqual(local["cloud_revision"], 3)
 
 
 if __name__ == "__main__":

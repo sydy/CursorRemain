@@ -18,7 +18,35 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     email_verified INTEGER NOT NULL DEFAULT 1,
+    sync_storage TEXT NOT NULL DEFAULT 'envelope',
     created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_store (
+    user_id TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL,
+    updated_at TEXT NOT NULL,
+    active_account_id TEXT NOT NULL DEFAULT '',
+    active_account_updated_at TEXT NOT NULL DEFAULT '',
+    device_id TEXT NOT NULL DEFAULT '',
+    settings_json TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS sync_store_accounts (
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (user_id, account_id)
+);
+CREATE TABLE IF NOT EXISTS sync_store_deleted (
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    deleted_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, account_id)
+);
+CREATE TABLE IF NOT EXISTS sync_store_usage (
+    user_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (user_id, account_id)
 );
 CREATE TABLE IF NOT EXISTS refresh_tokens (
     id TEXT PRIMARY KEY,
@@ -112,6 +140,8 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(users)").fetchall()}
     if "email_verified" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1")
+    if "sync_storage" not in columns:
+        conn.execute("ALTER TABLE users ADD COLUMN sync_storage TEXT NOT NULL DEFAULT 'envelope'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_email_codes_user_purpose ON email_codes(user_id, purpose)")
     conn.commit()
     try:

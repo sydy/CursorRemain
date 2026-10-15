@@ -275,6 +275,8 @@ public struct AppConfig: Equatable, Sendable {
     public var alertNotifiedLevels: [Int]
     public var exhaustionNotified: Bool
     public var syncEnabled: Bool
+    /// `server` stores accounts and usage on the sync server. `envelope` keeps the encrypted blob.
+    public var syncStorage: String = ""
     public var syncSecret: String
     public var syncDeviceId: String
     public var syncLastAt: String
@@ -825,6 +827,7 @@ public enum ConfigStore {
                 cfg.storedSyncSecret = v
             }
         }
+        cfg.syncStorage = AccountSync.normalizeSyncStorage((raw["sync_storage"] as? String) ?? "", secret: cfg.syncSecret)
         if let v = raw["sync_device_id"] as? String { cfg.syncDeviceId = v.trimmingCharacters(in: .whitespaces) }
         if let v = raw["sync_last_at"] as? String { cfg.syncLastAt = v.trimmingCharacters(in: .whitespaces) }
         if let v = raw["sync_last_error"] as? String { cfg.syncLastError = v }
@@ -1083,6 +1086,7 @@ public enum ConfigStore {
             "alert_notified_levels": cfg.alertNotifiedLevels,
             "exhaustion_notified": cfg.exhaustionNotified,
             "sync_enabled": cfg.syncEnabled,
+            "sync_storage": AccountSync.normalizeSyncStorage(cfg.syncStorage, secret: cfg.syncSecret),
             "sync_secret": try TokenProtector.diskToken(
                 plaintext: cfg.syncSecret,
                 storedRaw: cfg.storedSyncSecret,

@@ -1,4 +1,4 @@
-"""CursorRemain 云同步 API。客户端只上传口令加密信封，服务器不解密。"""
+"""CursorRemain 云同步 API。明细可明文分行存放，加密信封仍可选。"""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from .auth import (
     now_iso,
     revoke_refresh,
     rotate_refresh,
+    set_sync_storage,
     token_payload,
     validate_email,
     validate_password,
@@ -34,6 +35,7 @@ from .auth import (
 )
 from .db import get_conn, lock
 from .mail import send_code
+from .store import read_snapshot, write_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +46,9 @@ app = FastAPI(title="CursorRemain Sync", version="1.0.0", docs_url=None, redoc_u
 
 @app.middleware("http")
 async def limit_sync_body(request: Request, call_next):
-    if request.method == "PUT" and request.url.path.rstrip("/") == "/v1/sync":
-        limit = settings.MAX_SYNC_BODY_BYTES
+    path = request.url.path.rstrip("/")
+    if request.method == "PUT" and path in {"/v1/sync", "/v1/store"}:
+        limit = settings.MAX_STORE_BODY_BYTES if path == "/v1/store" else settings.MAX_SYNC_BODY_BYTES
         header = request.headers.get("content-length")
         if header:
             try:
@@ -216,7 +219,37 @@ def logout(body: LogoutBody, request: Request):
 @app.get("/v1/me")
 def me(request: Request):
     user = bearer_user(request)
-    return {"id": user["id"], "email": user["email"]}
+    return {"id": user["id"], "email": user["email"], "sync_storage": user.get("sync_storage") or "envelope"}
+
+
+class StorageBody(BaseModel):
+    mode: str = Field(min_length=1, max_length=16)
+
+
+@app.put("/v1/me/storage")
+def update_storage(body: StorageBody, request: Request):
+    user = bearer_user(request)
+    mode = set_sync_storage(user["id"], body.mode.strip().lower())
+    return {"sync_storage": mode}
+
+
+class StorePutBody(BaseModel):
+    revision: int = Field(default=0, ge=0)
+    snapshot: dict
+
+
+@app.get("/v1/store")
+def get_store(request: Request):
+    user = bearer_user(request)
+    LIMITER.check(f"sync:{user['id']}", settings.SYNC_RATE_PER_MIN)
+    return read_snapshot(user["id"])
+
+
+@app.put("/v1/store")
+def put_store(body: StorePutBody, request: Request):
+    user = bearer_user(request)
+    LIMITER.check(f"sync:{user['id']}", settings.SYNC_RATE_PER_MIN)
+    return write_snapshot(user["id"], body.revision, body.snapshot)
 
 
 @app.delete("/v1/me")

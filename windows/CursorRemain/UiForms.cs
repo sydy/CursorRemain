@@ -43,6 +43,7 @@ sealed class SettingsForm : Form
         "对照 GitHub 正式版（v*）自动更新。",
         "对照 GitHub 正式版（v*）。打包版会下载替换后重启；本机有 .NET 8 Desktop Runtime 时下不含运行时的轻量包。开发运行则打开下载页。");
     readonly Button _checkUpdate = ActionButton("检查更新");
+    readonly ComboBox _syncStorage = new FlatCombo { Width = 220 };
     readonly TextBox _cloudEmail = new() { Width = 220 };
     readonly TextBox _cloudPassword = new() { Width = 220, UseSystemPasswordChar = true };
     readonly TextBox _cloudDataPassphrase = new() { Width = 220, UseSystemPasswordChar = true };
@@ -50,12 +51,13 @@ sealed class SettingsForm : Form
     readonly Label _cloudAccount = new() { AutoSize = true, Margin = new Padding(0, 0, 0, 8) };
     readonly Label _syncStatus = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 4, 0, 4) };
     readonly HintBlock _syncHint = UiChrome.Hint(
-        "登录密码和数据加密口令分开设置。",
-        "登录密码只用于账户认证；同步数据使用独立加密口令，本机受系统加密保护，服务器只存密文。加密口令建议使用至少 16 位随机短语并妥善保存。忘记登录密码可通过验证邮箱重置；忘记加密口令则无法解密云端数据，请定期导出加密备份。");
+        "默认同步方式是服务器保存明细。",
+        "「服务器保存明细」把账号、设置和用量存在同步服务器上，登录密码重置后数据仍在；Token 和账号密码对服务器可见。「本机加密信封」沿用原来的端到端加密，需要至少 16 位数据加密口令，服务器只存密文。两台设备要用同一种方式。");
     readonly FlowLayoutPanel _cloudAuth = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly FlowLayoutPanel _cloudActions = new() { AutoSize = true, WrapContents = true, FlowDirection = FlowDirection.LeftToRight };
     readonly Panel _cloudAuthRow;
     readonly Panel _cloudActionsRow;
+    readonly Panel _syncStorageRow;
     readonly Panel _cloudEmailRow;
     readonly Panel _cloudPasswordRow;
     readonly Panel _cloudDataPassphraseRow;
@@ -151,6 +153,17 @@ sealed class SettingsForm : Form
         _durationRow = FieldRow("有效时间", DurationFields());
         _channel.Items.AddRange(["未标", "自费", "第三方"]);
         _mode.Items.AddRange(["圆环百分比", "纯数字", "仅色点"]);
+        _syncStorage.Items.AddRange(["服务器保存明细", "本机加密信封"]);
+        _syncStorage.SelectedIndexChanged += (_, _) =>
+        {
+            if (_loading) return;
+            var mode = _syncStorage.SelectedIndex == 1 ? "envelope" : "server";
+            var previous = _cfg.SyncStorage;
+            _cfg.SyncStorage = mode;
+            UpdateSyncModeVisibility();
+            _ = ApplyStorageAsync(mode, previous);
+        };
+        _syncStorageRow = FieldRow("同步方式", _syncStorage, FormTone.FieldWidthCombo);
         _cloudEmailRow = FieldRow("邮箱", _cloudEmail);
         _cloudPasswordRow = FieldRow("登录密码", _cloudPassword);
         _cloudDataPassphraseRow = FieldRow("数据加密口令", _cloudDataPassphrase);
@@ -172,13 +185,15 @@ sealed class SettingsForm : Form
         UiChrome.StyleMenu(cloudMenu);
         cloudMenu.Items.Add("退出登录", null, (_, _) => _cloudLogout.PerformClick());
         cloudMenu.Items.Add("修改密码", null, (_, _) => _cloudChangePassword.PerformClick());
-        cloudMenu.Items.Add("更改数据加密口令", null, (_, _) => _cloudChangeDataKey.PerformClick());
+        var changeDataKey = new ToolStripMenuItem("更改数据加密口令", null, (_, _) => _cloudChangeDataKey.PerformClick());
+        cloudMenu.Items.Add(changeDataKey);
         cloudMenu.Items.Add("注销账号", null, (_, _) => _cloudDelete.PerformClick());
         cloudMenu.Items.Add(new ToolStripSeparator());
         cloudMenu.Items.Add("导出…", null, (_, _) => _syncExport.PerformClick());
         cloudMenu.Items.Add("导入…", null, (_, _) => _syncImport.PerformClick());
         _cloudMore.Click += (_, _) =>
         {
+            changeDataKey.Visible = _cfg.SyncStorage == "envelope";
             UiChrome.StyleMenu(cloudMenu);
             cloudMenu.Show(_cloudMore, new Point(0, _cloudMore.Height));
         };
@@ -228,6 +243,7 @@ sealed class SettingsForm : Form
             _updateHint));
         _tabs.AddPage(SettingsLayout.SyncTab, MakeTab(
             UiChrome.Heading("云同步", first: true),
+            _syncStorageRow,
             FollowRow(_cloudAccount),
             _cloudEmailRow,
             _cloudPasswordRow,
@@ -874,6 +890,7 @@ sealed class SettingsForm : Form
                 _updateStatus.Text = string.IsNullOrWhiteSpace(cfg.UpdateLastError)
                     ? (string.IsNullOrWhiteSpace(cfg.UpdateLastCheckAt) ? "" : "上次检查 " + AccountSync.FormatLocal(cfg.UpdateLastCheckAt))
                     : cfg.UpdateLastError;
+            _syncStorage.SelectedIndex = cfg.SyncStorage == "envelope" ? 1 : 0;
             _cloudEmail.Text = cfg.CloudEmail;
             _cloudPassword.Text = "";
             _cloudDataPassphrase.Text = "";
@@ -892,8 +909,7 @@ sealed class SettingsForm : Form
             _cloudDataPassphrase.Enabled = !cfg.CloudLoggedIn;
             _cloudEmailRow.Visible = !cfg.CloudLoggedIn;
             _cloudPasswordRow.Visible = !cfg.CloudLoggedIn;
-            _cloudDataPassphraseRow.Visible = !cfg.CloudLoggedIn;
-            _cloudDataPassphraseConfirmRow.Visible = !cfg.CloudLoggedIn;
+            UpdateSyncModeVisibility();
             _cloudAuth.Visible = !cfg.CloudLoggedIn;
             _cloudAuthRow.Visible = !cfg.CloudLoggedIn;
             _cloudActionsRow.Visible = cfg.CloudLoggedIn;
@@ -907,6 +923,39 @@ sealed class SettingsForm : Form
             WriteKindFrom(cfg.ActiveAccount);
         }
         finally { _loading = false; }
+    }
+
+    void UpdateSyncModeVisibility()
+    {
+        var envelope = _cfg.SyncStorage == "envelope";
+        var loggedOut = !_cfg.CloudLoggedIn;
+        _cloudDataPassphraseRow.Visible = loggedOut && envelope;
+        _cloudDataPassphraseConfirmRow.Visible = loggedOut && envelope;
+        _cloudGenerateKey.Visible = loggedOut && envelope;
+    }
+
+    async Task ApplyStorageAsync(string mode, string previous)
+    {
+        try
+        {
+            await CloudSync.SetStorageAsync(_cfg, mode);
+            if (_cfg.CloudLoggedIn)
+            {
+                var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
+                if (!IsDisposed) _syncStatus.Text = status.Message;
+            }
+            NotifySaved();
+            if (!IsDisposed) LoadFrom(_cfg);
+        }
+        catch (Exception ex)
+        {
+            _cfg.SyncStorage = previous;
+            if (!IsDisposed)
+            {
+                LoadFrom(_cfg);
+                _syncStatus.Text = ex.Message;
+            }
+        }
     }
 
     void OnValidityEdited()
@@ -1281,21 +1330,30 @@ sealed class SettingsForm : Form
         _syncStatus.Text = register ? "正在注册…" : "正在登录…";
         try
         {
+            var serverMode = _cfg.SyncStorage != "envelope";
             if (register)
             {
-                if (dataPassphrase.Length < AccountSync.MinimumDataPassphraseLength)
-                    throw new CursorApiException("数据加密口令至少 16 位；建议使用与登录密码不同的随机短语");
-                if (dataPassphrase != confirmDataPassphrase)
-                    throw new CursorApiException("两次输入的数据加密口令不一致");
+                if (!serverMode)
+                {
+                    if (dataPassphrase.Length < AccountSync.MinimumDataPassphraseLength)
+                        throw new CursorApiException("数据加密口令至少 16 位；建议使用与登录密码不同的随机短语");
+                    if (dataPassphrase != confirmDataPassphrase)
+                        throw new CursorApiException("两次输入的数据加密口令不一致");
+                }
                 await CloudSync.RegisterAsync(email, password);
                 _syncStatus.Text = "验证邮件已发送。点「验证邮箱」并输入邮件中的 6 位验证码";
                 return;
             }
-            if (dataPassphrase.Length == 0) dataPassphrase = _cfg.SyncSecret;
-            if (dataPassphrase.Length == 0)
-                throw new CursorApiException("请输入数据加密口令；旧账号可暂用原登录密码");
+            if (!serverMode)
+            {
+                if (dataPassphrase.Length == 0) dataPassphrase = _cfg.SyncSecret;
+                if (dataPassphrase.Length == 0)
+                    throw new CursorApiException("请输入数据加密口令；旧账号可暂用原登录密码");
+            }
             var result = await CloudSync.LoginAsync(email, password);
-            CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, dataPassphrase, result.Access, result.Refresh);
+            if (result.Storage is "server" or "envelope") _cfg.SyncStorage = result.Storage;
+            var key = _cfg.SyncStorage == "server" ? "" : dataPassphrase;
+            CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, key, result.Access, result.Refresh);
             if (!IsDisposed) _syncStatus.Text = "正在从云端导入账号和用量…";
             var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
             _syncStatus.Text = status.Ok ? status.Message : status.Message;
@@ -1320,14 +1378,19 @@ sealed class SettingsForm : Form
         var dataPassphrase = _cloudDataPassphrase.Text.Trim();
         var confirmDataPassphrase = _cloudDataPassphraseConfirm.Text.Trim();
         if (email.Length == 0 || password.Length == 0) { _syncStatus.Text = "请先填写注册邮箱和登录密码"; return; }
-        if (dataPassphrase.Length < AccountSync.MinimumDataPassphraseLength) { _syncStatus.Text = "请先填写至少 16 位的数据加密口令"; return; }
-        if (dataPassphrase != confirmDataPassphrase) { _syncStatus.Text = "两次输入的数据加密口令不一致"; return; }
+        var serverMode = _cfg.SyncStorage != "envelope";
+        if (!serverMode)
+        {
+            if (dataPassphrase.Length < AccountSync.MinimumDataPassphraseLength) { _syncStatus.Text = "请先填写至少 16 位的数据加密口令"; return; }
+            if (dataPassphrase != confirmDataPassphrase) { _syncStatus.Text = "两次输入的数据加密口令不一致"; return; }
+        }
         if (!PromptText("验证邮箱", "输入邮件中的 6 位验证码", out var code)) return;
         try
         {
             await CloudSync.VerifyEmailAsync(email, code);
             var result = await CloudSync.LoginAsync(email, password);
-            CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, dataPassphrase, result.Access, result.Refresh);
+            if (result.Storage is "server" or "envelope") _cfg.SyncStorage = result.Storage;
+            CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, _cfg.SyncStorage == "server" ? "" : dataPassphrase, result.Access, result.Refresh);
             var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
             _syncStatus.Text = status.Message;
             NotifySaved();
@@ -1414,7 +1477,9 @@ sealed class SettingsForm : Form
             await CloudSync.ChangePasswordAsync(_cfg, oldPass, newPass);
             NotifySaved();
             LoadFrom(_cfg);
-            _syncStatus.Text = "登录密码已更新；数据加密口令未改变。请在其他设备用新登录密码登录，并输入原数据加密口令。";
+            _syncStatus.Text = _cfg.SyncStorage == "envelope"
+                ? "登录密码已更新；数据加密口令未改变。请在其他设备用新登录密码登录，并输入原数据加密口令。"
+                : "登录密码已更新。其他设备请用新登录密码登录。";
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
     }

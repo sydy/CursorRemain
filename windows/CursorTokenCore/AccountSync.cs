@@ -1172,9 +1172,20 @@ public static class AccountSync
         else File.Move(tmp, path, true);
     }
 
+    public static string NormalizeSyncStorage(string raw, string secret = "")
+    {
+        var value = (raw ?? "").Trim().ToLowerInvariant();
+        if (value is "server" or "envelope") return value;
+        return string.IsNullOrWhiteSpace(secret) ? "server" : "envelope";
+    }
+
+    public static bool UsesServerStore(AppConfig cfg) =>
+        NormalizeSyncStorage(cfg.SyncStorage, cfg.SyncSecret) == "server";
+
     public static string SyncReady(AppConfig cfg)
     {
         if (!cfg.SyncEnabled || !cfg.CloudLoggedIn) return "请先登录云同步";
+        if (UsesServerStore(cfg)) return "";
         if (string.IsNullOrWhiteSpace(cfg.SyncSecret)) return "请重新登录以解锁同步密钥";
         return "";
     }

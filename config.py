@@ -100,6 +100,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "alert_notified_levels": [],
     "exhaustion_notified": False,
     "sync_enabled": False,
+    "sync_storage": "",
     "sync_secret": "",
     "sync_device_id": "",
     "sync_last_at": "",

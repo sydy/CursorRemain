@@ -351,13 +351,20 @@ struct SettingsRootView: View {
     var syncPage: some View {
         settingsPage(spacing: 12) {
             Text("云同步").font(.title3.bold())
+            Picker("同步方式", selection: storageBinding) {
+                Text("服务器保存明细").tag("server")
+                Text("本机加密信封").tag("envelope")
+            }
+            .pickerStyle(.menu)
             if store.config.cloudLoggedIn {
                 Text("已登录  \(store.config.cloudEmail)")
                 HStack {
                     Button("立即同步") { syncNow() }
                     Button("退出登录") { logoutCloud() }
                     Button("修改密码") { showChangePassword.toggle() }
-                    Button("更改数据加密口令") { showChangeDataPassphrase.toggle() }
+                    if store.config.syncStorage == "envelope" {
+                        Button("更改数据加密口令") { showChangeDataPassphrase.toggle() }
+                    }
                     Button("注销账号") { showDeleteConfirm.toggle() }
                     Button("导出…") { exportFile() }
                     Button("导入…") { importFile() }
@@ -383,12 +390,16 @@ struct SettingsRootView: View {
             } else {
                 TextField("邮箱", text: $cloudEmail)
                 SecureField("登录密码（至少 8 位）", text: $cloudPassword)
-                SecureField("数据加密口令（至少 16 位随机短语）", text: $cloudDataPassphrase)
-                SecureField("确认数据加密口令", text: $cloudDataPassphraseConfirm)
+                if store.config.syncStorage == "envelope" {
+                    SecureField("数据加密口令（至少 16 位随机短语）", text: $cloudDataPassphrase)
+                    SecureField("确认数据加密口令", text: $cloudDataPassphraseConfirm)
+                }
                 HStack {
                     Button("登录") { authCloud(register: false) }
                     Button("注册") { authCloud(register: true) }
-                    Button("生成随机加密口令") { generateDataPassphrase() }
+                    if store.config.syncStorage == "envelope" {
+                        Button("生成随机加密口令") { generateDataPassphrase() }
+                    }
                     Button("忘记密码") { requestPasswordReset() }
                     Button("导出…") { exportFile() }
                     Button("导入…") { importFile() }
@@ -409,7 +420,9 @@ struct SettingsRootView: View {
                     Button("重置登录密码") { confirmPasswordReset() }
                 }
             }
-            Text("登录密码只用于账户认证；同步数据由独立口令在本机加密，服务器只保存密文。登录密码可通过验证邮箱重置；数据加密口令至少 16 位并需自行保存，遗失后无法解密云端数据。请定期导出加密备份。")
+            Text(store.config.syncStorage == "envelope"
+                ? "登录密码只用于账户认证；同步数据由独立口令在本机加密，服务器只保存密文。登录密码可通过验证邮箱重置；数据加密口令至少 16 位并需自行保存，遗失后无法解密云端数据。请定期导出加密备份。"
+                : "服务器直接保存账号、设置和用量明细，登录密码重置后数据仍在。Token 和账号密码对同步服务器可见。选择「本机加密信封」则改回原来的端到端加密。两台设备要用同一种方式。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text(syncStatus.isEmpty ? " " : syncStatus)
@@ -673,6 +686,41 @@ struct SettingsRootView: View {
         hint = result.ok ? "已写入 Cursor" : result.message
     }
 
+    var storageBinding: Binding<String> {
+        Binding(
+            get: { store.config.syncStorage == "envelope" ? "envelope" : "server" },
+            set: { mode in
+                var cfg = store.config
+                let previous = cfg.syncStorage
+                cfg.syncStorage = mode
+                store.applyConfig(cfg, refresh: false)
+                let startedActive = cfg.activeAccountId
+                DispatchQueue.global(qos: .userInitiated).async {
+                    var live = cfg
+                    do {
+                        try CloudSync.setStorage(&live, mode: mode)
+                        let status = live.cloudLoggedIn ? AccountSync.reconcile(&live) : nil
+                        DispatchQueue.main.async {
+                            if let status {
+                                applySyncedConfig(&live, startedActive: startedActive, refresh: status.changed)
+                                syncStatus = status.message
+                            } else {
+                                store.applyConfig(live, refresh: false)
+                            }
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            var rolled = store.config
+                            rolled.syncStorage = previous
+                            store.applyConfig(rolled, refresh: false)
+                            syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription
+                        }
+                    }
+                }
+            }
+        )
+    }
+
     func applySetting(_ update: (inout AppConfig) -> Void) {
         var c = store.config
         let before = AccountSync.snapshotSettings(c)
@@ -781,11 +829,14 @@ struct SettingsRootView: View {
         let startedActive = cfg.activeAccountId
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                let serverMode = cfg.syncStorage != "envelope"
                 if register {
-                    guard dataPassphrase.count >= AccountSync.minimumDataPassphraseLength else {
-                        throw CursorAPIError("数据加密口令至少 16 位；建议使用与登录密码不同的随机短语")
+                    if !serverMode {
+                        guard dataPassphrase.count >= AccountSync.minimumDataPassphraseLength else {
+                            throw CursorAPIError("数据加密口令至少 16 位；建议使用与登录密码不同的随机短语")
+                        }
+                        guard dataPassphrase == confirmDataPassphrase else { throw CursorAPIError("两次输入的数据加密口令不一致") }
                     }
-                    guard dataPassphrase == confirmDataPassphrase else { throw CursorAPIError("两次输入的数据加密口令不一致") }
                     try CloudSync.register(email: email, password: password)
                     DispatchQueue.main.async {
                         showVerification = true
@@ -793,10 +844,11 @@ struct SettingsRootView: View {
                     }
                     return
                 }
-                let key = dataPassphrase.isEmpty ? cfg.syncSecret : dataPassphrase
-                guard !key.isEmpty else { throw CursorAPIError("请输入数据加密口令；旧账号可暂用原登录密码") }
+                let key = serverMode ? "" : (dataPassphrase.isEmpty ? cfg.syncSecret : dataPassphrase)
+                if !serverMode && key.isEmpty { throw CursorAPIError("请输入数据加密口令；旧账号可暂用原登录密码") }
                 let result = try CloudSync.login(email: email, password: password)
-                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: key, access: result.access, refresh: result.refresh)
+                if result.storage == "server" || result.storage == "envelope" { cfg.syncStorage = result.storage }
+                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: cfg.syncStorage == "server" ? "" : key, access: result.access, refresh: result.refresh)
                 DispatchQueue.main.async { syncStatus = "正在从云端导入账号和用量…" }
                 let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
@@ -819,8 +871,11 @@ struct SettingsRootView: View {
         let key = cloudDataPassphrase.trimmingCharacters(in: .whitespaces)
         let confirmKey = cloudDataPassphraseConfirm.trimmingCharacters(in: .whitespaces)
         let code = verificationCode.trimmingCharacters(in: .whitespaces)
-        guard key.count >= AccountSync.minimumDataPassphraseLength else { syncStatus = "数据加密口令至少 16 位"; return }
-        guard key == confirmKey else { syncStatus = "两次输入的数据加密口令不一致"; return }
+        let serverMode = store.config.syncStorage != "envelope"
+        if !serverMode {
+            guard key.count >= AccountSync.minimumDataPassphraseLength else { syncStatus = "数据加密口令至少 16 位"; return }
+            guard key == confirmKey else { syncStatus = "两次输入的数据加密口令不一致"; return }
+        }
         guard !code.isEmpty else { syncStatus = "请输入验证码"; return }
         var cfg = store.config
         let startedActive = cfg.activeAccountId
@@ -828,7 +883,8 @@ struct SettingsRootView: View {
             do {
                 try CloudSync.verifyEmail(email: email, code: code)
                 let result = try CloudSync.login(email: email, password: password)
-                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: key, access: result.access, refresh: result.refresh)
+                if result.storage == "server" || result.storage == "envelope" { cfg.syncStorage = result.storage }
+                CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: cfg.syncStorage == "server" ? "" : key, access: result.access, refresh: result.refresh)
                 let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
                     applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
@@ -926,7 +982,9 @@ struct SettingsRootView: View {
                     newCloudPassword = ""
                     confirmCloudPassword = ""
                     showChangePassword = false
-                    syncStatus = "登录密码已更新；数据加密口令未改变。请在其他设备用新登录密码登录，并输入原数据加密口令。"
+                    syncStatus = cfg.syncStorage == "envelope"
+                        ? "登录密码已更新；数据加密口令未改变。请在其他设备用新登录密码登录，并输入原数据加密口令。"
+                        : "登录密码已更新。其他设备请用新登录密码登录。"
                 }
             } catch {
                 DispatchQueue.main.async {

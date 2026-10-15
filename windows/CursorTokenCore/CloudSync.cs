@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace CursorTokenCore;
@@ -80,10 +81,18 @@ public static class CloudSync
         await SendAsync("POST", "/v1/auth/password-reset/confirm", null, new { email, code, new_password = newPassword }, ct);
     }
 
-    public static async Task<(string Email, string Access, string Refresh)> LoginAsync(string email, string password, CancellationToken ct = default)
+    public static async Task<(string Email, string Access, string Refresh, string Storage)> LoginAsync(string email, string password, CancellationToken ct = default)
     {
         var payload = await SendAsync("POST", "/v1/auth/login", null, new { email, password }, ct);
         return ReadAuth(payload);
+    }
+
+    public static async Task SetStorageAsync(AppConfig cfg, string mode, CancellationToken ct = default)
+    {
+        var value = AccountSync.NormalizeSyncStorage(mode);
+        if (cfg.CloudLoggedIn)
+            await AuthedAsync(cfg, HttpMethod.Put, "/v1/me/storage", new { mode = value }, ct);
+        cfg.SyncStorage = value;
     }
 
     public static async Task ChangePasswordAsync(AppConfig cfg, string oldPassword, string newPassword, CancellationToken ct = default)
@@ -95,8 +104,10 @@ public static class CloudSync
         using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
         var revision = ReadRevision(got, 0);
         object? envelope = null;
-        if (got.RootElement.TryGetProperty("envelope", out var env) && env.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-                envelope = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(env, cfg.SyncSecret), cfg.SyncSecret);
+        if (!AccountSync.UsesServerStore(cfg)
+            && got.RootElement.TryGetProperty("envelope", out var env)
+            && env.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            envelope = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(env, cfg.SyncSecret), cfg.SyncSecret);
         var body = new Dictionary<string, object?>
         {
             ["old_password"] = old,
@@ -114,7 +125,9 @@ public static class CloudSync
             using var retryGot = await AuthedAsync(cfg, HttpMethod.Get, "/v1/sync", null, ct);
             revision = ReadRevision(retryGot, 0);
             body["revision"] = revision;
-            if (retryGot.RootElement.TryGetProperty("envelope", out var retryEnv) && retryEnv.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            if (!AccountSync.UsesServerStore(cfg)
+                && retryGot.RootElement.TryGetProperty("envelope", out var retryEnv)
+                && retryEnv.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
                 body["envelope"] = AccountSync.EncryptEnvelope(AccountSync.DecryptEnvelope(retryEnv, cfg.SyncSecret), cfg.SyncSecret);
             using var put = await AuthedAsync(cfg, HttpMethod.Post, "/v1/auth/password", body, ct);
             ApplyPasswordResult(cfg, cfg.SyncSecret, put, revision);
@@ -195,6 +208,8 @@ public static class CloudSync
             cfg.SyncLastError = reason;
             return status;
         }
+        if (AccountSync.UsesServerStore(cfg))
+            return await ReconcileStoreAsync(cfg, status, now, write, ct);
         AccountSync.EnsureDeviceId(cfg);
         var stamp = AccountSync.NowIso(now);
         var passphrase = cfg.SyncSecret;
@@ -300,14 +315,107 @@ public static class CloudSync
         return AccountSync.DecryptEnvelope(env, passphrase);
     }
 
-    static (string Email, string Access, string Refresh) ReadAuth(JsonDocument payload)
+    static async Task<SyncStatus> ReconcileStoreAsync(AppConfig cfg, SyncStatus status, DateTimeOffset? now, bool write, CancellationToken ct)
+    {
+        AccountSync.EnsureDeviceId(cfg);
+        var stamp = AccountSync.NowIso(now);
+        var startedActive = cfg.ActiveAccountId;
+        var local = AccountSync.SnapshotFromConfig(cfg);
+        local.DeviceId = cfg.SyncDeviceId;
+        try
+        {
+            using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/store", null, ct);
+            var revision = ReadRevision(got, 0);
+            var remote = ParseStore(got.RootElement);
+            var merged = AccountSync.MergeSnapshots(local, remote);
+            var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
+            if (write && AccountSync.SnapshotIdentity(merged) != AccountSync.SnapshotIdentity(remote))
+            {
+                var put = await PutStoreAsync(cfg, merged, revision, stamp, ct);
+                changed = put.Changed || changed;
+                revision = put.Revision;
+                status.Pushed = put.Pushed;
+            }
+            if (AccountSync.KeepLiveActiveAccount(cfg, startedActive))
+                changed = true;
+            cfg.CloudRevision = revision;
+            cfg.SyncLastAt = stamp;
+            cfg.SyncStorage = "server";
+            status.Ok = true;
+            status.Changed = changed;
+            status.Message = changed && status.Pushed ? "已合并并对齐云端"
+                : changed ? "已从云端导入账号、设置和用量"
+                : status.Pushed ? "已上传到云端"
+                : "账号、设置和用量已与云端一致";
+            cfg.SyncLastError = "";
+            return status;
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 401)
+        {
+            ClearSession(cfg);
+            status.Message = "登录已过期，请重新登录";
+            cfg.SyncLastError = status.Message;
+            return status;
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex);
+            var message = string.IsNullOrWhiteSpace(ex.Message) ? "同步失败" : ex.Message;
+            cfg.SyncLastError = message;
+            status.Message = message;
+            return status;
+        }
+    }
+
+    static async Task<PutResult> PutStoreAsync(AppConfig cfg, SyncSnapshot merged, int revision, string stamp, CancellationToken ct)
+    {
+        merged.UpdatedAt = stamp;
+        merged.DeviceId = cfg.SyncDeviceId;
+        try
+        {
+            using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/store", StoreBody(merged, revision), ct);
+            return new PutResult(true, false, ReadRevision(put, revision + 1));
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 409)
+        {
+            using var got = await AuthedAsync(cfg, HttpMethod.Get, "/v1/store", null, ct);
+            revision = ReadRevision(got, 0);
+            var remote = ParseStore(got.RootElement);
+            var local = AccountSync.SnapshotFromConfig(cfg);
+            local.DeviceId = cfg.SyncDeviceId;
+            merged = AccountSync.MergeSnapshots(local, remote);
+            var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
+            if (AccountSync.SnapshotIdentity(merged) == AccountSync.SnapshotIdentity(remote))
+                return new PutResult(false, changed, revision);
+            merged.UpdatedAt = stamp;
+            merged.DeviceId = cfg.SyncDeviceId;
+            using var put = await AuthedAsync(cfg, HttpMethod.Put, "/v1/store", StoreBody(merged, revision), ct);
+            return new PutResult(true, changed, ReadRevision(put, revision + 1));
+        }
+    }
+
+    static Dictionary<string, object?> StoreBody(SyncSnapshot snap, int revision) => new()
+    {
+        ["revision"] = revision,
+        ["snapshot"] = JsonNode.Parse(AccountSync.CanonicalJson(snap)),
+    };
+
+    static SyncSnapshot ParseStore(JsonElement root)
+    {
+        if (!root.TryGetProperty("snapshot", out var snap) || snap.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            return new SyncSnapshot();
+        return AccountSync.ParseSnapshot(snap);
+    }
+
+    static (string Email, string Access, string Refresh, string Storage) ReadAuth(JsonDocument payload)
     {
         var root = payload.RootElement;
         var access = root.TryGetProperty("access_token", out var a) ? a.GetString() ?? "" : "";
         var refresh = root.TryGetProperty("refresh_token", out var r) ? r.GetString() ?? "" : "";
         var email = root.TryGetProperty("email", out var e) ? e.GetString() ?? "" : "";
+        var storage = root.TryGetProperty("sync_storage", out var s) ? s.GetString() ?? "" : "";
         if (access.Length == 0) throw new CursorApiException("登录失败");
-        return (email, access, refresh);
+        return (email, access, refresh, storage);
     }
 
     static async Task<JsonDocument> AuthedAsync(AppConfig cfg, HttpMethod method, string path, object? body, CancellationToken ct)

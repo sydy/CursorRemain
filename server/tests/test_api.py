@@ -355,6 +355,53 @@ class ApiTests(unittest.TestCase):
         self.assertIsNotNone(dest)
         self.assertTrue(dest.is_file())
 
+    def test_server_store_and_optional_envelope(self) -> None:
+        access = self._register("store@harker.cn")
+        headers = {"Authorization": f"Bearer {access}"}
+        self.assertEqual(self.last_tokens["sync_storage"], "server")
+        me = self.client.get("/v1/me", headers=headers)
+        self.assertEqual(me.json()["sync_storage"], "server")
+
+        empty = self.client.get("/v1/store", headers=headers)
+        self.assertEqual(empty.status_code, 200, empty.text)
+        self.assertEqual(empty.json()["revision"], 0)
+        self.assertEqual(empty.json()["snapshot"]["accounts"], [])
+
+        snap = {
+            "version": 1,
+            "device_id": "dev",
+            "active_account_id": "acc",
+            "accounts": [{"id": "acc", "label": "明细", "token": "secret-token"}],
+            "deleted": [{"id": "old", "deleted_at": "2026-01-01T00:00:00Z"}],
+            "settings": {"refresh_interval_minutes": 12},
+            "usage": [{"account_id": "acc", "events": [{"at": "2026-01-02T00:00:00Z"}]}],
+        }
+        put = self.client.put("/v1/store", headers=headers, json={"revision": 0, "snapshot": snap})
+        self.assertEqual(put.status_code, 200, put.text)
+        self.assertEqual(put.json()["revision"], 1)
+        got = self.client.get("/v1/store", headers=headers)
+        stored = got.json()["snapshot"]
+        self.assertEqual(stored["accounts"][0]["token"], "secret-token")
+        self.assertEqual(stored["accounts"][0]["label"], "明细")
+        self.assertEqual(stored["deleted"][0]["id"], "old")
+        self.assertEqual(stored["settings"]["refresh_interval_minutes"], 12)
+        self.assertEqual(stored["usage"][0]["account_id"], "acc")
+
+        conflict = self.client.put("/v1/store", headers=headers, json={"revision": 0, "snapshot": snap})
+        self.assertEqual(conflict.status_code, 409)
+
+        bad = self.client.put("/v1/me/storage", headers=headers, json={"mode": "folder"})
+        self.assertEqual(bad.status_code, 400)
+        switched = self.client.put("/v1/me/storage", headers=headers, json={"mode": "envelope"})
+        self.assertEqual(switched.status_code, 200, switched.text)
+        self.assertEqual(switched.json()["sync_storage"], "envelope")
+        again = self.client.post("/v1/auth/login", json={"email": "store@harker.cn", "password": "password1"})
+        self.assertEqual(again.json()["sync_storage"], "envelope")
+        blob = self.client.get("/v1/sync", headers={"Authorization": f"Bearer {again.json()['access_token']}"})
+        self.assertIsNone(blob.json()["envelope"])
+        rows = self.client.get("/v1/store", headers=headers)
+        self.assertEqual(rows.json()["snapshot"]["accounts"][0]["label"], "明细")
+
 
 if __name__ == "__main__":
     unittest.main()
