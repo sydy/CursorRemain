@@ -49,6 +49,13 @@ enum AppUpdater {
                 return "已取消更新"
             }
             let staged = try await downloadAndStage(asset)
+            let stagedSha = stagedGitCommit(staged)
+            if !AppUpdate.stagedBundleMatchesRelease(expectedSha: release.commitSha, stagedSha: stagedSha) {
+                let fail = "下载的安装包与发布版本不一致，已取消更新"
+                AppLog.log("staged sha \(stagedSha) != release \(AppUpdate.normalizeSha(release.commitSha))")
+                rememberCheck(store: store, error: fail)
+                return fail
+            }
             if !launchHelper(newApp: staged, expectedSha: release.commitSha) {
                 let fail = "已下载更新，但无法启动安装脚本"
                 rememberCheck(store: store, error: fail)
@@ -202,6 +209,12 @@ enum AppUpdater {
         store.settingsDirectory ?? AppPaths.configDirectory()
     }
 
+    private static func stagedGitCommit(_ app: URL) -> String {
+        let plist = app.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plist) else { return "" }
+        return AppUpdate.gitCommitFromInfoPlist(data)
+    }
+
     private static func launchHelper(newApp: URL, expectedSha: String) -> Bool {
         let dest = Bundle.main.bundleURL
         let script = FileManager.default.temporaryDirectory
@@ -225,30 +238,49 @@ enum AppUpdater {
           sleep 0.3
         fi
         sleep 0.4
+        BACKUP="${DST}.old"
+        sha_ok() {
+          if [ -z "$EXPECT" ]; then
+            return 0
+          fi
+          GOT=$(/usr/libexec/PlistBuddy -c 'Print :GitCommit' "$DST/Contents/Info.plist" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+          EXP=$(printf '%s' "$EXPECT" | tr '[:upper:]' '[:lower:]')
+          case "$GOT" in
+            "$EXP"*) return 0 ;;
+          esac
+          case "$EXP" in
+            "$GOT"*) [ -n "$GOT" ] && return 0 ;;
+          esac
+          echo "sha mismatch got=$GOT expect=$EXP"
+          return 1
+        }
+        restore_backup() {
+          if [ -d "$BACKUP" ]; then
+            rm -rf "$DST"
+            mv "$BACKUP" "$DST" || true
+          fi
+        }
         apply() {
           TMP="${DST}.updating"
           rm -rf "$TMP"
           /usr/bin/ditto "$SRC" "$TMP" || return 1
           if [ -d "$DST" ]; then
-            rm -rf "${DST}.old"
-            mv "$DST" "${DST}.old" || rm -rf "$DST" || return 1
+            if [ -d "$BACKUP" ]; then
+              rm -rf "$DST" || { rm -rf "$TMP"; return 1; }
+            else
+              mv "$DST" "$BACKUP" || { rm -rf "$TMP"; return 1; }
+            fi
           fi
-          mv "$TMP" "$DST" || return 1
+          if ! mv "$TMP" "$DST"; then
+            restore_backup
+            return 1
+          fi
           xattr -cr "$DST" >/dev/null 2>&1 || true
-          rm -rf "${DST}.old"
-          if [ -n "$EXPECT" ]; then
-            GOT=$(/usr/libexec/PlistBuddy -c 'Print :GitCommit' "$DST/Contents/Info.plist" 2>/dev/null | tr '[:upper:]' '[:lower:]')
-            EXP=$(printf '%s' "$EXPECT" | tr '[:upper:]' '[:lower:]')
-            case "$GOT" in
-              "$EXP"*) ;;
-              *)
-                case "$EXP" in
-                  "$GOT"*) ;;
-                  *) echo "sha mismatch got=$GOT expect=$EXP"; return 1 ;;
-                esac
-                ;;
-            esac
+          if ! sha_ok; then
+            restore_backup
+            return 1
           fi
+          rm -rf "$BACKUP"
           return 0
         }
         ok=0
@@ -259,19 +291,24 @@ enum AppUpdater {
         done
         if [ "$ok" -ne 1 ]; then
           echo "apply failed"
-          rm -f "$0"
-          exit 1
+          restore_backup
         fi
         EXE="$DST/Contents/MacOS/CursorRemain"
         if [ ! -x "$EXE" ]; then
           EXE="$DST/Contents/MacOS/CursorTokenTray"
         fi
-        if [ -x "$EXE" ]; then
-          /usr/bin/nohup "$EXE" >/dev/null 2>&1 &
+        if [ -d "$DST" ]; then
+          if [ -x "$EXE" ]; then
+            /usr/bin/nohup "$EXE" >/dev/null 2>&1 &
+          else
+            /usr/bin/open -n -g "$DST"
+          fi
+          echo "opened $DST"
         else
-          /usr/bin/open -n -g "$DST"
+          echo "nothing to open"
+          rm -f "$0"
+          exit 1
         fi
-        echo "opened $DST"
         rm -f "$0"
         """
         do {

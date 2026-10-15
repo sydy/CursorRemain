@@ -238,10 +238,15 @@ jobs:
           generate_release_notes: true
           make_latest: true
 
+  # Do not wait on the Python/.NET test job. Windows publishes the rolling
+  # `latest` notes from this same commit without that job. If macOS waits and
+  # the test fails, the notes move to a new SHA while CursorRemain-macos.zip
+  # stays stale, and the menu-bar app quits into a hash mismatch with nothing
+  # left running. Swift tests still gate this job.
   build-macos:
     name: Build macOS
     runs-on: macos-latest
-    needs: [version, test, test-macos]
+    needs: [version, test-macos]
     if: needs.version.outputs.build == 'true'
     permissions:
       contents: write
