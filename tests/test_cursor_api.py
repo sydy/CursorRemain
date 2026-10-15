@@ -1021,6 +1021,8 @@ class SourceGuardTests(unittest.TestCase):
             format_export_empty,
             format_token_save_result,
             format_report_cache_status,
+            format_x_report_body,
+            format_x_report_notice,
             format_report_filter_empty,
             format_report_per_million_kpi,
             format_report_spend_kpi,
@@ -1071,6 +1073,37 @@ class SourceGuardTests(unittest.TestCase):
         self.assertEqual(format_compare_hint(False), compare_hint())
         self.assertEqual(format_report_cache_status(12, "工作号"), "当前：工作号 · 本地 12 条，正在刷新…")
         self.assertEqual(format_report_cache_status(0), "本地还没有明细，正在同步…")
+        from cursor_api import UsageSnapshot
+
+        weekly = UsageSnapshot(
+            used_percent=13.8,
+            remaining_percent=86.2,
+            auto_percent_used=None,
+            api_percent_used=None,
+            total_percent_used=13.8,
+            membership_type="Premium",
+            billing_cycle_start=None,
+            billing_cycle_end=None,
+            days_remaining=6,
+            days_elapsed=0.5,
+            estimated_usable_days=None,
+            raw={},
+            is_x_subscription=True,
+            usage_reset_at="2026-10-21T11:42:40.710Z",
+            prepaid_remaining_cents=1500,
+        )
+        body = format_x_report_body(weekly)
+        self.assertEqual(format_x_report_notice(), "这个套餐只提供每周用量，没有逐条请求明细。")
+        self.assertIn(format_x_report_notice(), body)
+        self.assertIn("已用  13.8%", body)
+        self.assertIn("剩余  86.2%", body)
+        self.assertIn("重置  ", body)
+        self.assertIn("预付余额", body)
+        self.assertNotIn("Token", body)
+        pending = format_x_report_body(None, 86.2)
+        self.assertIn(format_x_report_notice(), pending)
+        self.assertIn("剩余  86.2%", pending)
+        self.assertNotIn("已用", pending)
         self.assertEqual(
             format_report_sync_error("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"),
             "登录已过期，请到设置重新粘贴 Token",

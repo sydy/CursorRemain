@@ -431,6 +431,7 @@ sealed partial class TrayContext : ApplicationContext
                 _report = new ReportForm(_client, () =>
                 {
                     var usage = _usage;
+                    var membership = usage?.MembershipType ?? _config.ActiveAccount?.MembershipType;
                     return new ReportForm.ReportState(
                         _config.ActiveAccount?.Token ?? _config.SessionToken,
                         _config.ActiveAccountId,
@@ -440,7 +441,9 @@ sealed partial class TrayContext : ApplicationContext
                         _config.ActiveAccount?.ReportStartDate ?? "",
                         _config.ActiveAccount?.ReportEndDate ?? "",
                         ReportAllocationWindow.FromAccount(_config.ActiveAccount, usage),
-                        _config.ActiveAccount?.DisplayLabel ?? "");
+                        _config.ActiveAccount?.DisplayLabel ?? "",
+                        usage?.IsXSubscription == true || UsageParser.IsXMembership(membership),
+                        _config.ActiveAccount?.LastRemaining);
                 }, (id, start, end) =>
                 {
                     _config = ConfigStore.Update(live => live.SetReportRange(id, start, end));

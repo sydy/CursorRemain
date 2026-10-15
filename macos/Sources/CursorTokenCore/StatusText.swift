@@ -307,6 +307,36 @@ public enum StatusText {
         return "    已分摊 \(UsageEvents.formatCNY(totalCny))（月费 \(UsageEvents.formatCNY(planCny)) + 按需 \(UsageEvents.formatCNY(onDemandCny))）· 汇率 \(rate)"
     }
 
+    static func oneDecimal(_ value: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    public static func formatXReportNotice() -> String {
+        "这个套餐只提供每周用量，没有逐条请求明细。"
+    }
+
+    public static func formatXReportBody(_ usage: UsageSnapshot?, lastRemaining: Double? = nil) -> String {
+        guard let usage else {
+            var text = formatXReportNotice()
+            if let lastRemaining {
+                text += "\n\n剩余  \(Self.oneDecimal(lastRemaining))%"
+            }
+            return text
+        }
+        var lines = [formatPlanCaption(usage.membershipType), formatXReportNotice(), ""]
+        lines.append("已用  \(Self.oneDecimal(usage.usedPercent))%")
+        lines.append("剩余  \(Self.oneDecimal(usage.remainingPercent))%")
+        if let reset = usage.usageResetAt {
+            let end = formatResetDate(reset, includeTime: true)
+            let remaining = formatCycleRemaining(reset, daysRemaining: usage.daysRemaining)
+            lines.append(remaining.isEmpty ? "重置  \(end)" : "重置  \(end)（\(remaining)）")
+        }
+        if let prepaid = usage.prepaidRemainingCents {
+            lines.append("预付余额  \(UsageParser.formatUSDCents(prepaid))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     public static func formatReportSyncResult(
         count: Int,
         fetched: Int,

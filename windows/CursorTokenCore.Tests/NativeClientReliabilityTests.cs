@@ -110,6 +110,28 @@ public class NativeClientReliabilityTests
         Assert.Equal(StatusText.CompareHint, StatusText.FormatCompareHint(false));
         Assert.Equal("当前：工作号 · 本地 12 条，正在刷新…", StatusText.FormatReportCacheStatus(12, "工作号"));
         Assert.Equal("本地还没有明细，正在同步…", StatusText.FormatReportCacheStatus(0));
+        var weekly = new UsageSnapshot
+        {
+            UsedPercent = 13.8,
+            RemainingPercent = 86.2,
+            MembershipType = "Premium",
+            IsXSubscription = true,
+            UsageResetAt = "2026-10-21T11:42:40.710Z",
+            DaysRemaining = 6,
+            PrepaidRemainingCents = 1500,
+        };
+        var body = StatusText.FormatXReportBody(weekly);
+        Assert.Equal("这个套餐只提供每周用量，没有逐条请求明细。", StatusText.XReportNotice);
+        Assert.Contains(StatusText.XReportNotice, body);
+        Assert.Contains("已用  13.8%", body);
+        Assert.Contains("剩余  86.2%", body);
+        Assert.Contains("重置  ", body);
+        Assert.Contains("预付余额", body);
+        Assert.DoesNotContain("Token", body);
+        var pending = StatusText.FormatXReportBody(null, 86.2);
+        Assert.Contains(StatusText.XReportNotice, pending);
+        Assert.Contains("剩余  86.2%", pending);
+        Assert.DoesNotContain("已用", pending);
         Assert.Equal("登录已过期，请到设置重新粘贴 Token", StatusText.FormatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
         Assert.Equal("未配置 Token，请先在设置里导入账号", StatusText.FormatReportSyncError("未配置 Token，请打开设置粘贴"));
         Assert.StartsWith("同步失败：", StatusText.FormatReportSyncError("HTTP 429"));

@@ -37,6 +37,12 @@ final class ReportStore: ObservableObject {
 
     var isTeam: Bool { app.usage?.isTeamAccount == true }
 
+    var isWeeklyPlan: Bool {
+        if app.usage?.isXSubscription == true { return true }
+        let membership = app.usage?.membershipType ?? app.config.activeAccount?.membershipType
+        return UsageParser.isXMembership(membership)
+    }
+
     var filter: UsageReportFilter {
         let rawStart = startEnabled ? UsageEvents.reportDateString(from: startDate) : ""
         let rawEnd = endEnabled ? UsageEvents.reportDateString(from: endDate) : ""
@@ -126,6 +132,10 @@ final class ReportStore: ObservableObject {
 
     func sync() async {
         if syncing { return }
+        if isWeeklyPlan {
+            status = ""
+            return
+        }
         let token = app.config.activeAccount?.token ?? app.config.sessionToken
         let accountId = app.config.activeAccountId
         if token.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -211,6 +221,42 @@ struct ReportRootView: View {
     @ObservedObject var store: ReportStore
 
     var body: some View {
+        Group {
+            if store.isWeeklyPlan {
+                weeklyPlan
+            } else {
+                eventReport
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 980, minHeight: 620)
+        .preferredColorScheme(ColorModeAppearance.colorScheme(store.app.config.colorMode))
+        .onChange(of: store.teamScope) { _ in
+            Task { await store.sync() }
+        }
+        .onChange(of: store.app.config.activeAccountId) { _ in
+            store.reloadForCurrentAccount()
+            Task { await store.sync() }
+        }
+        .onChange(of: store.startEnabled) { _ in store.persistDates() }
+        .onChange(of: store.endEnabled) { _ in store.persistDates() }
+        .onChange(of: store.startDate) { _ in store.persistDates() }
+        .onChange(of: store.endDate) { _ in store.persistDates() }
+    }
+
+    var weeklyPlan: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("每周用量")
+                .font(.title3.weight(.semibold))
+            Text(StatusText.formatXReportBody(store.app.usage, lastRemaining: store.app.config.activeAccount?.lastRemaining))
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    var eventReport: some View {
         VStack(alignment: .leading, spacing: 10) {
             filters
             Text(store.status)
@@ -238,20 +284,6 @@ struct ReportRootView: View {
             models
             details
         }
-        .padding(16)
-        .frame(minWidth: 980, minHeight: 620)
-        .preferredColorScheme(ColorModeAppearance.colorScheme(store.app.config.colorMode))
-        .onChange(of: store.teamScope) { _ in
-            Task { await store.sync() }
-        }
-        .onChange(of: store.app.config.activeAccountId) { _ in
-            store.reloadForCurrentAccount()
-            Task { await store.sync() }
-        }
-        .onChange(of: store.startEnabled) { _ in store.persistDates() }
-        .onChange(of: store.endEnabled) { _ in store.persistDates() }
-        .onChange(of: store.startDate) { _ in store.persistDates() }
-        .onChange(of: store.endDate) { _ in store.persistDates() }
     }
 
     var filters: some View {

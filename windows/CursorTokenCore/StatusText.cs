@@ -236,6 +236,31 @@ public static class StatusText
         return $"    已分摊 {UsageEvents.FormatCny(totalCny)}（月费 {UsageEvents.FormatCny(planCny)} + 按需 {UsageEvents.FormatCny(onDemandCny)}）· 汇率 {rate}";
     }
 
+    public const string XReportNotice = "这个套餐只提供每周用量，没有逐条请求明细。";
+
+    public static string FormatXReportBody(UsageSnapshot? usage, double? lastRemaining = null)
+    {
+        if (usage is null)
+        {
+            var pending = XReportNotice;
+            if (lastRemaining is { } left)
+                pending += Environment.NewLine + Environment.NewLine + "剩余  " + left.ToString("0.0", CultureInfo.InvariantCulture) + "%";
+            return pending;
+        }
+        var lines = new List<string> { FormatPlanCaption(usage.MembershipType), XReportNotice, "" };
+        lines.Add("已用  " + usage.UsedPercent.ToString("0.0", CultureInfo.InvariantCulture) + "%");
+        lines.Add("剩余  " + usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture) + "%");
+        if (usage.UsageResetAt is { } reset)
+        {
+            var endText = FormatResetDate(reset, includeTime: true);
+            var remaining = FormatCycleRemaining(reset, usage.DaysRemaining);
+            lines.Add(string.IsNullOrEmpty(remaining) ? $"重置  {endText}" : $"重置  {endText}（{remaining}）");
+        }
+        if (usage.PrepaidRemainingCents is { } prepaid)
+            lines.Add($"预付余额  {UsageParser.FormatUsdCents(prepaid)}");
+        return string.Join(Environment.NewLine, lines);
+    }
+
     public static string FormatReportSyncResult(
         int count,
         int fetched,

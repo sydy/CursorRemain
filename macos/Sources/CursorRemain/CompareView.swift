@@ -142,15 +142,17 @@ func compareSyncOne(client: CursorClient, account: Account, directory: URL?, onP
     do {
         var snap = try await client.fetchUsageSummary(sessionToken: token, timeout: 20)
         AccountValidity.applyEndOverride(&snap, account: account)
-        _ = try await UsageEvents.sync(
-            client: client,
-            token: token,
-            accountId: account.id,
-            usage: snap,
-            teamScope: false,
-            directory: directory,
-            onPage: onPage
-        )
+        if !snap.isXSubscription {
+            _ = try await UsageEvents.sync(
+                client: client,
+                token: token,
+                accountId: account.id,
+                usage: snap,
+                teamScope: false,
+                directory: directory,
+                onPage: onPage
+            )
+        }
         return CompareSyncOutcome(
             accountId: account.id,
             membership: snap.membershipType,

@@ -120,6 +120,27 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(StatusText.formatCompareHint(mixedWindows: false), StatusText.compareHint)
         XCTAssertEqual(StatusText.formatReportCacheStatus(count: 12, accountLabel: "工作号"), "当前：工作号 · 本地 12 条，正在刷新…")
         XCTAssertEqual(StatusText.formatReportCacheStatus(count: 0), "本地还没有明细，正在同步…")
+        let weekly = UsageSnapshot(
+            usedPercent: 13.8,
+            remainingPercent: 86.2,
+            membershipType: "Premium",
+            daysRemaining: 6,
+            isXSubscription: true,
+            usageResetAt: "2026-10-21T11:42:40.710Z",
+            prepaidRemainingCents: 1500
+        )
+        let body = StatusText.formatXReportBody(weekly)
+        XCTAssertEqual(StatusText.formatXReportNotice(), "这个套餐只提供每周用量，没有逐条请求明细。")
+        XCTAssertTrue(body.contains(StatusText.formatXReportNotice()))
+        XCTAssertTrue(body.contains("已用  13.8%"))
+        XCTAssertTrue(body.contains("剩余  86.2%"))
+        XCTAssertTrue(body.contains("重置  "))
+        XCTAssertTrue(body.contains("预付余额"))
+        XCTAssertFalse(body.contains("Token"))
+        let pending = StatusText.formatXReportBody(nil, lastRemaining: 86.2)
+        XCTAssertTrue(pending.contains(StatusText.formatXReportNotice()))
+        XCTAssertTrue(pending.contains("剩余  86.2%"))
+        XCTAssertFalse(pending.contains("已用"))
         XCTAssertEqual(StatusText.formatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"), "登录已过期，请到设置重新粘贴 Token")
         XCTAssertEqual(StatusText.formatReportSyncError("未配置 Token，请打开设置粘贴"), "未配置 Token，请先在设置里导入账号")
         XCTAssertTrue(StatusText.formatReportSyncError("HTTP 429").hasPrefix("同步失败："))

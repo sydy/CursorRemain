@@ -6,7 +6,7 @@ namespace CursorRemain;
 
 sealed class ReportForm : Form
 {
-    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "", ReportAllocationWindow? Allocation = null, string AccountLabel = "");
+    public readonly record struct ReportState(string Token, string AccountId, UsageSnapshot? Usage, bool IsTeam, CnySpendSettings Spend, string ReportStartDate = "", string ReportEndDate = "", ReportAllocationWindow? Allocation = null, string AccountLabel = "", bool WeeklyOnly = false, double? LastRemaining = null);
 
     const int DesignWidth = 1100;
     const int DesignHeight = 880;
@@ -66,6 +66,13 @@ sealed class ReportForm : Form
         Margin = new Padding(0, 2, 0, 0),
     };
     readonly Control _scopeTag;
+    readonly Panel _weeklyHost = new() { Dock = DockStyle.Fill, Visible = false, Padding = new Padding(24, 28, 24, 24) };
+    readonly Label _weeklyTitle = new() { AutoSize = true, Text = "每周用量" };
+    readonly Label _weeklyBody = new()
+    {
+        AutoSize = true,
+        MaximumSize = new Size(720, 4000),
+    };
     readonly Label _detailsLabel = UiChrome.Heading("明细");
     readonly TableLayoutPanel _root = new()
     {
@@ -210,6 +217,22 @@ sealed class ReportForm : Form
         _root.Controls.Add(_split, 0, 3);
         _split.Resize += (_, _) => PlaceSplitter();
         Controls.Add(_root);
+        var weeklyStack = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            Dock = DockStyle.Top,
+        };
+        weeklyStack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        weeklyStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        weeklyStack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        _weeklyTitle.Margin = new Padding(0, 0, 0, 8);
+        _weeklyBody.Margin = new Padding(0);
+        weeklyStack.Controls.Add(_weeklyTitle, 0, 0);
+        weeklyStack.Controls.Add(_weeklyBody, 0, 1);
+        _weeklyHost.Controls.Add(weeklyStack);
+        Controls.Add(_weeklyHost);
 
         _scope.SelectedIndexChanged += (_, _) =>
         {
@@ -481,6 +504,15 @@ sealed class ReportForm : Form
         var st = _state();
         LoadSavedDates(st);
         UpdateScopeVisible(st.IsTeam);
+        if (st.WeeklyOnly)
+        {
+            ShowWeeklyReport(st);
+            _syncing = false;
+            _syncBtn.Enabled = true;
+            Reveal();
+            return;
+        }
+        ShowEventReport();
         if (string.IsNullOrWhiteSpace(st.Token))
         {
             _status.Text = StatusText.FormatReportSyncResult(0, 0, "", hasToken: false);
@@ -674,6 +706,23 @@ sealed class ReportForm : Form
             ResumeLayout(true);
             NativeTheme.SetRedraw(this, true);
         }
+    }
+
+    void ShowWeeklyReport(ReportState state)
+    {
+        _weeklyTitle.Font = UiChrome.UiFont(16f, FontStyle.Bold);
+        _weeklyBody.Font = UiChrome.UiFont(11f);
+        _weeklyBody.Text = StatusText.FormatXReportBody(state.Usage, state.LastRemaining);
+        _root.Visible = false;
+        _weeklyHost.Visible = true;
+        _weeklyHost.BringToFront();
+    }
+
+    void ShowEventReport()
+    {
+        if (!_weeklyHost.Visible && _root.Visible) return;
+        _weeklyHost.Visible = false;
+        _root.Visible = true;
     }
 
     void Reveal()

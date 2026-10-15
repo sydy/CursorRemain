@@ -316,6 +316,29 @@ def format_report_spend_kpi(
     )
 
 
+def format_x_report_notice() -> str:
+    return "这个套餐只提供每周用量，没有逐条请求明细。"
+
+
+def format_x_report_body(usage: UsageSnapshot | None, last_remaining: float | None = None) -> str:
+    """新套餐没有请求明细，报表只展示每周额度。"""
+    if usage is None:
+        text = format_x_report_notice()
+        if last_remaining is not None:
+            text += f"\n\n剩余  {last_remaining:.1f}%"
+        return text
+    lines = [format_plan_caption(usage.membership_type), format_x_report_notice(), ""]
+    lines.append(f"已用  {usage.used_percent:.1f}%")
+    lines.append(f"剩余  {usage.remaining_percent:.1f}%")
+    if usage.usage_reset_at:
+        end = format_reset_date(usage.usage_reset_at, include_time=True)
+        remaining = format_cycle_remaining(usage.usage_reset_at, usage.days_remaining)
+        lines.append(f"重置  {end}（{remaining}）" if remaining else f"重置  {end}")
+    if usage.prepaid_remaining_cents is not None:
+        lines.append(f"预付余额  {format_usd_cents(usage.prepaid_remaining_cents)}")
+    return "\n".join(lines)
+
+
 def format_report_sync_result(
     count: int,
     fetched: int,
