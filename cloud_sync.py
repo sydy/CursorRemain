@@ -1,4 +1,4 @@
-"""云同步 HTTP 客户端。服务端地址写死，口令只用于本地加解密。"""
+"""云同步 HTTP 客户端。服务端地址写死。信封模式的口令只用于本地加解密。"""
 
 from __future__ import annotations
 
@@ -17,9 +17,11 @@ from account_sync import (
     merge_snapshots,
     now_iso,
     snapshot_from_config,
+    normalize_sync_storage,
     snapshot_identity,
     sync_ready,
     trim_note,
+    uses_server_store,
 )
 
 API_BASE = "https://sync.harker.cn"
@@ -46,7 +48,11 @@ def apply_session(cfg: dict[str, Any], email: str, password: str, tokens: dict[s
     cfg["cloud_email"] = str(email or "").strip().lower()
     cfg["cloud_access_token"] = str(tokens.get("access_token") or "")
     cfg["cloud_refresh_token"] = str(tokens.get("refresh_token") or "")
-    cfg["sync_secret"] = password
+    mode = str(tokens.get("sync_storage") or "").strip().lower()
+    if mode in {"server", "envelope"}:
+        cfg["sync_storage"] = mode
+    if mode != "server":
+        cfg["sync_secret"] = password
     cfg["sync_enabled"] = bool(cfg["cloud_access_token"] or cfg["cloud_refresh_token"])
     cfg["sync_last_error"] = ""
 
@@ -120,6 +126,25 @@ def login(email: str, password: str, *, requester: Requester | None = None, base
     return payload
 
 
+def set_storage(
+    cfg: dict[str, Any],
+    mode: str,
+    *,
+    requester: Requester | None = None,
+    base: str = API_BASE,
+) -> str:
+    value = normalize_sync_storage(mode)
+    if str(cfg.get("cloud_access_token") or cfg.get("cloud_refresh_token") or "").strip():
+        status, payload = _authed(
+            cfg, "PUT", "/v1/me/storage", body={"mode": value}, requester=requester, base=base
+        )
+        if status >= 400:
+            raise CloudSyncError(_detail(payload, "无法切换同步方式"), status)
+        value = str(payload.get("sync_storage") or value)
+    cfg["sync_storage"] = value
+    return value
+
+
 def logout(cfg: dict[str, Any], *, requester: Requester | None = None, base: str = API_BASE) -> None:
     refresh = str(cfg.get("cloud_refresh_token") or "")
     if refresh:
@@ -150,7 +175,7 @@ def change_password(
     revision = int(payload.get("revision") or 0)
     envelope = payload.get("envelope")
     sealed = None
-    if envelope:
+    if envelope and not uses_server_store(cfg):
         remote = decrypt_envelope(envelope, old)
         sealed = encrypt_envelope(remote, new)
     body: dict[str, Any] = {
@@ -168,7 +193,7 @@ def change_password(
         revision = int(payload.get("revision") or 0)
         envelope = payload.get("envelope")
         body["revision"] = revision
-        if envelope:
+        if envelope and not uses_server_store(cfg):
             remote = decrypt_envelope(envelope, old)
             body["envelope"] = encrypt_envelope(remote, new)
         status, result = _authed(cfg, "POST", "/v1/auth/password", body=body, requester=requester, base=base)
@@ -242,6 +267,98 @@ def empty_snapshot() -> dict[str, Any]:
     }
 
 
+def _reconcile_server(
+    cfg: dict[str, Any],
+    status: dict[str, Any],
+    *,
+    now: datetime | None,
+    write: bool,
+    requester: Requester | None,
+    base: str,
+    logger: Logger | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ensure_device_id(cfg)
+    stamp = now_iso(now)
+    local = snapshot_from_config(cfg)
+    local["device_id"] = str(cfg.get("sync_device_id") or "")
+    try:
+        code, payload = _authed(cfg, "GET", "/v1/store", requester=requester, base=base)
+        if code >= 400:
+            raise CloudSyncError(_detail(payload, "无法读取云端同步数据"), code)
+        revision = int(payload.get("revision") or 0)
+        remote = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else empty_snapshot()
+        merged = merge_snapshots(local, remote)
+        changed = apply_snapshot_to_config(cfg, merged)
+        if write and snapshot_identity(merged) != snapshot_identity(remote):
+            to_write = dict(merged)
+            to_write["updated_at"] = stamp
+            to_write["device_id"] = str(cfg.get("sync_device_id") or "")
+            put_code, put_payload = _authed(
+                cfg, "PUT", "/v1/store", body={"revision": revision, "snapshot": to_write}, requester=requester, base=base
+            )
+            if put_code == 409:
+                code, payload = _authed(cfg, "GET", "/v1/store", requester=requester, base=base)
+                if code >= 400:
+                    raise CloudSyncError(_detail(payload, "同步冲突，请重试"), code)
+                revision = int(payload.get("revision") or 0)
+                remote = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else empty_snapshot()
+                local = snapshot_from_config(cfg)
+                local["device_id"] = str(cfg.get("sync_device_id") or "")
+                merged = merge_snapshots(local, remote)
+                changed = apply_snapshot_to_config(cfg, merged) or changed
+                if snapshot_identity(merged) != snapshot_identity(remote):
+                    to_write = dict(merged)
+                    to_write["updated_at"] = stamp
+                    to_write["device_id"] = str(cfg.get("sync_device_id") or "")
+                    put_code, put_payload = _authed(
+                        cfg,
+                        "PUT",
+                        "/v1/store",
+                        body={"revision": revision, "snapshot": to_write},
+                        requester=requester,
+                        base=base,
+                    )
+                else:
+                    put_code = 200
+                    put_payload = {"revision": revision}
+            if put_code >= 400:
+                raise CloudSyncError(_detail(put_payload, "无法写入云端同步数据"), put_code)
+            cfg["cloud_revision"] = int(put_payload.get("revision") or revision + 1)
+            status["pushed"] = True
+        else:
+            cfg["cloud_revision"] = revision
+        cfg["sync_last_at"] = stamp
+        cfg["sync_storage"] = "server"
+        status["ok"] = True
+        status["changed"] = changed
+        if changed and status["pushed"]:
+            status["message"] = "已合并并对齐云端"
+        elif changed:
+            status["message"] = "已从云端导入账号、设置和用量"
+        elif status["pushed"]:
+            status["message"] = "已上传到云端"
+        else:
+            status["message"] = "账号、设置和用量已与云端一致"
+        cfg["sync_last_error"] = ""
+        return cfg, status
+    except CloudSyncError as exc:
+        if exc.status == 401:
+            clear_session(cfg)
+            message = "登录已过期，请重新登录"
+        else:
+            message = str(exc) or "同步失败"
+        cfg["sync_last_error"] = message
+        status["message"] = message
+        (logger or _noop_logger)("cloud sync failed: %s", message)
+        return cfg, status
+    except _RECONCILE_ERRORS as exc:
+        message = str(exc) or "同步失败"
+        cfg["sync_last_error"] = message
+        status["message"] = message
+        (logger or _noop_logger)("cloud sync failed: %s", message)
+        return cfg, status
+
+
 def reconcile(
     cfg: dict[str, Any],
     *,
@@ -263,6 +380,8 @@ def reconcile(
         status["message"] = reason
         cfg["sync_last_error"] = reason
         return cfg, status
+    if uses_server_store(cfg):
+        return _reconcile_server(cfg, status, now=now, write=write, requester=requester, base=base, logger=logger)
 
     ensure_device_id(cfg)
     stamp = now_iso(now)

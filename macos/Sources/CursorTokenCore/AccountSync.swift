@@ -1108,8 +1108,19 @@ public enum AccountSync {
         ConfigStore.atomicWrite(data, to: url)
     }
 
+    public static func normalizeSyncStorage(_ raw: String, secret: String = "") -> String {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value == "server" || value == "envelope" { return value }
+        return secret.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "server" : "envelope"
+    }
+
+    public static func usesServerStore(_ cfg: AppConfig) -> Bool {
+        normalizeSyncStorage(cfg.syncStorage, secret: cfg.syncSecret) == "server"
+    }
+
     public static func syncReady(_ cfg: AppConfig) -> String {
         if !cfg.syncEnabled || !cfg.cloudLoggedIn { return "请先登录云同步" }
+        if usesServerStore(cfg) { return "" }
         if cfg.syncSecret.trimmingCharacters(in: .whitespaces).isEmpty { return "请重新登录以解锁同步密钥" }
         return ""
     }

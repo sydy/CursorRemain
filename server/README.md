@@ -60,12 +60,15 @@ docker compose up -d
 | POST | `/v1/auth/refresh` | `{refresh_token}` |
 | POST | `/v1/auth/logout` | 作废 refresh |
 | POST | `/v1/auth/password` | 修改登录密码：`{old_password,new_password,revision,envelope?}`。有云端密文时客户端需带上用当前数据加密口令重封的信封；成功后作废全部 refresh |
-| GET | `/v1/me` | 当前用户 |
-| DELETE | `/v1/me` | `{password}` 注销账号并删除云端密文 |
+| GET | `/v1/me` | 当前用户，含 `sync_storage`（`server` 或 `envelope`） |
+| PUT | `/v1/me/storage` | `{mode}` 切换同步方式。新注册默认 `server`；旧库升级默认 `envelope` |
+| DELETE | `/v1/me` | `{password}` 注销账号并删除云端密文和明细 |
 | GET | `/v1/sync` | 取加密信封 + revision |
 | PUT | `/v1/sync` | `{revision, envelope}`，revision 不对返回 409 |
+| GET | `/v1/store` | 取明文明细快照 + revision |
+| PUT | `/v1/store` | `{revision, snapshot}`，按账号、删除记录、设置和用量拆成行；revision 不对返回 409 |
 
 登录密码至少 8 位，邮箱小写去重。新注册账号必须先验证邮箱；数据库升级时旧账号视为已验证。验证码 15 分钟过期，最多尝试 5 次；密码重置会撤销所有 refresh token。**密码重置只恢复账户登录，不会重置数据加密口令**。Access token 默认 15 分钟，refresh 30 天；过期或已作废的 refresh 会在登录 / 刷新时清掉。
-`PUT /v1/sync` 限制 JSON 约 1MB、ciphertext 长度，以及 KDF iterations 在 1000–600000。信封可带 `compression=gzip`。超限返回 413 或 400。
+`PUT /v1/sync` 限制 JSON 约 1MB、ciphertext 长度，以及 KDF iterations 在 1000–600000。信封可带 `compression=gzip`。`PUT /v1/store` 默认限制约 8MB。超限返回 413 或 400。两种存储互不覆盖：切到明细模式后，旧信封还在，但客户端不再读取它。
 
 SQLite 启动时若距上次备份超过 24 小时，会复制到 `data/backups/sync-*.db`，最多保留 7 份。

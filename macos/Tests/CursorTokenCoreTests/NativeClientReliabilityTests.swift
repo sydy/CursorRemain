@@ -217,6 +217,33 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(points[0].remaining, 12.5, accuracy: 0.001)
     }
 
+    func testServerStoreRetriesPutAfter409ThenSucceeds() {
+        var cfg = loggedIn()
+        cfg.syncStorage = "server"
+        var calls: [String] = []
+        CloudSync.testSend = { method, path, _, _ in
+            calls.append("\(method) \(path)")
+            switch (method, path, calls.count) {
+            case ("GET", "/v1/store", 1):
+                return ["revision": 1, "snapshot": [String: Any]()]
+            case ("PUT", "/v1/store", 2):
+                throw CursorAPIError("同步冲突，请重试", statusCode: 409)
+            case ("GET", "/v1/store", 3):
+                return ["revision": 2, "snapshot": [String: Any]()]
+            case ("PUT", "/v1/store", 4):
+                return ["revision": 3, "snapshot": [String: Any]()]
+            default:
+                throw CursorAPIError("unexpected \(method) \(path) #\(calls.count)")
+            }
+        }
+        let status = CloudSync.reconcile(&cfg)
+        XCTAssertTrue(status.ok, status.message)
+        XCTAssertTrue(status.pushed)
+        XCTAssertEqual(cfg.cloudRevision, 3)
+        XCTAssertEqual(cfg.syncStorage, "server")
+        XCTAssertEqual(calls, ["GET /v1/store", "PUT /v1/store", "GET /v1/store", "PUT /v1/store"])
+    }
+
     func testReconcileRetriesPutAfter409ThenSucceeds() {
         var cfg = loggedIn()
         var calls: [String] = []

@@ -96,6 +96,7 @@ public sealed class AppConfig
     public List<int> AlertNotifiedLevels { get; set; } = [];
     public bool ExhaustionNotified { get; set; }
     public bool SyncEnabled { get; set; }
+    public string SyncStorage { get; set; } = "";
     public string SyncSecret { get; set; } = "";
     public string SyncDeviceId { get; set; } = "";
     public string SyncLastAt { get; set; } = "";
@@ -700,6 +701,7 @@ public static class ConfigStore
         MigrateLegacyActualCny(cfg, raw);
         if (cfg.Accounts.Any(a => a.TokenDecryptFailed)) cfg.DecryptError = true;
         cfg.SyncEnabled = Bool(raw, "sync_enabled", false);
+        string storedSecret = "";
         if (raw.TryGetProperty("sync_secret", out var ss))
         {
             var stored = ss.GetString() ?? "";
@@ -711,7 +713,9 @@ public static class ConfigStore
                 cfg.SyncSecretDecryptFailed = true;
                 cfg.StoredSyncSecret = stored;
             }
+            storedSecret = cfg.SyncSecret;
         }
+        cfg.SyncStorage = AccountSync.NormalizeSyncStorage(Str(raw, "sync_storage"), storedSecret);
         cfg.SyncDeviceId = Str(raw, "sync_device_id").Trim();
         cfg.SyncLastAt = Str(raw, "sync_last_at").Trim();
         cfg.SyncLastError = Str(raw, "sync_last_error");
@@ -966,6 +970,7 @@ public static class ConfigStore
         alert_notified_levels = cfg.AlertNotifiedLevels,
         exhaustion_notified = cfg.ExhaustionNotified,
         sync_enabled = cfg.SyncEnabled,
+        sync_storage = AccountSync.NormalizeSyncStorage(cfg.SyncStorage, cfg.SyncSecret),
         sync_secret = TokenProtector.DiskToken(cfg.SyncSecret, cfg.StoredSyncSecret, cfg.SyncSecretDecryptFailed && string.IsNullOrEmpty(cfg.SyncSecret)),
         sync_device_id = cfg.SyncDeviceId,
         sync_last_at = cfg.SyncLastAt,

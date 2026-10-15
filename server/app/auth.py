@@ -176,14 +176,17 @@ def rotate_refresh(raw: str) -> tuple[str, str]:
 
 def get_user(user_id: str) -> dict | None:
     with lock():
-        row = get_conn().execute("SELECT id, email, password_hash, email_verified, created_at FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = get_conn().execute(
+            "SELECT id, email, password_hash, email_verified, sync_storage, created_at FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
     return dict(row) if row else None
 
 
 def get_user_by_email(email: str) -> dict | None:
     with lock():
         row = get_conn().execute(
-            "SELECT id, email, password_hash, email_verified, created_at FROM users WHERE email = ?",
+            "SELECT id, email, password_hash, email_verified, sync_storage, created_at FROM users WHERE email = ?",
             (email,),
         ).fetchone()
     return dict(row) if row else None
@@ -201,12 +204,24 @@ def create_user(email: str, password: str, *, email_verified: bool = True) -> di
     }
     with lock():
         conn = get_conn()
+        user["sync_storage"] = "server"
         conn.execute(
-            "INSERT INTO users (id, email, password_hash, email_verified, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user["id"], user["email"], user["password_hash"], user["email_verified"], user["created_at"]),
+            "INSERT INTO users (id, email, password_hash, email_verified, sync_storage, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user["id"], user["email"], user["password_hash"], user["email_verified"], user["sync_storage"], user["created_at"]),
         )
         conn.commit()
     return user
+
+
+def set_sync_storage(user_id: str, mode: str) -> str:
+    value = mode if mode in {"server", "envelope"} else ""
+    if not value:
+        raise HTTPException(status_code=400, detail="同步方式无效")
+    with lock():
+        conn = get_conn()
+        conn.execute("UPDATE users SET sync_storage = ? WHERE id = ?", (value, user_id))
+        conn.commit()
+    return value
 
 
 def create_email_code(user_id: str, purpose: str) -> str:
@@ -313,6 +328,10 @@ def delete_user(user_id: str) -> None:
     with lock():
         conn = get_conn()
         conn.execute("DELETE FROM sync_blobs WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sync_store WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sync_store_accounts WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sync_store_deleted WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sync_store_usage WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM refresh_tokens WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM email_codes WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM email_code_limits WHERE user_id = ?", (user_id,))
@@ -336,5 +355,6 @@ def token_payload(user: dict, refresh: str) -> dict:
         "access_token": create_access_token(user["id"], user["email"]),
         "refresh_token": refresh,
         "email": user["email"],
+        "sync_storage": user.get("sync_storage") or "envelope",
         "expires_in": settings.ACCESS_MINUTES * 60,
     }

@@ -44,9 +44,17 @@ public enum CloudSync {
         _ = try send(method: "POST", path: "/v1/auth/password-reset/confirm", access: nil, body: ["email": email, "code": code, "new_password": newPassword])
     }
 
-    public static func login(email: String, password: String) throws -> (email: String, access: String, refresh: String) {
+    public static func login(email: String, password: String) throws -> (email: String, access: String, refresh: String, storage: String) {
         let payload = try send(method: "POST", path: "/v1/auth/login", access: nil, body: ["email": email, "password": password])
         return try readAuth(payload)
+    }
+
+    public static func setStorage(_ cfg: inout AppConfig, mode: String) throws {
+        let value = AccountSync.normalizeSyncStorage(mode)
+        if cfg.cloudLoggedIn {
+            _ = try authed(&cfg, method: "PUT", path: "/v1/me/storage", body: ["mode": value])
+        }
+        cfg.syncStorage = value
     }
 
     public static func changePassword(_ cfg: inout AppConfig, oldPassword: String, newPassword: String) throws {
@@ -62,7 +70,7 @@ public enum CloudSync {
             "new_password": next,
             "revision": revision,
         ]
-        if let envelope = got["envelope"] as? [String: Any] {
+        if !AccountSync.usesServerStore(cfg), let envelope = got["envelope"] as? [String: Any] {
             let remote = try AccountSync.decryptEnvelope(envelope, passphrase: dataKey)
             body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: dataKey)
         }
@@ -73,7 +81,7 @@ public enum CloudSync {
             let retry = try authed(&cfg, method: "GET", path: "/v1/sync", body: nil)
             revision = intValue(retry["revision"]) ?? 0
             body["revision"] = revision
-            if let envelope = retry["envelope"] as? [String: Any] {
+            if !AccountSync.usesServerStore(cfg), let envelope = retry["envelope"] as? [String: Any] {
                 let remote = try AccountSync.decryptEnvelope(envelope, passphrase: dataKey)
                 body["envelope"] = try AccountSync.encryptEnvelope(remote, passphrase: dataKey)
             }
@@ -141,6 +149,9 @@ public enum CloudSync {
             status.message = reason
             cfg.syncLastError = reason
             return status
+        }
+        if AccountSync.usesServerStore(cfg) {
+            return reconcileStore(&cfg, status: &status, now: now, write: write)
         }
         _ = AccountSync.ensureDeviceId(&cfg)
         let stamp = AccountSync.nowIso(now)
@@ -239,12 +250,86 @@ public enum CloudSync {
         return try AccountSync.decryptEnvelope(envelope, passphrase: passphrase)
     }
 
-    static func readAuth(_ payload: [String: Any]) throws -> (email: String, access: String, refresh: String) {
+    static func reconcileStore(_ cfg: inout AppConfig, status: inout SyncStatus, now: Date?, write: Bool) -> SyncStatus {
+        _ = AccountSync.ensureDeviceId(&cfg)
+        let stamp = AccountSync.nowIso(now)
+        var local = AccountSync.snapshotFromConfig(cfg)
+        local.deviceId = cfg.syncDeviceId
+        do {
+            let got = try authed(&cfg, method: "GET", path: "/v1/store", body: nil)
+            var revision = intValue(got["revision"]) ?? 0
+            let remote = (got["snapshot"] as? [String: Any]).map(AccountSync.parseSnapshot) ?? SyncSnapshot()
+            var merged = AccountSync.mergeSnapshots(local, remote)
+            var changed = AccountSync.applySnapshotToConfig(&cfg, merged)
+            if write && AccountSync.snapshotIdentity(merged) != AccountSync.snapshotIdentity(remote) {
+                merged.updatedAt = stamp
+                merged.deviceId = cfg.syncDeviceId
+                let put = try putStore(&cfg, merged: merged, revision: revision, stamp: stamp)
+                changed = put.changed || changed
+                revision = put.revision
+                status.pushed = put.pushed
+            }
+            cfg.cloudRevision = revision
+            cfg.syncLastAt = stamp
+            cfg.syncStorage = "server"
+            status.ok = true
+            status.changed = changed
+            if changed && status.pushed { status.message = "已合并并对齐云端" }
+            else if changed { status.message = "已从云端导入账号、设置和用量" }
+            else if status.pushed { status.message = "已上传到云端" }
+            else { status.message = "账号、设置和用量已与云端一致" }
+            cfg.syncLastError = ""
+            return status
+        } catch let err as CursorAPIError where err.statusCode == 401 {
+            clearSession(&cfg)
+            status.message = "登录已过期，请重新登录"
+            cfg.syncLastError = status.message
+            return status
+        } catch {
+            let message = (error as? CursorAPIError)?.message ?? error.localizedDescription
+            AppLog.log("云同步失败: \(message.isEmpty ? "同步失败" : message)")
+            cfg.syncLastError = message.isEmpty ? "同步失败" : message
+            status.message = cfg.syncLastError
+            return status
+        }
+    }
+
+    static func putStore(_ cfg: inout AppConfig, merged: SyncSnapshot, revision: Int, stamp: String) throws -> (pushed: Bool, changed: Bool, revision: Int) {
+        func body(_ snap: SyncSnapshot, revision: Int) throws -> [String: Any] {
+            let raw = AccountSync.canonicalJSON(snap)
+            let snapshot = try JSONSerialization.jsonObject(with: Data(raw.utf8))
+            return ["revision": revision, "snapshot": snapshot]
+        }
+        var merged = merged
+        merged.updatedAt = stamp
+        merged.deviceId = cfg.syncDeviceId
+        do {
+            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, revision))
+            return (true, false, intValue(put["revision"]) ?? (revision + 1))
+        } catch let err as CursorAPIError where err.statusCode == 409 {
+            let got = try authed(&cfg, method: "GET", path: "/v1/store", body: nil)
+            let nextRevision = intValue(got["revision"]) ?? 0
+            let remote = (got["snapshot"] as? [String: Any]).map(AccountSync.parseSnapshot) ?? SyncSnapshot()
+            var local = AccountSync.snapshotFromConfig(cfg)
+            local.deviceId = cfg.syncDeviceId
+            merged = AccountSync.mergeSnapshots(local, remote)
+            let changed = AccountSync.applySnapshotToConfig(&cfg, merged)
+            if AccountSync.snapshotIdentity(merged) == AccountSync.snapshotIdentity(remote) {
+                return (false, changed, nextRevision)
+            }
+            merged.updatedAt = stamp
+            merged.deviceId = cfg.syncDeviceId
+            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, nextRevision))
+            return (true, changed, intValue(put["revision"]) ?? (nextRevision + 1))
+        }
+    }
+
+    static func readAuth(_ payload: [String: Any]) throws -> (email: String, access: String, refresh: String, storage: String) {
         let access = str(payload["access_token"])
         let refresh = str(payload["refresh_token"])
         let email = str(payload["email"])
         if access.isEmpty { throw CursorAPIError("登录失败") }
-        return (email, access, refresh)
+        return (email, access, refresh, str(payload["sync_storage"]))
     }
 
     static func authed(_ cfg: inout AppConfig, method: String, path: String, body: [String: Any]?) throws -> [String: Any] {

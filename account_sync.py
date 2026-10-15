@@ -993,11 +993,24 @@ def write_envelope(path: str, envelope: dict[str, Any]) -> None:
     os.replace(tmp, p)
 
 
+def normalize_sync_storage(raw: Any, secret: Any = "") -> str:
+    value = str(raw or "").strip().lower()
+    if value in {"server", "envelope"}:
+        return value
+    return "envelope" if str(secret or "").strip() else "server"
+
+
+def uses_server_store(cfg: dict[str, Any]) -> bool:
+    return normalize_sync_storage(cfg.get("sync_storage"), cfg.get("sync_secret")) == "server"
+
+
 def sync_ready(cfg: dict[str, Any]) -> str:
     if not cfg.get("sync_enabled"):
         return "请先登录云同步"
     if not str(cfg.get("cloud_access_token") or cfg.get("cloud_refresh_token") or "").strip():
         return "请先登录云同步"
+    if uses_server_store(cfg):
+        return ""
     if not str(cfg.get("sync_secret") or "").strip():
         return "请重新登录以解锁同步密钥"
     return ""
@@ -1046,6 +1059,10 @@ def import_from_file(cfg: dict[str, Any], path: str, passphrase: str | None = No
 def normalize_sync_config(cfg: dict[str, Any], *, raw: dict[str, Any] | None = None) -> dict[str, Any]:
     source = raw if isinstance(raw, dict) else cfg
     cfg["sync_secret"] = str(source.get("sync_secret", cfg.get("sync_secret", "")) or "")
+    cfg["sync_storage"] = normalize_sync_storage(
+        source.get("sync_storage", cfg.get("sync_storage", "")),
+        cfg["sync_secret"],
+    )
     cfg["sync_device_id"] = str(source.get("sync_device_id", cfg.get("sync_device_id", "")) or "").strip()
     cfg["sync_last_at"] = str(source.get("sync_last_at", cfg.get("sync_last_at", "")) or "").strip()
     cfg["sync_last_error"] = str(source.get("sync_last_error", cfg.get("sync_last_error", "")) or "")

@@ -39,6 +39,38 @@ public class CloudSyncTests
     }
 
     [Fact]
+    public async Task ServerStoreRetriesPutAfter409ThenSucceeds()
+    {
+        var cfg = LoggedIn();
+        cfg.SyncStorage = "server";
+        var handler = new ScriptedHandler
+        {
+            Steps =
+            [
+                (HttpMethod.Get, "/v1/store", 200, """{"revision":1,"snapshot":{}}"""),
+                (HttpMethod.Put, "/v1/store", 409, """{"detail":"同步冲突，请重试"}"""),
+                (HttpMethod.Get, "/v1/store", 200, """{"revision":2,"snapshot":{}}"""),
+                (HttpMethod.Put, "/v1/store", 200, """{"revision":3,"snapshot":{}}"""),
+            ],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg);
+            Assert.True(status.Ok, status.Message);
+            Assert.True(status.Pushed);
+            Assert.Equal(3, cfg.CloudRevision);
+            Assert.Equal("server", cfg.SyncStorage);
+            Assert.Equal(["GET /v1/store", "PUT /v1/store", "GET /v1/store", "PUT /v1/store"], handler.Calls);
+        }
+        finally
+        {
+            CloudSync.TestHttp = null;
+        }
+    }
+
+    [Fact]
     public async Task Reconcile409ThenMatchingRemoteSkipsSecondPut()
     {
         var cfg = LoggedIn();
