@@ -38,13 +38,31 @@ gh release edit latest \
 
 # GitHub ignores target_commitish when the tag already exists, so the Releases
 # page would keep showing the original tag commit. Force-move the tag.
-if ! gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" \
-  -f sha="${GITHUB_SHA}" \
-  -F force=true >/dev/null; then
-  gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
-    -f ref="refs/tags/latest" \
-    -f sha="${GITHUB_SHA}" >/dev/null
-fi
+# Windows and macOS publish in parallel and both run this script; a 422 from
+# the loser is success when the tag already points at this commit.
+move_latest_tag() {
+  local attempt current
+  for attempt in 1 2 3 4 5; do
+    current="$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" --jq .object.sha 2>/dev/null || true)"
+    if [[ "$current" == "${GITHUB_SHA}" ]]; then
+      return 0
+    fi
+    if gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" \
+      -f sha="${GITHUB_SHA}" \
+      -F force=true >/dev/null; then
+      return 0
+    fi
+    if gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+      -f ref="refs/tags/latest" \
+      -f sha="${GITHUB_SHA}" >/dev/null; then
+      return 0
+    fi
+    sleep "$attempt"
+  done
+  current="$(gh api "repos/${GITHUB_REPOSITORY}/git/refs/tags/latest" --jq .object.sha 2>/dev/null || true)"
+  [[ "$current" == "${GITHUB_SHA}" ]]
+}
+move_latest_tag
 
 # Drop leftover CursorTokenTray assets from the rolling latest release.
 for asset in CursorTokenTray-windows.zip CursorTokenTray-macos.zip; do
