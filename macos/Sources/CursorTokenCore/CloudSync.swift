@@ -304,7 +304,7 @@ public enum CloudSync {
         merged.updatedAt = stamp
         merged.deviceId = cfg.syncDeviceId
         do {
-            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, revision))
+            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, revision: revision))
             return (true, false, intValue(put["revision"]) ?? (revision + 1))
         } catch let err as CursorAPIError where err.statusCode == 409 {
             let got = try authed(&cfg, method: "GET", path: "/v1/store", body: nil)
@@ -319,7 +319,7 @@ public enum CloudSync {
             }
             merged.updatedAt = stamp
             merged.deviceId = cfg.syncDeviceId
-            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, nextRevision))
+            let put = try authed(&cfg, method: "PUT", path: "/v1/store", body: try body(merged, revision: nextRevision))
             return (true, changed, intValue(put["revision"]) ?? (nextRevision + 1))
         }
     }

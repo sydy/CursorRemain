@@ -212,15 +212,6 @@ jobs:
             CursorRemain-windows.zip
             CursorRemain-windows-light.zip
             CursorRemain-windows-setup.exe
-          body: |
-            滚动 `main` 预发布（`${{ github.sha }}`），随每次合入覆盖更新。正式版见最新 v* Release。
-            Windows 安装版与 zip 为自包含包，无需另装 .NET；自动更新在本机已有 .NET 8 Desktop Runtime 时会改下不含运行时的轻量包。macOS 为 Swift `.app`。
-      - name: Refresh latest release notes and tag
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: bash .github/scripts/update-latest-release.sh
       - name: Publish official v* release
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -238,11 +229,10 @@ jobs:
           generate_release_notes: true
           make_latest: true
 
-  # Do not wait on the Python/.NET test job. Windows publishes the rolling
-  # `latest` notes from this same commit without that job. If macOS waits and
-  # the test fails, the notes move to a new SHA while CursorRemain-macos.zip
-  # stays stale, and the menu-bar app quits into a hash mismatch with nothing
-  # left running. Swift tests still gate this job.
+  # Do not wait on the Python/.NET test job. Swift tests still gate this job.
+  # Only this job rewrites the rolling `latest` notes. Windows uploads its
+  # zips without moving that SHA, so a skipped macOS build cannot advertise a
+  # commit whose CursorRemain-macos.zip is still the previous one.
   build-macos:
     name: Build macOS
     runs-on: macos-latest
