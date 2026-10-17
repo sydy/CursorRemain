@@ -7,7 +7,7 @@ public static class StatusText
 {
     public static string FormatSummary(UsageSnapshot? usage, string? error, string? updatedAt, string? accountLabel = null)
     {
-        if (error is not null) return $"状态: {error} | 更新 {updatedAt ?? "—"}";
+        if (error is not null) return $"状态: {error} | 更新 {SummaryClock(updatedAt)}";
         if (usage is null) return "状态: 等待刷新…";
         var auto = usage.AutoPercentUsed is null ? "—" : usage.AutoPercentUsed.Value.ToString("0.0", CultureInfo.InvariantCulture) + "%";
         var api = usage.ApiPercentUsed is null ? "—" : usage.ApiPercentUsed.Value.ToString("0.0", CultureInfo.InvariantCulture) + "%";
@@ -20,12 +20,12 @@ public static class StatusText
         {
             var prepaid = usage.PrepaidRemainingCents is { } cents ? $" | 预付余额 {UsageParser.FormatUsdCents(cents)}" : "";
             var weekly = $"每周额度 {usage.UsedPercent.ToString("0.0", CultureInfo.InvariantCulture)}%";
-            return $"剩余 {usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}% | {plan} | {weekly}{prepaid} | 预计可用 {est} | 更新 {updatedAt ?? "—"}";
+            return $"剩余 {usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}% | {plan} | {weekly}{prepaid} | 预计可用 {est} | 更新 {SummaryClock(updatedAt)}";
         }
         var grok = usage.ShowsGrokBot && usage.GrokBotRemainingPercent is { } grokLeft
             ? $" | Grok Bot 剩余 {grokLeft.ToString("0.0", CultureInfo.InvariantCulture)}%"
             : "";
-        return $"剩余 {usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}% | {plan} | {spend}{tokens}First-party {auto} | API {api}{grok} | 预计可用 {est} | 更新 {updatedAt ?? "—"}";
+        return $"剩余 {usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}% | {plan} | {spend}{tokens}First-party {auto} | API {api}{grok} | 预计可用 {est} | 更新 {SummaryClock(updatedAt)}";
     }
 
     public static string FormatEstimatedDays(UsageSnapshot usage)
@@ -154,7 +154,7 @@ public static class StatusText
                 rows.Add(("预计可用", FormatEstimatedDays(usage)));
             }
             else if (usage.EstimatedUsableDays is not null) rows.Add(("预计可用", FormatEstimatedDays(usage)));
-            rows.Add(("更新", updatedAt ?? DateTime.Now.ToString("HH:mm:ss")));
+            rows.Add(("更新", FormatUpdateClock(updatedAt)));
             return rows;
         }
         if (usage.ShowsAmount) rows.Add(("金额", UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)));
@@ -189,7 +189,7 @@ public static class StatusText
             rows.Add(("预计可用", FormatEstimatedDays(usage)));
         }
         else if (usage.EstimatedUsableDays is not null) rows.Add(("预计可用", FormatEstimatedDays(usage)));
-        rows.Add(("更新", updatedAt ?? DateTime.Now.ToString("HH:mm:ss")));
+        rows.Add(("更新", FormatUpdateClock(updatedAt)));
         return rows;
     }
 
@@ -396,20 +396,59 @@ public static class StatusText
     public static string FormatAccountCheckStatus(Account account)
     {
         if (account.TokenDecryptFailed) return "无法解密";
-        if (account.LastRemaining is { } remaining) return $"剩余 {remaining:0}%";
         var err = (account.LastError ?? "").Trim();
-        if (err.Length == 0) return string.IsNullOrWhiteSpace(account.Token) ? "未配置" : "未检查";
-        if (Token.IsAuthErrorMessage(err)) return "已失效";
-        return err.Length > 16 ? err[..16] + "…" : err;
+        if (err.Length > 0)
+        {
+            if (Token.IsAuthErrorMessage(err)) return "已失效";
+            if (IsUnreachableStatus(err)) return "无法连接";
+            return err.Length > 16 ? err[..16] + "…" : err;
+        }
+        if (account.LastRemaining is { } remaining) return $"剩余 {remaining:0}%";
+        return string.IsNullOrWhiteSpace(account.Token) ? "未配置" : "未检查";
     }
 
     public static string FormatAccountCheckTime(Account account)
     {
+        var checkedAt = (account.UpdatedAt ?? "").Trim();
+        if (checkedAt.Length > 0)
+        {
+            if (IsFullStamp(checkedAt))
+                return AccountSync.FormatLocal(checkedAt, "MM-dd HH:mm");
+            return checkedAt;
+        }
         var iso = (account.UsageUpdatedAt ?? "").Trim();
-        if (AccountSync.ParseIso(iso) is not null)
+        if (IsFullStamp(iso))
             return AccountSync.FormatLocal(iso, "MM-dd HH:mm");
-        var local = (account.UpdatedAt ?? "").Trim();
-        return local.Length == 0 ? "—" : local;
+        return "—";
+    }
+
+    static bool IsFullStamp(string value) => value.Contains('T') && AccountSync.ParseIso(value) is not null;
+
+    static string SummaryClock(string? value)
+    {
+        var text = (value ?? "").Trim();
+        if (text.Length == 0) return "—";
+        if (IsFullStamp(text)) return AccountSync.FormatLocal(text, "HH:mm:ss");
+        return text;
+    }
+
+    public static string FormatUpdateClock(string? value)
+    {
+        var text = (value ?? "").Trim();
+        if (IsFullStamp(text))
+            return AccountSync.FormatLocal(text, "HH:mm:ss");
+        if (text.Length > 0) return text;
+        return DateTime.Now.ToString("HH:mm:ss");
+    }
+
+    static bool IsUnreachableStatus(string error)
+    {
+        var text = error.ToLowerInvariant();
+        if (text.Contains("网络错误") || text.Contains("刷新失败") || text.Contains("无法连接")) return true;
+        if (text.Contains("timed out") || text.Contains("timeout") || text.Contains("超时")) return true;
+        if (text.Contains("offline") || text.Contains("not connected") || text.Contains("网络连接")) return true;
+        if (text.StartsWith("http 429") || text.StartsWith("http 408") || text.StartsWith("http 5")) return true;
+        return false;
     }
 
     public static string FormatAccountKind(Account account) =>

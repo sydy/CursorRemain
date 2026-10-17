@@ -198,10 +198,15 @@ public class NativeClientReliabilityTests
         Assert.Equal("未配置", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro" }));
         Assert.Equal("未检查", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro", Token = "tok" }));
         Assert.Equal("剩余 65%", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro", Token = "tok", LastRemaining = 65 }));
+        Assert.Equal("无法连接", StatusText.FormatAccountCheckStatus(new Account { Token = "tok", LastRemaining = 65, LastError = "网络错误: offline" }));
+        Assert.Equal("无法连接", StatusText.FormatAccountCheckStatus(new Account { Token = "tok", LastRemaining = 65, LastError = "刷新失败: timed out" }));
+        Assert.Equal("已失效", StatusText.FormatAccountCheckStatus(new Account { Token = "tok", LastRemaining = 30, LastError = "Token 已过期" }));
         Assert.Equal("已失效", StatusText.FormatAccountCheckStatus(new Account { LastError = "Token 已过期" }));
         Assert.Equal("无法解密", StatusText.FormatAccountCheckStatus(new Account { TokenDecryptFailed = true }));
         Assert.Equal("—", StatusText.FormatAccountCheckTime(new Account()));
-        Assert.Equal("11:08:00", StatusText.FormatAccountCheckTime(new Account { UpdatedAt = "11:08:00" }));
+        Assert.Equal("11:08:00", StatusText.FormatAccountCheckTime(new Account { UpdatedAt = "11:08:00", UsageUpdatedAt = "2026-09-29T01:03:00.000Z" }));
+        const string checkedAt = "2026-10-17T03:08:00.000Z";
+        Assert.Equal(AccountSync.FormatLocal(checkedAt, "MM-dd HH:mm"), StatusText.FormatAccountCheckTime(new Account { UpdatedAt = checkedAt, UsageUpdatedAt = "2026-09-29T01:03:00.000Z" }));
         Assert.NotEqual("—", StatusText.FormatAccountCheckTime(new Account { UsageUpdatedAt = "2026-10-17T03:08:00.000Z" }));
         Assert.Equal("临时", StatusText.FormatAccountKind(new Account { AccountKind = AccountValidity.Temporary }));
         Assert.Equal("Pro", StatusText.FormatAccountPlan(new Account { MembershipType = "Pro" }));

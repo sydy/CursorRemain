@@ -122,14 +122,15 @@ sealed class SettingsForm : Form
     readonly Action<AppConfig> _onSaved;
     readonly Func<string?, Task<ImportResult>> _import;
     readonly Func<bool, Task<string>> _checkUpdateAction;
+    readonly Action _requestRefresh;
 
     bool _importing;
     bool _loading;
     bool _fitting;
 
-    public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate)
+    public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate, Action requestRefresh)
     {
-        _cfg = cfg; _onSaved = onSaved; _import = import; _checkUpdateAction = checkUpdate;
+        _cfg = cfg; _onSaved = onSaved; _import = import; _checkUpdateAction = checkUpdate; _requestRefresh = requestRefresh;
         SuspendLayout();
         AutoScaleMode = AutoScaleMode.Dpi;
         AutoScaleDimensions = new SizeF(96F, 96F);
@@ -144,6 +145,7 @@ sealed class SettingsForm : Form
         var rename = ActionButton("重命名");
         var del = ActionButton("删除", UiButtonKind.Danger);
         var login = ActionButton("登录到 Cursor");
+        var checkAccounts = ActionButton("检查状态");
         var cur = ActionButton("从 Cursor 导入");
         var add = ActionButton("添加", UiButtonKind.Primary);
         var ff = ActionButton("Firefox 登录");
@@ -216,7 +218,7 @@ sealed class SettingsForm : Form
         _tabs.AddPage(SettingsLayout.AccountTab, MakeTab(
             UiChrome.Heading("账号", first: true),
             FollowRow(_accountHost),
-            FollowRow(ImportRow(rename, del, login)),
+            FollowRow(ImportRow(checkAccounts, rename, del, login)),
             FieldRow("账号类型", _kind, FormTone.FieldWidthCombo),
             _startRow,
             _durationRow,
@@ -294,6 +296,13 @@ sealed class SettingsForm : Form
             WriteKindFrom(_cfg.ActiveAccount);
             WriteActualCnyFrom(_cfg.ActiveAccount);
             WriteChannelFrom(_cfg.ActiveAccount);
+        };
+        checkAccounts.Click += (_, _) =>
+        {
+            if (_cfg.Accounts.Count == 0) return;
+            _pageStatus.Text = "正在检查账号状态…";
+            checkAccounts.Enabled = false;
+            _requestRefresh();
         };
         rename.Click += (_, _) => RenameActive();
         login.Click += async (_, _) => await LoginToCursor();
@@ -790,7 +799,7 @@ sealed class SettingsForm : Form
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "账号", FillWeight = 28, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "plan", HeaderText = "套餐", FillWeight = 16, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "status", HeaderText = "状态", FillWeight = 18, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "checked", HeaderText = "检查时间", FillWeight = 22, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "checked", HeaderText = "更新时间", FillWeight = 22, SortMode = DataGridViewColumnSortMode.NotSortable });
         grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
         return grid;
     }
@@ -891,24 +900,51 @@ sealed class SettingsForm : Form
         });
     }
 
+    public void FinishAccountCheck(bool done)
+    {
+        if (IsDisposed) return;
+        _loading = true;
+        try { FillAccountRows(); }
+        finally { _loading = false; }
+        if (!done) return;
+        if (_pageStatus.Text == "正在检查账号状态…") _pageStatus.Text = "";
+        foreach (Control button in Controls)
+            EnableCheckButton(button);
+    }
+
+    void EnableCheckButton(Control parent)
+    {
+        if (parent is Button button && button.Text == "检查状态")
+        {
+            button.Enabled = _cfg.Accounts.Count > 0;
+            return;
+        }
+        foreach (Control child in parent.Controls) EnableCheckButton(child);
+    }
+
+    void FillAccountRows()
+    {
+        _accounts.Rows.Clear();
+        foreach (var a in _cfg.Accounts)
+        {
+            var index = _accounts.Rows.Add(
+                a.DisplayLabel,
+                StatusText.FormatAccountPlan(a),
+                StatusText.FormatAccountCheckStatus(a),
+                StatusText.FormatAccountCheckTime(a),
+                StatusText.FormatAccountKind(a));
+            _accounts.Rows[index].Tag = a.Id;
+            if (a.Id == _cfg.ActiveAccountId) _accounts.Rows[index].Selected = true;
+        }
+    }
+
     void LoadFrom(AppConfig cfg)
     {
         _loading = true;
         try
         {
             _cfg = cfg;
-            _accounts.Rows.Clear();
-            foreach (var a in cfg.Accounts)
-            {
-                var index = _accounts.Rows.Add(
-                    a.DisplayLabel,
-                    StatusText.FormatAccountPlan(a),
-                    StatusText.FormatAccountCheckStatus(a),
-                    StatusText.FormatAccountCheckTime(a),
-                    StatusText.FormatAccountKind(a));
-                _accounts.Rows[index].Tag = a.Id;
-                if (a.Id == cfg.ActiveAccountId) _accounts.Rows[index].Selected = true;
-            }
+            FillAccountRows();
             _token.Text = "";
             _token.PlaceholderText = "每行一个：Token，或 name@example.com:密码，或 账号：邮箱密码：密码";
             _interval.Text = cfg.RefreshIntervalMinutes.ToString();

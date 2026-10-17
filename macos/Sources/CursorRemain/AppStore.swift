@@ -14,6 +14,7 @@ final class AppStore: ObservableObject {
     @Published var settingsVisible = false
     @Published var flyoutVisible = false
     @Published var importStatus = ""
+    @Published var accountCheckStatus = ""
     @Published var saveError = ""
     @Published var updateStatus = ""
     @Published var updateBusy = false
@@ -74,6 +75,7 @@ final class AppStore: ObservableObject {
     func requestRefresh() {
         refreshGeneration += 1
         refreshNow = true
+        accountCheckStatus = config.accounts.isEmpty ? "" : "正在检查账号状态…"
         waitTask?.cancel()
     }
 
@@ -340,6 +342,7 @@ final class AppStore: ObservableObject {
             updatedAt = nil
             historyPoints = []
             dailyAvgBurn = nil
+            accountCheckStatus = ""
             return
         }
         let activeId = config.activeAccountId
@@ -414,6 +417,7 @@ final class AppStore: ObservableObject {
             reloadHistory()
         }
         for n in notices { notify(n.0, n.1) }
+        if !refreshNow { accountCheckStatus = "" }
         enqueueReconcile(refresh: false)
     }
 
@@ -451,11 +455,7 @@ final class AppStore: ObservableObject {
     }
 
     nonisolated private static func fetchOne(client: CursorClient, account: RefreshTarget) async -> Outcome {
-        let stamp: String = {
-            let f = DateFormatter()
-            f.dateFormat = "HH:mm:ss"
-            return f.string(from: Date())
-        }()
+        let stamp = AccountSync.nowIso()
         if account.decryptFailed {
             return Outcome(id: account.id, snap: nil, error: TokenProtector.decryptFailedMessage, authError: false, stamp: stamp)
         }

@@ -7,8 +7,9 @@ public enum StatusText {
         updatedAt: String?,
         accountLabel: String? = nil
     ) -> String {
+        let clock = formatStoredClock(updatedAt)
         if let errorMessage {
-            return "状态: \(errorMessage) | 更新 \(updatedAt ?? "—")"
+            return "状态: \(errorMessage) | 更新 \(clock)"
         }
         guard let usage else { return "状态: 等待刷新…" }
         let auto = usage.autoPercentUsed.map { String(format: "%.1f%%", $0) } ?? "—"
@@ -27,13 +28,13 @@ public enum StatusText {
         if usage.isXSubscription {
             let prepaid = usage.prepaidRemainingCents.map { " | 预付余额 \(UsageParser.formatUSDCents($0))" } ?? ""
             let weekly = String(format: "每周额度 %.1f%%", usage.usedPercent)
-            return "剩余 \(String(format: "%.1f", usage.remainingPercent))% | \(plan) | \(weekly)\(prepaid) | 预计可用 \(est) | 更新 \(updatedAt ?? "—")"
+            return "剩余 \(String(format: "%.1f", usage.remainingPercent))% | \(plan) | \(weekly)\(prepaid) | 预计可用 \(est) | 更新 \(clock)"
         }
         var grok = ""
         if usage.showsGrokBot, let left = usage.grokBotRemainingPercent {
             grok = String(format: " | Grok Bot 剩余 %.1f%%", left)
         }
-        return "剩余 \(String(format: "%.1f", usage.remainingPercent))% | \(plan) | \(spend)\(tokens)First-party \(auto) | API \(api)\(grok) | 预计可用 \(est) | 更新 \(updatedAt ?? "—")"
+        return "剩余 \(String(format: "%.1f", usage.remainingPercent))% | \(plan) | \(spend)\(tokens)First-party \(auto) | API \(api)\(grok) | 预计可用 \(est) | 更新 \(clock)"
     }
 
     public static func formatEstimatedDays(_ usage: UsageSnapshot) -> String {
@@ -187,12 +188,7 @@ public enum StatusText {
             } else if usage.estimatedUsableDays != nil {
                 rows.append(("预计可用", formatEstimatedDays(usage)))
             }
-            let stamp = updatedAt ?? {
-                let f = DateFormatter()
-                f.dateFormat = "HH:mm:ss"
-                return f.string(from: Date())
-            }()
-            rows.append(("更新", stamp))
+            rows.append(("更新", formatUpdateClock(updatedAt)))
             return rows
         }
         if usage.showsAmount {
@@ -238,11 +234,7 @@ public enum StatusText {
         } else if usage.estimatedUsableDays != nil {
             rows.append(("预计可用", formatEstimatedDays(usage)))
         }
-        let stamp = updatedAt ?? {
-            let f = DateFormatter()
-            f.dateFormat = "HH:mm:ss"
-            return f.string(from: Date())
-        }()
+        let stamp = formatUpdateClock(updatedAt)
         rows.append(("更新", stamp))
         return rows
     }
@@ -474,25 +466,60 @@ public enum StatusText {
 
     public static func formatAccountCheckStatus(_ account: Account) -> String {
         if account.tokenDecryptFailed { return "无法解密" }
+        let err = account.lastError.trimmingCharacters(in: .whitespaces)
+        if !err.isEmpty {
+            if Token.isAuthErrorMessage(err) { return "已失效" }
+            if isUnreachableStatus(err) { return "无法连接" }
+            if err.count > 16 { return String(err.prefix(16)) + "…" }
+            return err
+        }
         if let remaining = account.lastRemaining {
             return String(format: "剩余 %.0f%%", remaining)
         }
-        let err = account.lastError.trimmingCharacters(in: .whitespaces)
-        if err.isEmpty {
-            return account.token.trimmingCharacters(in: .whitespaces).isEmpty ? "未配置" : "未检查"
-        }
-        if Token.isAuthErrorMessage(err) { return "已失效" }
-        if err.count > 16 { return String(err.prefix(16)) + "…" }
-        return err
+        return account.token.trimmingCharacters(in: .whitespaces).isEmpty ? "未配置" : "未检查"
     }
 
     public static func formatAccountCheckTime(_ account: Account) -> String {
+        let checked = account.updatedAt.trimmingCharacters(in: .whitespaces)
+        if !checked.isEmpty {
+            if AccountSync.parseIso(checked) != nil {
+                return AccountSync.formatLocal(checked, format: "MM-dd HH:mm")
+            }
+            return checked
+        }
         let iso = account.usageUpdatedAt.trimmingCharacters(in: .whitespaces)
         if AccountSync.parseIso(iso) != nil {
             return AccountSync.formatLocal(iso, format: "MM-dd HH:mm")
         }
-        let local = account.updatedAt.trimmingCharacters(in: .whitespaces)
-        return local.isEmpty ? "—" : local
+        return "—"
+    }
+
+    static func formatStoredClock(_ value: String?) -> String {
+        let text = (value ?? "").trimmingCharacters(in: .whitespaces)
+        if text.isEmpty { return "—" }
+        if AccountSync.parseIso(text) != nil { return AccountSync.formatLocal(text, format: "HH:mm:ss") }
+        return text
+    }
+
+    public static func formatUpdateClock(_ value: String?) -> String {
+        let text = (value ?? "").trimmingCharacters(in: .whitespaces)
+        if AccountSync.parseIso(text) != nil {
+            return AccountSync.formatLocal(text, format: "HH:mm:ss")
+        }
+        if !text.isEmpty { return text }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: Date())
+    }
+
+    static func isUnreachableStatus(_ error: String) -> Bool {
+        let text = error.lowercased()
+        if text.contains("网络错误") || text.contains("刷新失败") || text.contains("无法连接") { return true }
+        if text.contains("timed out") || text.contains("timeout") || text.contains("超时") { return true }
+        if text.contains("offline") || text.contains("not connected") || text.contains("网络连接") { return true }
+        if text.hasPrefix("http 429") || text.hasPrefix("http 408") { return true }
+        if text.hasPrefix("http 5") { return true }
+        return false
     }
 
     public static func formatAccountKind(_ account: Account) -> String {

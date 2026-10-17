@@ -473,7 +473,7 @@ sealed partial class TrayContext : ApplicationContext
                 _settings = new SettingsForm(_config, cfg => ApplyConfig(cfg, true), async prefer =>
                 {
                     return await SessionImporter.ImportAndValidate(_client, SessionImporter.DefaultPreferBrowsers(), SessionImporter.OnlyBrowsers(prefer), _config.ExistingTokenVariants());
-                }, startImport, CheckUpdateAsync);
+                }, startImport, CheckUpdateAsync, RequestRefresh);
                 _settings.FormClosed += (_, _) => _settings = null;
                 _settings.Show();
                 if (focusToken) _settings.FocusToken();
