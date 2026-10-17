@@ -1115,6 +1115,48 @@ final class AccountSyncFixtureTests: XCTestCase {
         XCTAssertEqual(cfg.activeAccountId, "user_01B")
     }
 
+    func testAdoptReconciledKeepsAccountImportedDuringSync() {
+        var old = Account(id: "user_01OLD", label: "Old", token: "user_01OLD%3A%3Atok-old")
+        old.syncUpdatedAt = "2026-10-17T12:00:00.000Z"
+        var live = AppConfig.default
+        live.accounts = [old]
+        live.activeAccountId = "user_01OLD"
+        live.activeAccountUpdatedAt = "2026-10-17T12:00:00.000Z"
+        live.syncLegacyFields()
+        var reconciled = live
+        reconciled.syncLastAt = "2026-10-17T12:06:00.000Z"
+        reconciled.cloudRevision = 4
+        var added = Account(id: "user_01NEW", label: "New", token: "user_01NEW%3A%3Atok-new")
+        added.syncUpdatedAt = "2026-10-17T12:06:40.000Z"
+        added.lastRemaining = 29.8
+        live.accounts.append(added)
+        live.activeAccountId = "user_01NEW"
+        live.activeAccountUpdatedAt = "2026-10-17T12:06:40.000Z"
+        live.syncLegacyFields()
+        XCTAssertTrue(AccountSync.adoptReconciled(&live, reconciled))
+        XCTAssertEqual(Set(live.accounts.map(\.id)), ["user_01OLD", "user_01NEW"])
+        XCTAssertEqual(live.activeAccountId, "user_01NEW")
+        XCTAssertEqual(live.accounts.first { $0.id == "user_01NEW" }?.lastRemaining, 29.8)
+        XCTAssertEqual(live.syncLastAt, "2026-10-17T12:06:00.000Z")
+        XCTAssertEqual(live.cloudRevision, 4)
+    }
+
+    func testAdoptReconciledDropsAccountWhenTombstoneIsNewer() {
+        var old = Account(id: "user_01OLD", label: "Old", token: "user_01OLD%3A%3Atok-old")
+        old.syncUpdatedAt = "2026-10-17T12:00:00.000Z"
+        var live = AppConfig.default
+        live.accounts = [old]
+        live.activeAccountId = "user_01OLD"
+        live.syncLegacyFields()
+        var reconciled = live
+        reconciled.accounts = []
+        reconciled.activeAccountId = ""
+        reconciled.deletedAccounts = [DeletedAccount(id: "user_01OLD", deletedAt: "2026-10-17T12:08:00.000Z")]
+        XCTAssertFalse(AccountSync.adoptReconciled(&live, reconciled))
+        XCTAssertTrue(live.accounts.isEmpty)
+        XCTAssertEqual(live.deletedAccounts.map(\.id), ["user_01OLD"])
+    }
+
     func testTrimSnapshotKeepsNewestEvents() {
         let events = (0..<800).map { i in
             UsageEvent(id: "e\(i)", timestampMs: Int64((i + 1) * 1000), model: "opus", kind: "included", tokens: 1)

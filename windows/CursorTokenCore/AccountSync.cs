@@ -636,6 +636,33 @@ public static class AccountSync
     }
 
     /// <summary>
+    /// Fold a finished sync back onto the config the user has open.
+    /// Accounts imported or deleted after the request started stay with that live copy.
+    /// Returns whether the live account set differed from the synced copy.
+    /// </summary>
+    public static bool AdoptReconciled(AppConfig live, AppConfig reconciled)
+    {
+        var reconciledIds = reconciled.Accounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+        var combined = MergeSnapshots(SnapshotFromConfig(live), SnapshotFromConfig(reconciled));
+        ApplySnapshotToConfig(live, combined);
+        live.SyncLastAt = reconciled.SyncLastAt;
+        live.SyncLastError = reconciled.SyncLastError;
+        live.CloudRevision = reconciled.CloudRevision;
+        live.SyncStorage = reconciled.SyncStorage;
+        if (!string.IsNullOrWhiteSpace(reconciled.SyncDeviceId)) live.SyncDeviceId = reconciled.SyncDeviceId;
+        live.CloudEmail = reconciled.CloudEmail;
+        live.CloudAccessToken = reconciled.CloudAccessToken;
+        live.CloudRefreshToken = reconciled.CloudRefreshToken;
+        live.SyncSecret = reconciled.SyncSecret;
+        live.SyncEnabled = reconciled.SyncEnabled;
+        live.SyncSecretDecryptFailed = reconciled.SyncSecretDecryptFailed;
+        live.CloudAccessDecryptFailed = reconciled.CloudAccessDecryptFailed;
+        live.CloudRefreshDecryptFailed = reconciled.CloudRefreshDecryptFailed;
+        live.DecryptError = reconciled.DecryptError;
+        return live.Accounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal).SetEquals(reconciledIds) == false;
+    }
+
+    /// <summary>
     /// Restore the account the user picked while a merge was applying the snapshot.
     /// No-op when they did not switch, or when that account is gone.
     /// </summary>
