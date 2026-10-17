@@ -189,14 +189,8 @@ struct SettingsRootView: View {
 
     var accountPage: some View {
         settingsPage(spacing: 10) {
-            fieldCaption("当前账号")
-            settingsMenuPicker(
-                selection: activeBinding,
-                current: store.config.activeAccount?.caption(isActive: true) ?? "未选择",
-                options: store.config.accounts.map { acc in
-                    (acc.id, acc.caption(isActive: acc.id == store.config.activeAccountId))
-                }
-            )
+            fieldCaption("账号")
+            accountTable
             HStack {
                 Button("重命名") { rename() }
                 Button("删除") { deleteAccount() }
@@ -448,6 +442,63 @@ struct SettingsRootView: View {
             Button("应用") { save(close: false) }
             Button("保存") { save(close: true) }.keyboardShortcut(.defaultAction)
         }
+    }
+
+    var accountTable: some View {
+        Group {
+            if store.config.accounts.isEmpty {
+                Text("还没有账号")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            } else {
+                Table(store.config.accounts, selection: accountSelection) {
+                    TableColumn("账号") { account in
+                        Text(account.displayLabel)
+                            .fontWeight(account.id == store.config.activeAccountId ? .semibold : .regular)
+                            .lineLimit(1)
+                    }
+                    .width(min: 96, ideal: 148)
+                    TableColumn("套餐") { account in
+                        Text(StatusText.formatAccountPlan(account)).lineLimit(1)
+                    }
+                    .width(min: 52, ideal: 72)
+                    TableColumn("状态") { account in
+                        Text(StatusText.formatAccountCheckStatus(account)).lineLimit(1)
+                    }
+                    .width(min: 72, ideal: 88)
+                    TableColumn("检查时间") { account in
+                        Text(StatusText.formatAccountCheckTime(account)).lineLimit(1)
+                    }
+                    .width(min: 88, ideal: 108)
+                    TableColumn("类型") { account in
+                        Text(StatusText.formatAccountKind(account)).lineLimit(1)
+                    }
+                    .width(min: 44, ideal: 52)
+                }
+                .frame(height: accountTableHeight)
+            }
+        }
+        .accessibilityLabel("当前账号")
+    }
+
+    var accountTableHeight: CGFloat {
+        let rows = CGFloat(max(store.config.accounts.count, 1))
+        return min(32 + rows * 28, 32 + 5 * 28)
+    }
+
+    var accountSelection: Binding<Set<Account.ID>> {
+        Binding(
+            get: {
+                let id = store.config.activeAccountId
+                return id.isEmpty ? [] : [id]
+            },
+            set: { ids in
+                guard let id = ids.first, id != store.config.activeAccountId else { return }
+                guard store.config.accounts.contains(where: { $0.id == id }) else { return }
+                activeBinding.wrappedValue = id
+            }
+        )
     }
 
     var activeBinding: Binding<String> {
@@ -1299,6 +1350,8 @@ private struct AppearanceSegment: View {
         .animation(.easeOut(duration: 0.12), value: selection)
     }
 }
+
+extension Account: Identifiable {}
 
 private enum SettingsMetrics {
     static let width: CGFloat = 540

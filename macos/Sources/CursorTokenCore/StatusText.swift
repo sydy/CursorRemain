@@ -467,6 +467,38 @@ public enum StatusText {
         Token.isAuthErrorMessage(errorMessage) ? "粘贴 Token" : "设置"
     }
 
+    public static func formatAccountPlan(_ account: Account) -> String {
+        let plan = account.membershipType.trimmingCharacters(in: .whitespaces)
+        return plan.isEmpty ? "—" : plan
+    }
+
+    public static func formatAccountCheckStatus(_ account: Account) -> String {
+        if account.tokenDecryptFailed { return "无法解密" }
+        if let remaining = account.lastRemaining {
+            return String(format: "剩余 %.0f%%", remaining)
+        }
+        let err = account.lastError.trimmingCharacters(in: .whitespaces)
+        if err.isEmpty {
+            return account.token.trimmingCharacters(in: .whitespaces).isEmpty ? "未配置" : "未检查"
+        }
+        if Token.isAuthErrorMessage(err) { return "已失效" }
+        if err.count > 16 { return String(err.prefix(16)) + "…" }
+        return err
+    }
+
+    public static func formatAccountCheckTime(_ account: Account) -> String {
+        let iso = account.usageUpdatedAt.trimmingCharacters(in: .whitespaces)
+        if AccountSync.parseIso(iso) != nil {
+            return AccountSync.formatLocal(iso, format: "MM-dd HH:mm")
+        }
+        let local = account.updatedAt.trimmingCharacters(in: .whitespaces)
+        return local.isEmpty ? "—" : local
+    }
+
+    public static func formatAccountKind(_ account: Account) -> String {
+        AccountValidity.isTemporary(account) ? "临时" : "长期"
+    }
+
     public static func formatSyncStatus(lastAt: String, lastError: String) -> String {
         let error = lastError.trimmingCharacters(in: .whitespaces)
         let at = lastAt.trimmingCharacters(in: .whitespaces)

@@ -75,7 +75,8 @@ sealed class SettingsForm : Form
     readonly Button _syncNow = ActionButton("立即同步", UiButtonKind.Primary);
     readonly Button _syncExport = ActionButton("导出…");
     readonly Button _syncImport = ActionButton("导入…");
-    readonly ComboBox _accounts = new FlatCombo();
+    readonly DataGridView _accounts = MakeAccountGrid();
+    readonly Panel _accountHost;
     readonly ComboBox _kind = new FlatCombo { Width = 220 };
     readonly FlatDatePicker _startAt = new FlatDatePicker()
     {
@@ -209,8 +210,12 @@ sealed class SettingsForm : Form
         addStack.Dock = DockStyle.Fill;
         _addPanel.Controls.Add(addStack);
         _addToggle.Click += (_, _) => ShowAddAccount();
+        _accountHost = new FixedHost(168);
+        _accounts.Dock = DockStyle.Fill;
+        _accountHost.Controls.Add(_accounts);
         _tabs.AddPage(SettingsLayout.AccountTab, MakeTab(
-            FieldRow("当前账号", _accounts),
+            UiChrome.Heading("账号", first: true),
+            FollowRow(_accountHost),
             FollowRow(ImportRow(rename, del, login)),
             FieldRow("账号类型", _kind, FormTone.FieldWidthCombo),
             _startRow,
@@ -277,13 +282,15 @@ sealed class SettingsForm : Form
             _cfg.ColorMode = _appearance.Value;
             NotifySaved();
         };
-        _accounts.SelectedIndexChanged += (_, _) =>
+        _accounts.SelectionChanged += (_, _) =>
         {
             if (_loading) return;
+            if (_accounts.CurrentRow?.Tag is not string id || id.Length == 0 || id == _cfg.ActiveAccountId) return;
             ReadKindInto(_cfg.ActiveAccount);
             ReadActualCnyInto(_cfg.ActiveAccount);
             ReadChannelInto(_cfg.ActiveAccount);
-            if (_accounts.SelectedItem is AccountItem item) { _cfg.SetActiveAccount(item.Id); NotifySaved(); }
+            _cfg.SetActiveAccount(id);
+            NotifySaved();
             WriteKindFrom(_cfg.ActiveAccount);
             WriteActualCnyFrom(_cfg.ActiveAccount);
             WriteChannelFrom(_cfg.ActiveAccount);
@@ -762,6 +769,32 @@ sealed class SettingsForm : Form
         return row;
     }
 
+    static DataGridView MakeAccountGrid()
+    {
+        var grid = new DataGridView
+        {
+            ReadOnly = true,
+            AllowUserToAddRows = false,
+            AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false,
+            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+            ColumnHeadersHeight = 28,
+            RowHeadersVisible = false,
+            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+            MultiSelect = false,
+            BorderStyle = BorderStyle.None,
+            ScrollBars = ScrollBars.Vertical,
+            RowTemplate = { Height = 28 },
+        };
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "账号", FillWeight = 28, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "plan", HeaderText = "套餐", FillWeight = 16, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "status", HeaderText = "状态", FillWeight = 18, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "checked", HeaderText = "检查时间", FillWeight = 22, SortMode = DataGridViewColumnSortMode.NotSortable });
+        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
+        return grid;
+    }
+
     static Button ActionButton(string text, UiButtonKind kind = UiButtonKind.Secondary)
         => UiChrome.Button(text, kind);
 
@@ -864,11 +897,18 @@ sealed class SettingsForm : Form
         try
         {
             _cfg = cfg;
-            _accounts.Items.Clear();
+            _accounts.Rows.Clear();
             foreach (var a in cfg.Accounts)
-                _accounts.Items.Add(new AccountItem(a.Id, a.Caption(a.Id == cfg.ActiveAccountId)));
-            var idx = cfg.Accounts.FindIndex(a => a.Id == cfg.ActiveAccountId);
-            if (idx >= 0) _accounts.SelectedIndex = idx;
+            {
+                var index = _accounts.Rows.Add(
+                    a.DisplayLabel,
+                    StatusText.FormatAccountPlan(a),
+                    StatusText.FormatAccountCheckStatus(a),
+                    StatusText.FormatAccountCheckTime(a),
+                    StatusText.FormatAccountKind(a));
+                _accounts.Rows[index].Tag = a.Id;
+                if (a.Id == cfg.ActiveAccountId) _accounts.Rows[index].Selected = true;
+            }
             _token.Text = "";
             _token.PlaceholderText = "每行一个：Token，或 name@example.com:密码，或 账号：邮箱密码：密码";
             _interval.Text = cfg.RefreshIntervalMinutes.ToString();
@@ -1659,8 +1699,16 @@ sealed class SettingsForm : Form
         return double.TryParse(cleaned, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
-    sealed record AccountItem(string Id, string Caption)
+    sealed class FixedHost : Panel
     {
-        public override string ToString() => Caption;
+        public FixedHost(int height)
+        {
+            Height = height;
+            MinimumSize = new Size(0, height);
+            MaximumSize = new Size(int.MaxValue, height);
+        }
+
+        public override Size GetPreferredSize(Size proposedSize) =>
+            new(Math.Max(80, proposedSize.Width), Height);
     }
 }

@@ -195,6 +195,16 @@ public class NativeClientReliabilityTests
         var failed = StatusText.FormatCompareSync(2, ["工作号：Token 过期", "临时号：未配置 Token"], "12:01:00");
         Assert.Contains("工作号：Token 过期", failed);
         Assert.Contains("等4个", StatusText.FormatCompareSync(1, ["a：1", "b：2", "c：3", "d：4"], "12:02:00"));
+        Assert.Equal("未配置", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro" }));
+        Assert.Equal("未检查", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro", Token = "tok" }));
+        Assert.Equal("剩余 65%", StatusText.FormatAccountCheckStatus(new Account { Label = "Pro", Token = "tok", LastRemaining = 65 }));
+        Assert.Equal("已失效", StatusText.FormatAccountCheckStatus(new Account { LastError = "Token 已过期" }));
+        Assert.Equal("无法解密", StatusText.FormatAccountCheckStatus(new Account { TokenDecryptFailed = true }));
+        Assert.Equal("—", StatusText.FormatAccountCheckTime(new Account()));
+        Assert.Equal("11:08:00", StatusText.FormatAccountCheckTime(new Account { UpdatedAt = "11:08:00" }));
+        Assert.NotEqual("—", StatusText.FormatAccountCheckTime(new Account { UsageUpdatedAt = "2026-10-17T03:08:00.000Z" }));
+        Assert.Equal("临时", StatusText.FormatAccountKind(new Account { AccountKind = AccountValidity.Temporary }));
+        Assert.Equal("Pro", StatusText.FormatAccountPlan(new Account { MembershipType = "Pro" }));
         Assert.Equal("登录已过期，请重新登录", StatusText.FormatSyncStatus("", "登录已过期，请重新登录"));
         var mixed = StatusText.FormatSyncStatus("2026-09-19T04:00:00.000Z", "用量明细因体积限制裁掉了 12 条最旧记录");
         Assert.Contains("上次同步", mixed);
