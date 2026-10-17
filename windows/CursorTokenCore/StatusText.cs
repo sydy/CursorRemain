@@ -387,6 +387,34 @@ public static class StatusText
     public static string FlyoutSettingsTitle(string? error) =>
         Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";
 
+    public static string FormatAccountPlan(Account account)
+    {
+        var plan = (account.MembershipType ?? "").Trim();
+        return plan.Length == 0 ? "—" : plan;
+    }
+
+    public static string FormatAccountCheckStatus(Account account)
+    {
+        if (account.TokenDecryptFailed) return "无法解密";
+        if (account.LastRemaining is { } remaining) return $"剩余 {remaining:0}%";
+        var err = (account.LastError ?? "").Trim();
+        if (err.Length == 0) return string.IsNullOrWhiteSpace(account.Token) ? "未配置" : "未检查";
+        if (Token.IsAuthErrorMessage(err)) return "已失效";
+        return err.Length > 16 ? err[..16] + "…" : err;
+    }
+
+    public static string FormatAccountCheckTime(Account account)
+    {
+        var iso = (account.UsageUpdatedAt ?? "").Trim();
+        if (AccountSync.ParseIso(iso) is not null)
+            return AccountSync.FormatLocal(iso, "MM-dd HH:mm");
+        var local = (account.UpdatedAt ?? "").Trim();
+        return local.Length == 0 ? "—" : local;
+    }
+
+    public static string FormatAccountKind(Account account) =>
+        AccountValidity.IsTemporary(account) ? "临时" : "长期";
+
     public static string FormatSyncStatus(string lastAt, string lastError)
     {
         var error = (lastError ?? "").Trim();
