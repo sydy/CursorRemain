@@ -411,7 +411,7 @@ class SourceGuardTests(unittest.TestCase):
         self.assertIn("OpenCompare", win_prog)
         self.assertIn("LoginToCursor", win_prog)
         self.assertIn("在 Cursor 登录当前账号", win_prog)
-        self.assertIn("Task.Run(() => CloudSync.Reconcile(_config))", win_prog)
+        self.assertIn("Task.Run(() => CloudSync.Reconcile(captured))", win_prog)
         self.assertIn("UiChrome.StyleMenu(_menu)", win_prog)
         self.assertIn("RefreshChrome", win_prog)
         self.assertIn("RefreshTheme", win_prog)

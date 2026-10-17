@@ -1152,7 +1152,7 @@ final class AccountSyncFixtureTests: XCTestCase {
         reconciled.accounts = []
         reconciled.activeAccountId = ""
         reconciled.deletedAccounts = [DeletedAccount(id: "user_01OLD", deletedAt: "2026-10-17T12:08:00.000Z")]
-        XCTAssertTrue(AccountSync.adoptReconciled(&live, reconciled))
+        XCTAssertFalse(AccountSync.adoptReconciled(&live, reconciled))
         XCTAssertTrue(live.accounts.isEmpty)
         XCTAssertEqual(live.deletedAccounts.map(\.id), ["user_01OLD"])
     }
