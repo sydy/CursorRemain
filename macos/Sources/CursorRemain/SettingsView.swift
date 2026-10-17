@@ -192,10 +192,18 @@ struct SettingsRootView: View {
             fieldCaption("账号")
             accountTable
             HStack {
+                Button("检查状态") { store.requestRefresh() }
+                    .disabled(store.config.accounts.isEmpty || !store.accountCheckStatus.isEmpty)
                 Button("重命名") { rename() }
                 Button("删除") { deleteAccount() }
                 Button("登录到 Cursor") { Task { await loginToCursor() } }
                     .disabled(importing)
+            }
+            if !store.accountCheckStatus.isEmpty {
+                Text(store.accountCheckStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             fieldCaption("账号类型")
             settingsMenuPicker(
@@ -467,7 +475,7 @@ struct SettingsRootView: View {
                         Text(StatusText.formatAccountCheckStatus(account)).lineLimit(1)
                     }
                     .width(min: 72, ideal: 88)
-                    TableColumn("检查时间") { account in
+                    TableColumn("更新时间") { account in
                         Text(StatusText.formatAccountCheckTime(account)).lineLimit(1)
                     }
                     .width(min: 88, ideal: 108)

@@ -199,10 +199,18 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(label: "Pro")), "未配置")
         XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(label: "Pro", token: "tok")), "未检查")
         XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(label: "Pro", token: "tok", lastRemaining: 65)), "剩余 65%")
+        XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(token: "tok", lastRemaining: 65, lastError: "网络错误: offline")), "无法连接")
+        XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(token: "tok", lastRemaining: 65, lastError: "刷新失败: timed out")), "无法连接")
+        XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(token: "tok", lastRemaining: 30, lastError: "Token 已过期")), "已失效")
         XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(lastError: "Token 已过期")), "已失效")
         XCTAssertEqual(StatusText.formatAccountCheckStatus(Account(tokenDecryptFailed: true)), "无法解密")
         XCTAssertEqual(StatusText.formatAccountCheckTime(Account()), "—")
-        XCTAssertEqual(StatusText.formatAccountCheckTime(Account(updatedAt: "11:08:00")), "11:08:00")
+        XCTAssertEqual(StatusText.formatAccountCheckTime(Account(updatedAt: "11:08:00", usageUpdatedAt: "2026-09-29T01:03:00.000Z")), "11:08:00")
+        let checked = "2026-10-17T03:08:00.000Z"
+        XCTAssertEqual(
+            StatusText.formatAccountCheckTime(Account(updatedAt: checked, usageUpdatedAt: "2026-09-29T01:03:00.000Z")),
+            AccountSync.formatLocal(checked, format: "MM-dd HH:mm")
+        )
         XCTAssertNotEqual(StatusText.formatAccountCheckTime(Account(usageUpdatedAt: "2026-10-17T03:08:00.000Z")), "—")
         XCTAssertEqual(StatusText.formatAccountKind(Account(accountKind: AccountValidity.temporary)), "临时")
         XCTAssertEqual(StatusText.formatAccountPlan(Account(membershipType: "Pro")), "Pro")

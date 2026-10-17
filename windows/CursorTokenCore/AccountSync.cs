@@ -659,9 +659,8 @@ public static class AccountSync
         account.UsageUpdatedAt = ident.UsageUpdatedAt ?? "";
         account.BillingCycleStart = ident.BillingCycleStart ?? "";
         account.BillingCycleEnd = ident.BillingCycleEnd ?? "";
-        var stamp = ParseIso(account.UsageUpdatedAt);
-        if (stamp is not null)
-            account.UpdatedAt = stamp.Value.ToLocalTime().ToString("HH:mm:ss");
+        if (ParseIso(account.UsageUpdatedAt) is not null && CompareIso(account.UpdatedAt, account.UsageUpdatedAt) < 0)
+            account.UpdatedAt = account.UsageUpdatedAt;
     }
 
     public static byte[] DeriveKey(string passphrase, byte[] salt, int iterations = DefaultIterations)

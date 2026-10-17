@@ -706,8 +706,8 @@ public enum AccountSync {
         account.usageUpdatedAt = ident.usageUpdatedAt
         account.billingCycleStart = ident.billingCycleStart
         account.billingCycleEnd = ident.billingCycleEnd
-        if parseIso(account.usageUpdatedAt) != nil {
-            account.updatedAt = formatLocal(account.usageUpdatedAt, format: "HH:mm:ss")
+        if parseIso(account.usageUpdatedAt) != nil, compareIso(account.updatedAt, account.usageUpdatedAt) < 0 {
+            account.updatedAt = account.usageUpdatedAt
         }
     }
 

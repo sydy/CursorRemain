@@ -108,6 +108,7 @@ sealed partial class TrayContext
         {
             foreach (var n in notices)
                 _icon.ShowBalloonTip(n.Warn ? 5000 : 4000, n.Title, n.Body, n.Warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
+            if (_settings is { IsDisposed: false }) _settings.FinishAccountCheck(!_refreshNow);
         });
     }
 
@@ -122,7 +123,7 @@ sealed partial class TrayContext
 
     async Task<RefreshOutcome> FetchOne((string Id, string Token, bool TokenDecryptFailed) acc)
     {
-        var stamp = DateTime.Now.ToString("HH:mm:ss");
+        var stamp = AccountSync.NowIso();
         if (acc.TokenDecryptFailed)
             return new RefreshOutcome(acc.Id, null, TokenProtector.DecryptFailedMessage, false, stamp);
         if (string.IsNullOrWhiteSpace(acc.Token))
