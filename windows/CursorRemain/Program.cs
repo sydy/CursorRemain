@@ -543,8 +543,15 @@ sealed partial class TrayContext : ApplicationContext
             do
             {
                 _reconcileAgain = false;
-                var status = await Task.Run(() => CloudSync.Reconcile(_config));
-                if (save || status.Changed)
+                var captured = _config;
+                var startedActive = captured.ActiveAccountId;
+                var status = await Task.Run(() => CloudSync.Reconcile(captured));
+                if ((status.Ok || status.Changed) && !ReferenceEquals(captured, _config))
+                {
+                    if (AccountSync.AdoptReconciled(_config, captured)) _reconcileAgain = true;
+                    AccountSync.KeepLiveActiveAccount(_config, startedActive, _config.SessionActiveAccountId);
+                }
+                if (save || status.Changed || status.Ok)
                 {
                     try { await Task.Run(() => ConfigStore.Save(_config)); }
                     catch (Exception ex) { CrashLog.Write(ex); }

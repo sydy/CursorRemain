@@ -303,22 +303,25 @@ final class AppStore: ObservableObject {
             return (copy, status)
         }.value
         if status.ok || status.changed {
-            var merged = next
-            _ = AccountSync.keepLiveActiveAccount(
-                &merged,
+            let liveActive = config.activeAccountId
+            let diverged = AccountSync.adoptReconciled(&config, next)
+            let kept = AccountSync.keepLiveActiveAccount(
+                &config,
                 startedActive: startedActive,
-                liveActive: config.activeAccountId
+                liveActive: liveActive
             )
-            config = merged
-            if !ConfigStore.save(merged, to: settingsDirectory) {
+            if diverged { reconcileAgain = true }
+            if !ConfigStore.save(config, to: settingsDirectory) {
                 AppLog.log("云同步结果写入配置失败")
             }
-        } else {
-            config.syncLastError = status.message
+            notifyCloudSync(status)
+            objectWillChange.send()
+            return status.changed || kept || diverged
         }
+        config.syncLastError = status.message
         notifyCloudSync(status)
         objectWillChange.send()
-        return status.changed
+        return false
     }
 
     func notifyCloudSync(_ status: SyncStatus) {

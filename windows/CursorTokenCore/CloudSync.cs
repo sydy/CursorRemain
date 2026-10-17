@@ -222,6 +222,7 @@ public static class CloudSync
             var revision = got.RootElement.TryGetProperty("revision", out var rev) && rev.TryGetInt32(out var n) ? n : 0;
             var remote = ParseRemote(got.RootElement, passphrase);
             var merged = AccountSync.MergeSnapshots(local, remote);
+            merged = AccountSync.MergeSnapshots(AccountSync.SnapshotFromConfig(cfg), merged);
             var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
             if (write && AccountSync.SnapshotIdentity(merged) != AccountSync.SnapshotIdentity(remote))
             {
@@ -328,6 +329,7 @@ public static class CloudSync
             var revision = ReadRevision(got, 0);
             var remote = ParseStore(got.RootElement);
             var merged = AccountSync.MergeSnapshots(local, remote);
+            merged = AccountSync.MergeSnapshots(AccountSync.SnapshotFromConfig(cfg), merged);
             var changed = AccountSync.ApplySnapshotToConfig(cfg, merged);
             if (write && AccountSync.SnapshotIdentity(merged) != AccountSync.SnapshotIdentity(remote))
             {

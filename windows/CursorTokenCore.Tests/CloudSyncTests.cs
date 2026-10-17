@@ -218,6 +218,46 @@ public class CloudSyncTests
     }
 
     [Fact]
+    public void AdoptReconciledKeepsAccountImportedDuringSync()
+    {
+        var old = new Account { Id = "user_01OLD", Token = "user_01OLD%3A%3Atok-old", Label = "Old", SyncUpdatedAt = "2026-10-17T12:00:00.000Z" };
+        var live = new AppConfig
+        {
+            Accounts = [old],
+            ActiveAccountId = "user_01OLD",
+            ActiveAccountUpdatedAt = "2026-10-17T12:00:00.000Z",
+        };
+        live.SyncLegacyFields();
+        var reconciled = new AppConfig
+        {
+            Accounts = [old],
+            ActiveAccountId = "user_01OLD",
+            ActiveAccountUpdatedAt = "2026-10-17T12:00:00.000Z",
+            SyncLastAt = "2026-10-17T12:06:00.000Z",
+            CloudRevision = 4,
+        };
+        reconciled.SyncLegacyFields();
+        var added = new Account
+        {
+            Id = "user_01NEW",
+            Token = "user_01NEW%3A%3Atok-new",
+            Label = "New",
+            SyncUpdatedAt = "2026-10-17T12:06:40.000Z",
+            LastRemaining = 29.8,
+        };
+        live.Accounts.Add(added);
+        live.ActiveAccountId = "user_01NEW";
+        live.ActiveAccountUpdatedAt = "2026-10-17T12:06:40.000Z";
+        live.SyncLegacyFields();
+        Assert.True(AccountSync.AdoptReconciled(live, reconciled));
+        Assert.Equal(new[] { "user_01NEW", "user_01OLD" }, live.Accounts.Select(a => a.Id).OrderBy(id => id).ToArray());
+        Assert.Equal("user_01NEW", live.ActiveAccountId);
+        Assert.Equal(29.8, live.Accounts.Single(a => a.Id == "user_01NEW").LastRemaining);
+        Assert.Equal("2026-10-17T12:06:00.000Z", live.SyncLastAt);
+        Assert.Equal(4, live.CloudRevision);
+    }
+
+    [Fact]
     public async Task ReconcileKeepsSessionActiveAfterRemoteMerge()
     {
         var a = new Account { Id = "user_01A", Token = "tok-a-" + new string('x', 40), Label = "A" };
