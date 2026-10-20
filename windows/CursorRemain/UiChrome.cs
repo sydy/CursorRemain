@@ -379,6 +379,7 @@ static class UiChrome
     public static void StyleGrid(DataGridView grid)
     {
         var pal = Tone;
+        grid.Font = UiFont(9f);
         grid.BorderStyle = BorderStyle.None;
         grid.BackgroundColor = ColorOf(pal.Window);
         grid.GridColor = ColorOf(pal.Hairline);
@@ -387,6 +388,7 @@ static class UiChrome
         grid.ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single;
         grid.ColumnHeadersDefaultCellStyle = new DataGridViewCellStyle
         {
+            Font = UiFont(9f, FontStyle.Bold),
             BackColor = ColorOf(pal.Header),
             ForeColor = ColorOf(pal.Secondary),
             SelectionBackColor = ColorOf(pal.Header),
@@ -396,6 +398,7 @@ static class UiChrome
         };
         grid.DefaultCellStyle = new DataGridViewCellStyle
         {
+            Font = UiFont(9f),
             BackColor = ColorOf(pal.Window),
             ForeColor = ColorOf(pal.Text),
             SelectionBackColor = ColorOf(pal.Selection),

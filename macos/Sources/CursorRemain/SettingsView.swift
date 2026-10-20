@@ -192,12 +192,16 @@ struct SettingsRootView: View {
             fieldCaption("账号")
             accountTable
             HStack {
+                Button("添加账号") { addOpen = true }
+                    .buttonStyle(.borderedProminent)
                 Button("检查状态") { store.requestRefresh() }
                     .disabled(store.config.accounts.isEmpty || !store.accountCheckStatus.isEmpty)
-                Button("重命名") { rename() }
-                Button("删除") { deleteAccount() }
                 Button("登录到 Cursor") { Task { await loginToCursor() } }
-                    .disabled(importing)
+                    .disabled(importing || store.config.activeAccount == nil)
+                Button("重命名") { rename() }
+                    .disabled(store.config.activeAccount == nil)
+                Button("删除") { deleteAccount() }
+                    .disabled(store.config.activeAccount == nil)
             }
             if !store.accountCheckStatus.isEmpty {
                 Text(store.accountCheckStatus)
@@ -205,6 +209,10 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            let activeLabel = store.config.activeAccount?.displayLabel ?? ""
+            Text(activeLabel.isEmpty ? "当前账号配置" : "当前账号配置（\(activeLabel)）")
+                .font(.headline)
+                .padding(.top, 6)
             fieldCaption("账号类型")
             settingsMenuPicker(
                 selection: kindBinding,
@@ -225,7 +233,6 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("成本与渠道").font(.headline).padding(.top, 4)
             fieldCaption("渠道")
             settingsMenuPicker(
                 selection: $channel,
@@ -243,8 +250,6 @@ struct SettingsRootView: View {
             Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("添加账号") { addOpen = true }
-                .padding(.top, 8)
         }
         .sheet(isPresented: $addOpen) {
             addAccountSheet

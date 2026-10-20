@@ -91,7 +91,12 @@ sealed class SettingsForm : Form
     readonly Panel _endAtRow;
     readonly Panel _startRow;
     readonly Panel _durationRow;
-    readonly Button _addToggle = ActionButton("添加账号");
+    readonly Button _addToggle = ActionButton("添加账号", UiButtonKind.Primary);
+    readonly Button _accountCheck = ActionButton("检查状态");
+    readonly Button _accountLogin = ActionButton("登录到 Cursor");
+    readonly Button _accountRename = ActionButton("重命名");
+    readonly Button _accountDelete = ActionButton("删除", UiButtonKind.Danger);
+    readonly Label _accountSectionHeading = UiChrome.Heading("当前账号配置");
     readonly Panel _addPanel = new()
     {
         AutoSize = true,
@@ -142,10 +147,6 @@ sealed class SettingsForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        var rename = ActionButton("重命名");
-        var del = ActionButton("删除", UiButtonKind.Danger);
-        var login = ActionButton("登录到 Cursor");
-        var checkAccounts = ActionButton("检查状态");
         var cur = ActionButton("从 Cursor 导入");
         var add = ActionButton("添加", UiButtonKind.Primary);
         var ff = ActionButton("Firefox 登录");
@@ -212,22 +213,21 @@ sealed class SettingsForm : Form
         addStack.Dock = DockStyle.Fill;
         _addPanel.Controls.Add(addStack);
         _addToggle.Click += (_, _) => ShowAddAccount();
-        _accountHost = new FixedHost(168);
+        _accountHost = new FixedHost(140);
         _accounts.Dock = DockStyle.Fill;
         _accountHost.Controls.Add(_accounts);
         _tabs.AddPage(SettingsLayout.AccountTab, MakeTab(
             UiChrome.Heading("账号", first: true),
             FollowRow(_accountHost),
-            FollowRow(ImportRow(checkAccounts, rename, del, login)),
+            FollowRow(ImportRow(_addToggle, _accountCheck, _accountLogin, _accountRename, _accountDelete)),
+            _accountSectionHeading,
             FieldRow("账号类型", _kind, FormTone.FieldWidthCombo),
             _startRow,
             _durationRow,
             _endAtRow,
-            UiChrome.Heading("成本与渠道"),
             FieldRow("渠道", _channel, FormTone.FieldWidthCombo),
             FieldRow("实际成本（人民币）", _actualCny, FormTone.FieldWidthMedium),
             _actualHint,
-            FollowRow(Flow(_addToggle)),
             FollowRow(_pageStatus)));
         _tabs.AddPage(SettingsLayout.NotifyTab, MakeTab(
             UiChrome.Heading("刷新与通知", first: true),
@@ -296,17 +296,18 @@ sealed class SettingsForm : Form
             WriteKindFrom(_cfg.ActiveAccount);
             WriteActualCnyFrom(_cfg.ActiveAccount);
             WriteChannelFrom(_cfg.ActiveAccount);
+            UpdateAccountSectionHeading();
         };
-        checkAccounts.Click += (_, _) =>
+        _accountCheck.Click += (_, _) =>
         {
             if (_cfg.Accounts.Count == 0) return;
             _pageStatus.Text = "正在检查账号状态…";
-            checkAccounts.Enabled = false;
+            _accountCheck.Enabled = false;
             _requestRefresh();
         };
-        rename.Click += (_, _) => RenameActive();
-        login.Click += async (_, _) => await LoginToCursor();
-        del.Click += (_, _) =>
+        _accountRename.Click += (_, _) => RenameActive();
+        _accountLogin.Click += async (_, _) => await LoginToCursor();
+        _accountDelete.Click += (_, _) =>
         {
             if (_cfg.ActiveAccount is null) return;
             if (MessageBox.Show($"确定删除「{_cfg.ActiveAccount.DisplayLabel}」？", "删除账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
@@ -372,6 +373,7 @@ sealed class SettingsForm : Form
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
+        ApplyAccountGridMetrics();
         SizeButtons();
         PadFooter();
         FitOnce();
@@ -383,6 +385,7 @@ sealed class SettingsForm : Form
         BeginInvoke(() =>
         {
             UiChrome.Apply(this);
+            ApplyAccountGridMetrics();
             SizeButtons();
             PadFooter();
             FitOnce();
@@ -478,7 +481,8 @@ sealed class SettingsForm : Form
                     child.PerformLayout();
                 }
             }
-            var bodyH = MapBottom(_addToggle.Parent ?? _addToggle, _tabs.Pages[0]);
+            var bottomCtrl = _pageStatus.Visible ? (Control)_pageStatus : _actualHint;
+            var bodyH = MapBottom(bottomCtrl.Parent ?? bottomCtrl, _tabs.Pages[0]);
             var extra = UiLayout.ScalePx(SettingsLayout.FitExtra, dpi);
             var cap = Math.Max(1, work.Height - margin);
             var height = Math.Min(cap, Math.Max(floor, bodyH + extra));
@@ -908,18 +912,43 @@ sealed class SettingsForm : Form
         finally { _loading = false; }
         if (!done) return;
         if (_pageStatus.Text == "正在检查账号状态…") _pageStatus.Text = "";
-        foreach (Control button in Controls)
-            EnableCheckButton(button);
+        UpdateAccountButtons();
     }
 
-    void EnableCheckButton(Control parent)
+    void UpdateAccountSectionHeading()
     {
-        if (parent is Button button && button.Text == "检查状态")
+        var label = _cfg.ActiveAccount?.DisplayLabel;
+        _accountSectionHeading.Text = string.IsNullOrEmpty(label)
+            ? "当前账号配置"
+            : $"当前账号配置（{label}）";
+        UpdateAccountButtons();
+    }
+
+    void UpdateAccountButtons()
+    {
+        var hasAccount = _cfg.ActiveAccount is not null;
+        _accountRename.Enabled = hasAccount;
+        _accountDelete.Enabled = hasAccount;
+        _accountLogin.Enabled = hasAccount;
+        _accountCheck.Enabled = _cfg.Accounts.Count > 0;
+        _kind.Enabled = hasAccount;
+        _channel.Enabled = hasAccount;
+        _actualCny.Enabled = hasAccount;
+        _startAt.Enabled = hasAccount;
+        _days.Enabled = hasAccount;
+        _hours.Enabled = hasAccount;
+    }
+
+    void ApplyAccountGridMetrics()
+    {
+        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
+        var rowH = UiLayout.ScalePx(28, dpi);
+        _accounts.ColumnHeadersHeight = rowH;
+        _accounts.RowTemplate.Height = rowH;
+        foreach (DataGridViewRow row in _accounts.Rows)
         {
-            button.Enabled = _cfg.Accounts.Count > 0;
-            return;
+            row.Height = rowH;
         }
-        foreach (Control child in parent.Controls) EnableCheckButton(child);
     }
 
     void FillAccountRows()
@@ -936,6 +965,7 @@ sealed class SettingsForm : Form
             _accounts.Rows[index].Tag = a.Id;
             if (a.Id == _cfg.ActiveAccountId) _accounts.Rows[index].Selected = true;
         }
+        ApplyAccountGridMetrics();
     }
 
     void LoadFrom(AppConfig cfg)
@@ -997,6 +1027,7 @@ sealed class SettingsForm : Form
             _cloudMore.Visible = cfg.CloudLoggedIn;
             _syncStatus.Text = SyncStatusText(cfg);
             WriteKindFrom(cfg.ActiveAccount);
+            UpdateAccountSectionHeading();
         }
         finally { _loading = false; }
     }
