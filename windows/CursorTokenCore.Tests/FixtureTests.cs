@@ -1500,6 +1500,36 @@ public class FixtureTests
             }
             _ = name;
         }
+        var link = root.GetProperty("login_link");
+        Assert.Equal(link.GetProperty("challenge").GetString(), CursorPasswordLogin.CodeChallenge(link.GetProperty("verifier").GetString()));
+        Assert.Equal(link.GetProperty("login_url").GetString(), CursorPasswordLogin.LoginDeepUrl(link.GetProperty("uuid").GetString(), link.GetProperty("verifier").GetString()));
+        Assert.DoesNotContain(link.GetProperty("verifier").GetString() ?? "", link.GetProperty("login_url").GetString());
+        Assert.Equal(CursorPasswordLogin.PollUrl, link.GetProperty("poll_url").GetString());
+        foreach (var row in root.GetProperty("callback").EnumerateArray())
+            Assert.Equal(row.GetProperty("token").GetString(), CursorPasswordLogin.TokenFromCallback(row.GetProperty("input").GetString()));
+        foreach (var row in root.GetProperty("poll").EnumerateArray())
+            Assert.Equal(row.GetProperty("token").GetString(), CursorPasswordLogin.TokenFromPoll(row));
+        foreach (var row in root.GetProperty("profiles").EnumerateArray())
+        {
+            if (row.TryGetProperty("email", out _) || row.TryGetProperty("account_id", out _))
+            {
+                var email = row.TryGetProperty("email", out var mail) ? mail.GetString() : "";
+                var accountId = row.TryGetProperty("account_id", out var account) ? account.GetString() : "";
+                Assert.Equal(row.GetProperty("key").GetString(), CursorPasswordLogin.ProfileKey(email, accountId));
+            }
+            if (!row.TryGetProperty("new_id", out _)) continue;
+            var index = new Dictionary<string, string>();
+            if (row.TryGetProperty("index", out var rawIndex))
+            {
+                foreach (var item in rawIndex.EnumerateObject())
+                    index[item.Name] = item.Value.GetString() ?? "";
+            }
+            var assigned = CursorPasswordLogin.AssignProfile(index, row.GetProperty("key").GetString(), row.GetProperty("new_id").GetString());
+            Assert.Equal(row.GetProperty("profile_id").GetString(), assigned.ProfileId);
+            var key = row.GetProperty("key").GetString() ?? "";
+            assigned.Index.TryGetValue(key, out var stored);
+            Assert.Equal(row.GetProperty("stored").GetString() ?? "", stored ?? "");
+        }
     }
 
     [Fact]

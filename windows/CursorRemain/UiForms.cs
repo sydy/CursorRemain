@@ -97,6 +97,21 @@ sealed class SettingsForm : Form
     readonly Button _accountRename = ActionButton("重命名");
     readonly Button _accountDelete = ActionButton("删除", UiButtonKind.Danger);
     readonly Label _accountSectionHeading = UiChrome.Heading("当前账号配置");
+    readonly TextBox _loginUrl = new() { ReadOnly = true };
+    readonly TextBox _callbackUrl = new();
+    readonly Button _genLogin = ActionButton("生成登录地址");
+    readonly Button _copyLogin = ActionButton("复制");
+    readonly Button _openLogin = ActionButton("打开");
+    readonly Button _takeCookie = ActionButton("获取 Cookie", UiButtonKind.Primary);
+    readonly Label _loginCaption = new() { AutoSize = true, Text = "登录地址", Margin = new Padding(0, 8, 0, 2) };
+    readonly Label _callbackCaption = new() { AutoSize = true, Text = "回调地址", Margin = new Padding(0, 8, 0, 2) };
+    readonly Label _loginNote = new()
+    {
+        AutoSize = true,
+        ForeColor = Color.DimGray,
+        Margin = new Padding(0, 2, 0, 4),
+        Text = "每个账号使用单独的登录环境，Cookie 不会串到其他账号。生成后在该环境中打开登录页；回调地址仍可手动粘贴。",
+    };
     readonly Panel _addPanel = new()
     {
         AutoSize = true,
@@ -109,6 +124,11 @@ sealed class SettingsForm : Form
     };
     readonly Label _pageStatus = new() { AutoSize = true, Visible = false, Margin = new Padding(0, 4, 0, 4) };
     FieldFrame _tokenFrame = null!;
+    FieldFrame _loginFrame = null!;
+    FieldFrame _callbackFrame = null!;
+    string _loginUuid = "";
+    string _loginVerifier = "";
+    string _loginProfileId = "";
     Form? _addDialog;
     readonly Panel _footer = new()
     {
@@ -205,9 +225,26 @@ sealed class SettingsForm : Form
         _tokenFrame.Padding = new Padding(8, 6, 8, 6);
         _tokenFrame.MinimumSize = new Size(0, 88);
         _tokenFrame.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
+        _loginFrame = UiChrome.Frame(_loginUrl, 32);
+        _loginFrame.Padding = new Padding(8, 4, 8, 4);
+        _loginFrame.Margin = new Padding(0, 2, 0, 4);
+        _callbackFrame = UiChrome.Frame(_callbackUrl, 32);
+        _callbackFrame.Padding = new Padding(8, 4, 8, 4);
+        _callbackFrame.Margin = new Padding(0, 2, 0, 4);
+        _genLogin.Click += (_, _) => GenerateLogin();
+        _copyLogin.Click += (_, _) => CopyLogin();
+        _openLogin.Click += (_, _) => OpenLogin();
+        _takeCookie.Click += async (_, _) => await TakeCookie();
         var addStack = MakeStack(
             _tokenFrame,
             FollowRow(ImportRow(cur, add, _importMore)),
+            _loginCaption,
+            FollowRow(ImportRow(_genLogin, _copyLogin, _openLogin)),
+            _loginFrame,
+            _callbackCaption,
+            _callbackFrame,
+            FollowRow(_takeCookie),
+            _loginNote,
             FollowRow(_status),
             _hint);
         addStack.Dock = DockStyle.Fill;
@@ -557,6 +594,9 @@ sealed class SettingsForm : Form
         _addPanel.Width = inner;
         _tokenFrame.Width = inner;
         _tokenFrame.Height = UiLayout.ScalePx(90, dpi);
+        _loginFrame.Width = inner;
+        _callbackFrame.Width = inner;
+        _loginNote.MaximumSize = new Size(inner, 0);
         _tokenFrame.MinimumSize = new Size(0, UiLayout.ScalePx(88, dpi));
         StretchRows(_addPanel, inner);
         FitFieldRows(_addPanel, dpi);
@@ -1186,6 +1226,133 @@ sealed class SettingsForm : Form
         return cfg.CloudLoggedIn ? "尚未同步" : "";
     }
 
+    void GenerateLogin()
+    {
+        var uuid = Guid.NewGuid().ToString("D");
+        var verifier = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var url = CursorPasswordLogin.LoginDeepUrl(uuid, verifier);
+        if (url.Length == 0)
+        {
+            _status.Text = "生成登录地址失败";
+            return;
+        }
+        _loginUuid = uuid;
+        _loginVerifier = verifier;
+        if (string.IsNullOrWhiteSpace(_loginProfileId)) _loginProfileId = Guid.NewGuid().ToString("D");
+        _loginUrl.Text = url;
+        try { Clipboard.SetText(url); } catch { }
+        _status.Text = "已在该账号的独立登录环境中打开";
+        _ = OpenIsolatedLogin(url);
+    }
+
+    void CopyLogin()
+    {
+        if (string.IsNullOrWhiteSpace(_loginUrl.Text))
+        {
+            _status.Text = "请先生成登录地址";
+            return;
+        }
+        try
+        {
+            Clipboard.SetText(_loginUrl.Text);
+            _status.Text = "已复制登录地址";
+        }
+        catch { _status.Text = "复制失败"; }
+    }
+
+    void OpenLogin()
+    {
+        if (string.IsNullOrWhiteSpace(_loginUrl.Text))
+        {
+            _status.Text = "请先生成登录地址";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_loginProfileId)) _loginProfileId = Guid.NewGuid().ToString("D");
+        _ = OpenIsolatedLogin(_loginUrl.Text);
+    }
+
+    async Task OpenIsolatedLogin(string url)
+    {
+        if (_importing) return;
+        _importing = true;
+        try
+        {
+            using var dlg = new PasswordLoginForm("", "", _loginProfileId, url);
+            if (dlg.ShowDialog(AddOwner()) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
+            {
+                if (!IsDisposed) _status.Text = "未在该登录环境中取得 Cookie";
+                return;
+            }
+            LoginProfileStore.Bind("", dlg.Token, _loginProfileId);
+            _importing = false;
+            await StoreImportedToken(dlg.Token);
+        }
+        finally { _importing = false; }
+    }
+
+    async Task TakeCookie()
+    {
+        if (_importing) return;
+        var parsed = CursorPasswordLogin.TokenFromCallback(_callbackUrl.Text);
+        if (!string.IsNullOrWhiteSpace(parsed))
+        {
+            await StoreImportedToken(parsed);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_loginUuid) || string.IsNullOrWhiteSpace(_loginVerifier))
+        {
+            _status.Text = "回调地址里没有 Cookie。请先生成登录地址，或贴入带 Cookie 的回调地址。";
+            return;
+        }
+        _importing = true;
+        _status.Text = "正在向 Cursor 换取会话…";
+        try
+        {
+            var result = await CursorPasswordLogin.PollSession(_loginUuid, _loginVerifier);
+            if (!string.IsNullOrWhiteSpace(result.Token))
+            {
+                _loginVerifier = "";
+                if (!string.IsNullOrWhiteSpace(_loginProfileId))
+                    LoginProfileStore.Bind("", result.Token, _loginProfileId);
+                _importing = false;
+                await StoreImportedToken(result.Token);
+                return;
+            }
+            if (!IsDisposed) _status.Text = result.Message;
+        }
+        finally { _importing = false; }
+    }
+
+    async Task StoreImportedToken(string token)
+    {
+        if (_importing) return;
+        _importing = true;
+        try
+        {
+            try
+            {
+                var snap = await new CursorClient().FetchUsageSummary(token);
+                var (acc, _) = _cfg.UpsertAccount(token, membershipType: snap.MembershipType, remaining: snap.RemainingPercent, activate: true);
+                _cfg.SetActiveAccount(acc.Id);
+            }
+            catch
+            {
+                var (acc, _) = _cfg.UpsertAccount(token, activate: true);
+                _cfg.SetActiveAccount(acc.Id);
+            }
+            NotifySaved();
+            Persist(false);
+            _callbackUrl.Text = "";
+            if (!IsDisposed) _status.Text = "已获取 Cookie";
+        }
+        catch
+        {
+            if (!IsDisposed) _status.Text = "Cookie 已读到，但没有写入账号";
+        }
+        finally { _importing = false; }
+    }
+
     async Task AddPastedAccounts()
     {
         if (_importing) return;
@@ -1217,13 +1384,15 @@ sealed class SettingsForm : Form
                 }
                 if (item.Kind == "credentials")
                 {
-                    _status.Text = "正在打开登录页…";
-                    using var dlg = new PasswordLoginForm(item.Email, item.Password);
+                    _status.Text = "正在打开该账号的登录环境…";
+                    var profileId = LoginProfileStore.Assign(item.Email);
+                    using var dlg = new PasswordLoginForm(item.Email, item.Password, profileId);
                     if (dlg.ShowDialog(AddOwner()) != DialogResult.OK || string.IsNullOrWhiteSpace(dlg.Token))
                     {
                         fail++;
                         continue;
                     }
+                    LoginProfileStore.Bind(item.Email, dlg.Token, profileId);
                     try
                     {
                         var snap = await new CursorClient().FetchUsageSummary(dlg.Token);

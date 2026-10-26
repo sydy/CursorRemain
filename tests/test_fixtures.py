@@ -463,11 +463,18 @@ class GoldenFixtureTests(unittest.TestCase):
         from cursor_login import (
             LOGIN_TIMEOUT_SECONDS,
             LOGIN_URL,
+            POLL_URL,
             autofill_script,
+            assign_profile,
+            code_challenge,
             default_account_label,
+            login_deep_url,
             parse_account_paste,
+            profile_key,
             sanitize_login_email,
+            token_from_callback,
             token_from_cookies,
+            token_from_poll,
         )
 
         data = json.loads((ROOT / "fixtures" / "password_login_cases.json").read_text(encoding="utf-8"))
@@ -496,6 +503,32 @@ class GoldenFixtureTests(unittest.TestCase):
                     self.assertEqual(actual.get("token", ""), want["token"], row["name"])
                 if "message" in want:
                     self.assertEqual(actual.get("message", ""), want["message"], row["name"])
+        link = data["login_link"]
+        self.assertEqual(code_challenge(link["verifier"]), link["challenge"])
+        self.assertEqual(login_deep_url(link["uuid"], link["verifier"]), link["login_url"])
+        self.assertNotIn(link["verifier"], link["login_url"])
+        self.assertEqual(POLL_URL, link["poll_url"])
+        for row in data["callback"]:
+            self.assertEqual(token_from_callback(row["input"]), row["token"], row["name"])
+        for row in data["poll"]:
+            payload = {}
+            if "accessToken" in row:
+                payload["accessToken"] = row["accessToken"]
+            if "access_token" in row:
+                payload["access_token"] = row["access_token"]
+            self.assertEqual(token_from_poll(payload), row["token"], row["name"])
+        for row in data["profiles"]:
+            if "email" in row or "account_id" in row:
+                self.assertEqual(
+                    profile_key(row.get("email", ""), row.get("account_id", "")),
+                    row["key"],
+                    row["name"],
+                )
+            if "new_id" not in row:
+                continue
+            index, profile_id = assign_profile(row.get("index", {}), row["key"], row["new_id"])
+            self.assertEqual(profile_id, row["profile_id"], row["name"])
+            self.assertEqual(index.get(row["key"], ""), row["stored"], row["name"])
 
     @staticmethod
     def _chart_buckets(buckets) -> list[dict]:
