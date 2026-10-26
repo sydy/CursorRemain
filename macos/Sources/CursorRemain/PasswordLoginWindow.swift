@@ -13,12 +13,23 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
     private var email = ""
     private var password = ""
     private var profileId = ""
+    private var pollUUID = ""
+    private var pollVerifier = ""
+    private var polling = false
+    private var nextPoll = Date.distantPast
     private var continuation: CheckedContinuation<String?, Never>?
     private var timer: Timer?
     private var deadline = Date()
     private var done = false
 
-    func run(email: String, password: String, profileId: String, startURL: String = CursorPasswordLogin.loginURL) async -> String? {
+    func run(
+        email: String,
+        password: String,
+        profileId: String,
+        startURL: String = CursorPasswordLogin.loginURL,
+        pollUUID: String = "",
+        pollVerifier: String = ""
+    ) async -> String? {
         if continuation != nil { return nil }
         let ident = CursorPasswordLogin.validProfileId(profileId)
         let resolved = ident.isEmpty ? UUID().uuidString.lowercased() : ident
@@ -30,6 +41,10 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
         self.profileId = resolved
         self.email = email
         self.password = password
+        self.pollUUID = pollUUID
+        self.pollVerifier = pollVerifier
+        polling = false
+        nextPoll = .distantPast
         done = false
         MenubarActivation.promoteForWindow()
         showWindow()
@@ -120,6 +135,17 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
         }
         await inject()
         await capture()
+        await pollLogin()
+    }
+
+    private func pollLogin() async {
+        if done || polling || pollUUID.isEmpty || pollVerifier.isEmpty || Date() < nextPoll { return }
+        polling = true
+        nextPoll = Date().addingTimeInterval(3)
+        let result = await CursorPasswordLogin.pollSession(uuid: pollUUID, verifier: pollVerifier)
+        polling = false
+        if done || result.token.isEmpty { return }
+        finish(result.token, "已登录")
     }
 
     private func inject() async {

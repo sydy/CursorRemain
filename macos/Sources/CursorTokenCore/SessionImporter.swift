@@ -472,7 +472,7 @@ public enum SessionImporter {
         let prefer = preferBrowsers ?? defaultPreferBrowsers()
         var candidates = findSessionCandidates(onlyBrowsers: onlyBrowsers, cursorPaths: cursorPaths, firefoxRoots: firefoxRoots)
         if candidates.isEmpty {
-            return ImportResult(ok: false, message: "未找到可用 Cookie。请先登录 Cursor 应用，或在 Safari / Firefox 登录 cursor.com 后再导入。也可手动粘贴 WorkosCursorSessionToken。若 Safari 读不到，请在系统设置中为本应用打开完全磁盘访问权限。")
+            return ImportResult(ok: false, message: "没有读到 Cursor 里的登录。请先在 Cursor 登录，或粘贴 Token。")
         }
         let order = Dictionary(uniqueKeysWithValues: prefer.enumerated().map { ($1, $0) })
         candidates.sort { a, b in

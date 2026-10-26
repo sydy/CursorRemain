@@ -6,15 +6,10 @@ import UniformTypeIdentifiers
 
 struct SettingsRootView: View {
     @ObservedObject var store: AppStore
-    @State private var extraOpen = false
     @State private var addOpen = false
     @State private var tab = "account"
     @State private var importing = false
     @State private var tokenText = ""
-    @State private var loginURLText = ""
-    @State private var callbackText = ""
-    @State private var loginUUID = ""
-    @State private var loginVerifier = ""
     @State private var loginProfileId = ""
     @State private var intervalText = "10"
     @State private var planUsdText = "0"
@@ -202,7 +197,7 @@ struct SettingsRootView: View {
                     .buttonStyle(.borderedProminent)
                 Button("检查状态") { store.requestRefresh() }
                     .disabled(store.config.accounts.isEmpty || !store.accountCheckStatus.isEmpty)
-                Button("登录到 Cursor") { Task { await loginToCursor() } }
+                Button("让 Cursor 使用此账号") { Task { await loginToCursor() } }
                     .disabled(importing || store.config.activeAccount == nil)
                 Button("重命名") { rename() }
                     .disabled(store.config.activeAccount == nil)
@@ -265,68 +260,30 @@ struct SettingsRootView: View {
     var addAccountSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("添加账号").font(.headline)
-            Text("每行一个 Token 或邮箱密码，请勿分享；已保存的不会显示")
+            Button("登录新账号") { loginNewAccount() }
+                .buttonStyle(.borderedProminent)
+                .disabled(importing)
+            Text("在这个账号单独的窗口里登录，完成后自动保存，不会影响其他账号。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Text("粘贴已有 Token").font(.headline).padding(.top, 4)
             TextEditor(text: $tokenText)
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 88, maxHeight: 120)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
                 .focused($tokenFocused)
             HStack {
-                Button("从 Cursor 导入") { Task { await importFrom(prefer: "cursor-app") } }
-                    .disabled(importing)
                 Button("添加") { Task { await addPastedAccounts() } }
+                    .disabled(importing)
+                Button("从 Cursor 导入") { Task { await importFrom(prefer: "cursor-app") } }
                     .disabled(importing)
                 Spacer()
                 Button("完成") { addOpen = false }
             }
-            Text("可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。")
+            Text("每行一个 Token。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Text("用登录地址获取").font(.headline).padding(.top, 4)
-            TextField("登录地址", text: $loginURLText)
-                .textFieldStyle(.roundedBorder)
-                .font(.system(.caption, design: .monospaced))
-            HStack {
-                Button("生成登录地址") { generateLoginLink() }
-                    .disabled(importing)
-                Button("复制") { copyLoginLink() }
-                    .disabled(loginURLText.isEmpty)
-                Button("打开") { openLoginLink() }
-                    .disabled(loginURLText.isEmpty)
-                Spacer()
-            }
-            TextField("回调地址", text: $callbackText)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Button("获取 Cookie") { Task { await cookieFromCallback() } }
-                    .disabled(importing)
-                Spacer()
-            }
-            Text("每个账号使用单独的登录环境，Cookie 不会串到其他账号。生成后在该环境中打开登录页；回调地址仍可手动粘贴。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            DisclosureGroup("其他导入方式", isExpanded: $extraOpen) {
-                HStack {
-                    Button("Safari 登录") { Task { await loginAndImport(prefer: "safari") } }
-                        .disabled(importing)
-                    Button("Firefox 登录") { Task { await loginAndImport(prefer: "firefox") } }
-                        .disabled(importing)
-                    Button("仅扫描 Cookie") { Task { await importFrom(prefer: nil) } }
-                        .disabled(importing)
-                }
-            }
-            if !FullDiskAccess.safariCookiesReadable() {
-                HStack(alignment: .top, spacing: 8) {
-                    Text("Safari 导入需要「完全磁盘访问权限」。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("打开系统设置") { FullDiskAccess.openPrivacySettings() }
-                        .font(.caption)
-                }
-            }
-            Text(store.importStatus.isEmpty ? "已登录 Cursor 时可直接导入。浏览器 Cookie 仅作备选，不能写回客户端切号。" : store.importStatus)
+            Text(store.importStatus.isEmpty ? "已在 Cursor 里登录时，点「从 Cursor 导入」。" : store.importStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -660,8 +617,9 @@ struct SettingsRootView: View {
     func addPastedAccounts() async {
         if importing { return }
         let items = CursorAccountPaste.parse(tokenText)
-        if items.isEmpty {
-            hint = "请粘贴 Token 或邮箱密码"
+        let tokens = items.filter { $0.kind == "token" }
+        if tokens.isEmpty {
+            hint = "这里只接收 Token。要登录，请点「登录新账号」。"
             return
         }
         importing = true
@@ -669,60 +627,16 @@ struct SettingsRootView: View {
         var ok = 0
         var fail = 0
         var lastId: String?
-        for item in items {
-            if item.kind == "token" {
-                do {
-                    var cfg = store.config
-                    let (acc, _) = try cfg.upsertAccount(token: item.token, activate: true)
-                    store.applyConfig(cfg, refresh: true)
-                    lastId = acc.id
-                    ok += 1
-                } catch {
-                    fail += 1
-                }
-                continue
+        for item in tokens {
+            do {
+                var cfg = store.config
+                let (acc, _) = try cfg.upsertAccount(token: item.token, activate: true)
+                store.applyConfig(cfg, refresh: true)
+                lastId = acc.id
+                ok += 1
+            } catch {
+                fail += 1
             }
-            if item.kind == "credentials" {
-                store.importStatus = "正在打开该账号的登录环境…"
-                let profileId = LoginProfileStore.assign(email: item.email)
-                guard let token = await PasswordLoginController.shared.run(email: item.email, password: item.password, profileId: profileId), !token.isEmpty else {
-                    fail += 1
-                    continue
-                }
-                LoginProfileStore.bind(email: item.email, token: token, profileId: profileId)
-                do {
-                    let snap = try await store.client.fetchUsageSummary(sessionToken: token)
-                    var cfg = store.config
-                    let (acc, _) = try cfg.upsertAccount(
-                        token: token,
-                        membershipType: snap.membershipType,
-                        remaining: snap.remainingPercent,
-                        email: item.email,
-                        password: item.password,
-                        activate: true
-                    )
-                    store.applyConfig(cfg, refresh: true)
-                    lastId = acc.id
-                    ok += 1
-                } catch {
-                    do {
-                        var cfg = store.config
-                        let (acc, _) = try cfg.upsertAccount(
-                            token: token,
-                            email: item.email,
-                            password: item.password,
-                            activate: true
-                        )
-                        store.applyConfig(cfg, refresh: true)
-                        lastId = acc.id
-                        ok += 1
-                    } catch {
-                        fail += 1
-                    }
-                }
-                continue
-            }
-            fail += 1
         }
         if let lastId {
             store.switchAccount(lastId)
@@ -733,10 +647,11 @@ struct SettingsRootView: View {
         store.importStatus = summary
     }
 
-    func generateLoginLink() {
+    func loginNewAccount() {
+        if importing { return }
         var bytes = [UInt8](repeating: 0, count: 32)
         if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
-            store.importStatus = "生成登录地址失败"
+            store.importStatus = "无法打开登录窗口"
             return
         }
         let verifier = Data(bytes).base64EncodedString()
@@ -746,81 +661,34 @@ struct SettingsRootView: View {
         let uuid = UUID().uuidString.lowercased()
         let url = CursorPasswordLogin.loginDeepURL(uuid: uuid, verifier: verifier)
         if url.isEmpty {
-            store.importStatus = "生成登录地址失败"
-            return
-        }
-        loginUUID = uuid
-        loginVerifier = verifier
-        if loginProfileId.isEmpty { loginProfileId = UUID().uuidString.lowercased() }
-        loginURLText = url
-        copyString(url)
-        store.importStatus = "已在该账号的独立登录环境中打开"
-        let profileId = loginProfileId
-        Task { await openIsolatedLogin(url, profileId: profileId) }
-    }
-
-    func copyLoginLink() {
-        if loginURLText.isEmpty {
-            store.importStatus = "请先生成登录地址"
-            return
-        }
-        copyString(loginURLText)
-        store.importStatus = "已复制登录地址"
-    }
-
-    func openLoginLink() {
-        if loginURLText.isEmpty {
-            store.importStatus = "请先生成登录地址"
+            store.importStatus = "无法打开登录窗口"
             return
         }
         if loginProfileId.isEmpty { loginProfileId = UUID().uuidString.lowercased() }
-        let url = loginURLText
         let profileId = loginProfileId
-        Task { await openIsolatedLogin(url, profileId: profileId) }
+        Task { await openIsolatedLogin(url, profileId: profileId, pollUUID: uuid, pollVerifier: verifier) }
     }
 
-    func openIsolatedLogin(_ url: String, profileId: String) async {
+    func openIsolatedLogin(_ url: String, profileId: String, pollUUID: String, pollVerifier: String) async {
         if importing { return }
         importing = true
-        let token = await PasswordLoginController.shared.run(email: "", password: "", profileId: profileId, startURL: url)
+        store.importStatus = "请在弹出的窗口里完成登录"
+        let token = await PasswordLoginController.shared.run(
+            email: "",
+            password: "",
+            profileId: profileId,
+            startURL: url,
+            pollUUID: pollUUID,
+            pollVerifier: pollVerifier
+        )
         importing = false
         guard let token, !token.isEmpty else {
-            store.importStatus = "未在该登录环境中取得 Cookie"
+            store.importStatus = "登录未完成"
             return
         }
         LoginProfileStore.bind(email: "", token: token, profileId: profileId)
-        await storeImportedToken(token)
-    }
-
-    func copyString(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    func cookieFromCallback() async {
-        if importing { return }
-        let parsed = CursorPasswordLogin.tokenFromCallback(callbackText)
-        if !parsed.isEmpty {
-            await storeImportedToken(parsed)
-            return
-        }
-        if loginUUID.isEmpty || loginVerifier.isEmpty {
-            store.importStatus = "回调地址里没有 Cookie。请先生成登录地址，或贴入带 Cookie 的回调地址。"
-            return
-        }
-        importing = true
-        store.importStatus = "正在向 Cursor 换取会话…"
-        let result = await CursorPasswordLogin.pollSession(uuid: loginUUID, verifier: loginVerifier)
-        importing = false
-        if !result.token.isEmpty {
-            loginVerifier = ""
-            if !loginProfileId.isEmpty {
-                LoginProfileStore.bind(email: "", token: result.token, profileId: loginProfileId)
-            }
-            await storeImportedToken(result.token)
-            return
-        }
-        store.importStatus = result.message
+        loginProfileId = ""
+        _ = await storeImportedToken(token)
     }
 
     func storeImportedToken(_ token: String) async {
@@ -838,18 +706,16 @@ struct SettingsRootView: View {
             )
             store.applyConfig(cfg, refresh: true)
             store.switchAccount(acc.id)
-            callbackText = ""
-            store.importStatus = "已获取 Cookie"
+            store.importStatus = "已添加账号"
         } catch {
             do {
                 var cfg = store.config
                 let (acc, _) = try cfg.upsertAccount(token: token, activate: true)
                 store.applyConfig(cfg, refresh: true)
                 store.switchAccount(acc.id)
-                callbackText = ""
-                store.importStatus = "已获取 Cookie"
+                store.importStatus = "已添加账号"
             } catch {
-                store.importStatus = "Cookie 已读到，但没有写入账号"
+                store.importStatus = "登录成功，但没有写入账号"
             }
         }
     }
@@ -891,7 +757,7 @@ struct SettingsRootView: View {
         let result = await store.loginToCursor(confirmClose: { running in
             if !running { return true }
             let alert = NSAlert()
-            alert.messageText = "登录到 Cursor"
+            alert.messageText = "让 Cursor 使用此账号"
             alert.informativeText = CursorAuth.confirmCloseMessage
             alert.addButton(withTitle: "关闭并写入")
             alert.addButton(withTitle: "取消")
@@ -1352,44 +1218,6 @@ struct SettingsRootView: View {
         }
     }
 
-    func loginAndImport(prefer: String) async {
-        if importing { return }
-        importing = true
-        defer { importing = false }
-        let apps = SessionImporter.preferredMacAppNames(prefer)
-        if let app = apps.first {
-            let url = URL(string: "https://cursor.com/dashboard")!
-            let config = NSWorkspace.OpenConfiguration()
-            if let appURL = applicationURL(named: app) {
-                _ = try? await NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config)
-            } else {
-                NSWorkspace.shared.open(url)
-            }
-        }
-        store.importStatus = "请在浏览器登录，正在等待 Cookie…"
-        let deadline = Date().addingTimeInterval(180)
-        while Date() < deadline {
-            let result = await SessionImporter.importAndValidate(
-                preferBrowsers: SessionImporter.defaultPreferBrowsers(prefer),
-                onlyBrowsers: SessionImporter.onlyBrowsers(for: prefer),
-                skipTokens: store.config.existingTokenVariants()
-            )
-            if result.ok {
-                await MainActor.run {
-                    var cfg = store.config
-                    _ = try? cfg.upsertAccount(token: result.token, membershipType: result.membershipType, remaining: result.remainingPercent, activate: true)
-                    store.applyConfig(cfg, refresh: true)
-                    tokenText = ""
-                    store.importStatus = result.message
-                    hint = "已导入"
-                }
-                return
-            }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-        }
-        await MainActor.run { store.importStatus = "等待登录超时，请手动粘贴 Token。" }
-    }
-
     func formatDecimal(_ value: Double) -> String {
         let f = NumberFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -1402,28 +1230,6 @@ struct SettingsRootView: View {
     func parseDecimal(_ text: String) -> Double? {
         let cleaned = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "，", with: ".")
         return Double(cleaned)
-    }
-
-    func bundleId(for app: String) -> String {
-        switch app {
-        case "Safari": return "com.apple.Safari"
-        case "Firefox": return "org.mozilla.firefox"
-        default: return ""
-        }
-    }
-
-    func applicationURL(named app: String) -> URL? {
-        let id = bundleId(for: app)
-        if !id.isEmpty, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-            return url
-        }
-        let candidates = [
-            "/Applications/\(app).app",
-            "/System/Cryptexes/App/System/Applications/\(app).app",
-            "/System/Applications/\(app).app",
-            NSHomeDirectory() + "/Applications/\(app).app",
-        ]
-        return candidates.map { URL(fileURLWithPath: $0) }.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 }
 

@@ -239,8 +239,8 @@ sealed partial class TrayContext : ApplicationContext
         _menu.Items.Add("用量报表…", null, (_, _) => OpenReport());
         _menu.Items.Add("账号对比…", null, (_, _) => OpenCompare());
         _menu.Items.Add(_switcher);
-        _menu.Items.Add("在 Cursor 登录当前账号…", null, (_, _) => LoginToCursor());
-        _menu.Items.Add("导入 Token…", null, (_, _) => OpenSettings(true, true));
+        _menu.Items.Add("让 Cursor 使用此账号…", null, (_, _) => LoginToCursor());
+        _menu.Items.Add("添加账号…", null, (_, _) => OpenSettings(true, false));
         _menu.Items.Add("设置…", null, (_, _) => OpenSettings(false, false));
         _menu.Items.Add("检查更新…", null, (_, _) => _ = CheckUpdateAsync(true));
         _menu.Items.Add(new ToolStripSeparator());
@@ -374,7 +374,7 @@ sealed partial class TrayContext : ApplicationContext
             if (result.Message == "已取消") return;
             OnUi(() => _icon.ShowBalloonTip(
                 5000,
-                result.Ok ? "已写入 Cursor" : "未能登录 Cursor",
+                result.Ok ? "已写入 Cursor" : "未能写入 Cursor",
                 result.Message,
                 result.Ok ? ToolTipIcon.Info : ToolTipIcon.Warning));
         }

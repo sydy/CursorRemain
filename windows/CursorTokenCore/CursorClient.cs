@@ -194,7 +194,7 @@ public static class SessionImporter
         prefer ??= DefaultPreferBrowsers();
         var candidates = FindCandidates(only).ToList();
         if (candidates.Count == 0)
-            return new ImportResult(false, Message: "未找到可用 Cookie。Windows 可从 Cursor 应用或 Firefox 导入；Chrome / Edge 因系统加密无法读取，请改用 Firefox 或手动粘贴 WorkosCursorSessionToken。");
+            return new ImportResult(false, Message: "没有读到 Cursor 里的登录。请先在 Cursor 登录，或粘贴 Token。");
         var order = prefer.Select((b, i) => (b, i)).ToDictionary(x => x.b, x => x.i);
         candidates = candidates.OrderByDescending(c => c.LastUpdate).ThenBy(c => order.GetValueOrDefault(c.Browser, 99)).ToList();
         var skip = skipTokens ?? [];
