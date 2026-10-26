@@ -1238,6 +1238,38 @@ final class PasswordLoginFixtureTests: XCTestCase {
                 }
             }
         }
+        let link = root["login_link"] as! [String: Any]
+        XCTAssertEqual(CursorPasswordLogin.codeChallenge(str(link["verifier"])), str(link["challenge"]))
+        XCTAssertEqual(CursorPasswordLogin.loginDeepURL(uuid: str(link["uuid"]), verifier: str(link["verifier"])), str(link["login_url"]))
+        XCTAssertFalse(str(link["login_url"]).contains(str(link["verifier"])))
+        XCTAssertEqual(CursorPasswordLogin.pollURL, str(link["poll_url"]))
+        for row in root["callback"] as? [[String: Any]] ?? [] {
+            XCTAssertEqual(CursorPasswordLogin.tokenFromCallback(str(row["input"])), str(row["token"]), str(row["name"]))
+        }
+        for row in root["poll"] as? [[String: Any]] ?? [] {
+            var payload: [String: Any] = [:]
+            if let access = row["accessToken"] as? String { payload["accessToken"] = access }
+            if let access = row["access_token"] as? String { payload["access_token"] = access }
+            XCTAssertEqual(CursorPasswordLogin.tokenFromPoll(payload), str(row["token"]), str(row["name"]))
+        }
+        for row in root["profiles"] as? [[String: Any]] ?? [] {
+            let name = str(row["name"])
+            if row["email"] != nil || row["account_id"] != nil {
+                XCTAssertEqual(
+                    CursorPasswordLogin.profileKey(email: str(row["email"]), accountId: str(row["account_id"])),
+                    str(row["key"]),
+                    name
+                )
+            }
+            if row["new_id"] == nil { continue }
+            var index: [String: String] = [:]
+            if let raw = row["index"] as? [String: Any] {
+                for (key, value) in raw { index[key] = str(value) }
+            }
+            let assigned = CursorPasswordLogin.assignProfile(index, key: str(row["key"]), newId: str(row["new_id"]))
+            XCTAssertEqual(assigned.profileId, str(row["profile_id"]), name)
+            XCTAssertEqual(assigned.index[str(row["key"])] ?? "", str(row["stored"]), name)
+        }
     }
 
     private func json(_ name: String) throws -> Any { try Fixtures.json(name) }

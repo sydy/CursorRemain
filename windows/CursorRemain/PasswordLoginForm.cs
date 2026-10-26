@@ -17,16 +17,21 @@ sealed class PasswordLoginForm : Form
     };
     readonly string _email;
     readonly string _password;
+    readonly string _profileId;
+    readonly string _startUrl;
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 1500 };
     DateTime _deadline;
     bool _done;
 
     public string Token { get; private set; } = "";
 
-    public PasswordLoginForm(string email, string password)
+    public PasswordLoginForm(string email, string password, string? profileId = null, string? startUrl = null)
     {
         _email = email;
         _password = password;
+        _profileId = CursorPasswordLogin.ValidProfileId(profileId);
+        if (_profileId.Length == 0) _profileId = Guid.NewGuid().ToString("D");
+        _startUrl = AllowedLoginUrl(startUrl);
         Text = "登录 Cursor 账号";
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(720, 560);
@@ -59,11 +64,9 @@ sealed class PasswordLoginForm : Form
     {
         try
         {
-            var data = Path.Combine(AppPaths.ConfigDirectory(), "login-webview");
-            Directory.CreateDirectory(data);
+            var data = LoginProfileStore.DirectoryFor(_profileId);
             var env = await CoreWebView2Environment.CreateAsync(null, data);
             await _web.EnsureCoreWebView2Async(env);
-            _web.CoreWebView2.CookieManager.DeleteAllCookies();
             _web.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
             _web.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
@@ -72,8 +75,10 @@ sealed class PasswordLoginForm : Form
             };
             _deadline = DateTime.UtcNow.AddSeconds(CursorPasswordLogin.TimeoutSeconds);
             _poll.Start();
-            _status.Text = "正在自动填写，验证码请在窗口里完成…";
-            _web.CoreWebView2.Navigate(CursorPasswordLogin.LoginUrl);
+            _status.Text = string.IsNullOrEmpty(_password)
+                ? "请在此账号的独立环境中完成登录…"
+                : "正在自动填写，验证码请在窗口里完成…";
+            _web.CoreWebView2.Navigate(_startUrl);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -99,7 +104,7 @@ sealed class PasswordLoginForm : Form
 
     async Task InjectAsync()
     {
-        if (_done || _web.CoreWebView2 is null) return;
+        if (_done || _web.CoreWebView2 is null || string.IsNullOrEmpty(_password)) return;
         try
         {
             var state = await _web.CoreWebView2.ExecuteScriptAsync(CursorPasswordLogin.AutofillScript(_email, _password));
@@ -132,6 +137,16 @@ sealed class PasswordLoginForm : Form
         {
             // keep waiting
         }
+    }
+
+    static string AllowedLoginUrl(string? raw)
+    {
+        if (Uri.TryCreate(raw, UriKind.Absolute, out var uri)
+            && uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+            && (uri.Host.Equals("cursor.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("www.cursor.com", StringComparison.OrdinalIgnoreCase)))
+            return uri.AbsoluteUri;
+        return CursorPasswordLogin.LoginUrl;
     }
 
     void Finish(bool ok, string message)

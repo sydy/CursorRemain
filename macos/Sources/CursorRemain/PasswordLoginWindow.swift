@@ -5,31 +5,41 @@ import WebKit
 @MainActor
 final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDelegate {
     static let shared = PasswordLoginController()
+    private static var memoryStores: [String: WKWebsiteDataStore] = [:]
 
     private var window: NSWindow?
     private var web: WKWebView?
     private var status: NSTextField?
     private var email = ""
     private var password = ""
+    private var profileId = ""
     private var continuation: CheckedContinuation<String?, Never>?
     private var timer: Timer?
     private var deadline = Date()
     private var done = false
 
-    func run(email: String, password: String) async -> String? {
+    func run(email: String, password: String, profileId: String, startURL: String = CursorPasswordLogin.loginURL) async -> String? {
         if continuation != nil { return nil }
+        let ident = CursorPasswordLogin.validProfileId(profileId)
+        let resolved = ident.isEmpty ? UUID().uuidString.lowercased() : ident
+        if self.profileId != resolved {
+            window?.orderOut(nil)
+            window = nil
+            web = nil
+        }
+        self.profileId = resolved
         self.email = email
         self.password = password
         done = false
         MenubarActivation.promoteForWindow()
         showWindow()
-        await resetSession()
         deadline = Date().addingTimeInterval(TimeInterval(CursorPasswordLogin.timeoutSeconds))
         timer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.tick() }
         }
-        web?.load(URLRequest(url: URL(string: CursorPasswordLogin.loginURL)!))
-        setStatus("正在自动填写，验证码请在窗口里完成…")
+        let target = Self.allowedLoginURL(startURL) ?? URL(string: CursorPasswordLogin.loginURL)!
+        web?.load(URLRequest(url: target))
+        setStatus(password.isEmpty ? "请在此账号的独立环境中完成登录…" : "正在自动填写，验证码请在窗口里完成…")
         return await withCheckedContinuation { continuation = $0 }
     }
 
@@ -47,6 +57,7 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
             let content = NSView(frame: win.contentView?.bounds ?? .zero)
             content.autoresizingMask = [.width, .height]
             let config = WKWebViewConfiguration()
+            config.websiteDataStore = dataStore(for: profileId)
             let webView = WKWebView(frame: .zero, configuration: config)
             webView.navigationDelegate = self
             webView.translatesAutoresizingMaskIntoConstraints = false
@@ -78,13 +89,23 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
         window?.makeKeyAndOrderFront(nil)
     }
 
-    private func resetSession() async {
-        guard let store = web?.configuration.websiteDataStore else { return }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            store.removeData(ofTypes: [WKWebsiteDataTypeCookies], modifiedSince: .distantPast) {
-                cont.resume()
-            }
+    private func dataStore(for profileId: String) -> WKWebsiteDataStore {
+        if #available(macOS 14.0, *), let uuid = UUID(uuidString: profileId) {
+            return WKWebsiteDataStore(forIdentifier: uuid)
         }
+        if let store = Self.memoryStores[profileId] { return store }
+        let store = WKWebsiteDataStore.nonPersistent()
+        Self.memoryStores[profileId] = store
+        return store
+    }
+
+    private static func allowedLoginURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              url.scheme?.lowercased() == "https",
+              let host = url.host?.lowercased(),
+              host == "cursor.com" || host == "www.cursor.com"
+        else { return nil }
+        return url
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -102,7 +123,7 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
     }
 
     private func inject() async {
-        guard !done, let web else { return }
+        guard !done, let web, !password.isEmpty else { return }
         let script = CursorPasswordLogin.autofillScript(email: email, password: password)
         if let state = try? await web.evaluateJavaScript(script) as? String, state == "need-user" {
             setStatus("请在窗口里完成验证码或邮箱验证码…")

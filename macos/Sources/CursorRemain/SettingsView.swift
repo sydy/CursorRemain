@@ -1,5 +1,6 @@
 import AppKit
 import CursorTokenCore
+import Security
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -10,6 +11,11 @@ struct SettingsRootView: View {
     @State private var tab = "account"
     @State private var importing = false
     @State private var tokenText = ""
+    @State private var loginURLText = ""
+    @State private var callbackText = ""
+    @State private var loginUUID = ""
+    @State private var loginVerifier = ""
+    @State private var loginProfileId = ""
     @State private var intervalText = "10"
     @State private var planUsdText = "0"
     @State private var actualCnyText = "0"
@@ -276,6 +282,29 @@ struct SettingsRootView: View {
                 Button("完成") { addOpen = false }
             }
             Text("可粘贴 Token，或 name@example.com:密码、账号：邮箱密码：密码，多行则逐个添加。邮箱密码会打开官方登录页；验证码请在窗口里完成。此会话只能查用量。密码会加密保存并随云同步。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("用登录地址获取").font(.headline).padding(.top, 4)
+            TextField("登录地址", text: $loginURLText)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.caption, design: .monospaced))
+            HStack {
+                Button("生成登录地址") { generateLoginLink() }
+                    .disabled(importing)
+                Button("复制") { copyLoginLink() }
+                    .disabled(loginURLText.isEmpty)
+                Button("打开") { openLoginLink() }
+                    .disabled(loginURLText.isEmpty)
+                Spacer()
+            }
+            TextField("回调地址", text: $callbackText)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button("获取 Cookie") { Task { await cookieFromCallback() } }
+                    .disabled(importing)
+                Spacer()
+            }
+            Text("每个账号使用单独的登录环境，Cookie 不会串到其他账号。生成后在该环境中打开登录页；回调地址仍可手动粘贴。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             DisclosureGroup("其他导入方式", isExpanded: $extraOpen) {
@@ -654,11 +683,13 @@ struct SettingsRootView: View {
                 continue
             }
             if item.kind == "credentials" {
-                store.importStatus = "正在打开登录页…"
-                guard let token = await PasswordLoginController.shared.run(email: item.email, password: item.password), !token.isEmpty else {
+                store.importStatus = "正在打开该账号的登录环境…"
+                let profileId = LoginProfileStore.assign(email: item.email)
+                guard let token = await PasswordLoginController.shared.run(email: item.email, password: item.password, profileId: profileId), !token.isEmpty else {
                     fail += 1
                     continue
                 }
+                LoginProfileStore.bind(email: item.email, token: token, profileId: profileId)
                 do {
                     let snap = try await store.client.fetchUsageSummary(sessionToken: token)
                     var cfg = store.config
@@ -700,6 +731,127 @@ struct SettingsRootView: View {
         let summary = fail == 0 ? "已添加 \(ok) 个账号" : "成功 \(ok) / 失败 \(fail)"
         hint = summary
         store.importStatus = summary
+    }
+
+    func generateLoginLink() {
+        var bytes = [UInt8](repeating: 0, count: 32)
+        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+            store.importStatus = "生成登录地址失败"
+            return
+        }
+        let verifier = Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let uuid = UUID().uuidString.lowercased()
+        let url = CursorPasswordLogin.loginDeepURL(uuid: uuid, verifier: verifier)
+        if url.isEmpty {
+            store.importStatus = "生成登录地址失败"
+            return
+        }
+        loginUUID = uuid
+        loginVerifier = verifier
+        if loginProfileId.isEmpty { loginProfileId = UUID().uuidString.lowercased() }
+        loginURLText = url
+        copyString(url)
+        store.importStatus = "已在该账号的独立登录环境中打开"
+        let profileId = loginProfileId
+        Task { await openIsolatedLogin(url, profileId: profileId) }
+    }
+
+    func copyLoginLink() {
+        if loginURLText.isEmpty {
+            store.importStatus = "请先生成登录地址"
+            return
+        }
+        copyString(loginURLText)
+        store.importStatus = "已复制登录地址"
+    }
+
+    func openLoginLink() {
+        if loginURLText.isEmpty {
+            store.importStatus = "请先生成登录地址"
+            return
+        }
+        if loginProfileId.isEmpty { loginProfileId = UUID().uuidString.lowercased() }
+        let url = loginURLText
+        let profileId = loginProfileId
+        Task { await openIsolatedLogin(url, profileId: profileId) }
+    }
+
+    func openIsolatedLogin(_ url: String, profileId: String) async {
+        if importing { return }
+        importing = true
+        let token = await PasswordLoginController.shared.run(email: "", password: "", profileId: profileId, startURL: url)
+        importing = false
+        guard let token, !token.isEmpty else {
+            store.importStatus = "未在该登录环境中取得 Cookie"
+            return
+        }
+        LoginProfileStore.bind(email: "", token: token, profileId: profileId)
+        await storeImportedToken(token)
+    }
+
+    func copyString(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    func cookieFromCallback() async {
+        if importing { return }
+        let parsed = CursorPasswordLogin.tokenFromCallback(callbackText)
+        if !parsed.isEmpty {
+            await storeImportedToken(parsed)
+            return
+        }
+        if loginUUID.isEmpty || loginVerifier.isEmpty {
+            store.importStatus = "回调地址里没有 Cookie。请先生成登录地址，或贴入带 Cookie 的回调地址。"
+            return
+        }
+        importing = true
+        store.importStatus = "正在向 Cursor 换取会话…"
+        let result = await CursorPasswordLogin.pollSession(uuid: loginUUID, verifier: loginVerifier)
+        importing = false
+        if !result.token.isEmpty {
+            loginVerifier = ""
+            if !loginProfileId.isEmpty {
+                LoginProfileStore.bind(email: "", token: result.token, profileId: loginProfileId)
+            }
+            await storeImportedToken(result.token)
+            return
+        }
+        store.importStatus = result.message
+    }
+
+    func storeImportedToken(_ token: String) async {
+        if importing { return }
+        importing = true
+        defer { importing = false }
+        do {
+            let snap = try await store.client.fetchUsageSummary(sessionToken: token)
+            var cfg = store.config
+            let (acc, _) = try cfg.upsertAccount(
+                token: token,
+                membershipType: snap.membershipType,
+                remaining: snap.remainingPercent,
+                activate: true
+            )
+            store.applyConfig(cfg, refresh: true)
+            store.switchAccount(acc.id)
+            callbackText = ""
+            store.importStatus = "已获取 Cookie"
+        } catch {
+            do {
+                var cfg = store.config
+                let (acc, _) = try cfg.upsertAccount(token: token, activate: true)
+                store.applyConfig(cfg, refresh: true)
+                store.switchAccount(acc.id)
+                callbackText = ""
+                store.importStatus = "已获取 Cookie"
+            } catch {
+                store.importStatus = "Cookie 已读到，但没有写入账号"
+            }
+        }
     }
 
     func rename() {

@@ -5,15 +5,31 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 from typing import Any
+from urllib.parse import quote, unquote
 
 from cursor_api import normalize_workos_token
 
 LOGIN_URL = "https://cursor.com/login"
+LOGIN_DEEP_URL = "https://cursor.com/loginDeepControl"
+POLL_URL = "https://api2.cursor.sh/auth/poll"
 COOKIE_NAME = "WorkosCursorSessionToken"
 LOGIN_TIMEOUT_SECONDS = 180
+_CALLBACK_KEYS = (
+    "workoscursorsessiontoken",
+    "accesstoken",
+    "access_token",
+    "token",
+    "cookie",
+    "session_token",
+)
+_PROFILE_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -243,3 +259,154 @@ def autofill_script(email: str, password: str) -> str:
         "return passEl&&c.password?'filled':'waiting';"
         "})();"
     )
+
+
+def _percent_encode(value: str) -> str:
+    return quote(str(value or ""), safe="-._~")
+
+
+def code_challenge(verifier: str) -> str:
+    text = str(verifier or "").strip()
+    if not text:
+        return ""
+    digest = hashlib.sha256(text.encode("utf-8")).digest()
+    return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
+
+
+def login_deep_url(uuid: str, verifier: str) -> str:
+    login_id = str(uuid or "").strip()
+    challenge = code_challenge(verifier)
+    if not login_id or not challenge:
+        return ""
+    return (
+        f"{LOGIN_DEEP_URL}?challenge={_percent_encode(challenge)}"
+        f"&uuid={_percent_encode(login_id)}&mode=login"
+    )
+
+
+def _looks_like_session_token(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text or any(ch.isspace() for ch in text):
+        return False
+    lower = text.lower()
+    if "workoscursorsessiontoken=" in lower or "%3a%3a" in lower or "::" in text:
+        return True
+    parts = text.split(".")
+    return len(parts) == 3 and all(parts)
+
+
+def _percent_decode(value: str) -> str:
+    return unquote(str(value or ""))
+
+
+def _query_map(query: str) -> dict[str, str]:
+    found: dict[str, str] = {}
+    for part in str(query or "").split("&"):
+        if not part:
+            continue
+        key, _, raw_value = part.partition("=")
+        name = _percent_decode(key).strip().lower()
+        if not name or name in found:
+            continue
+        found[name] = _percent_decode(raw_value).strip()
+    return found
+
+
+def _normalized_token(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return normalize_workos_token(text)
+    except Exception:
+        return text
+
+
+def token_from_callback(text: Any) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    if "://" not in raw and not raw.lower().startswith("cursor.com"):
+        if not _looks_like_session_token(raw):
+            return ""
+        return _normalized_token(raw)
+    main, _, fragment = raw.partition("#")
+    _, _, query = main.partition("?")
+    found = _query_map(query)
+    for key, value in _query_map(fragment).items():
+        found.setdefault(key, value)
+    for key in _CALLBACK_KEYS:
+        value = found.get(key, "")
+        if value and _looks_like_session_token(value):
+            return _normalized_token(value)
+    return ""
+
+
+def valid_profile_id(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    return text if _PROFILE_ID_RE.match(text) else ""
+
+
+def profile_key(email: str = "", account_id: str = "") -> str:
+    mail = sanitize_login_email(email)
+    if mail:
+        return "email:" + mail
+    ident = str(account_id or "").strip()
+    if not ident or any(ch.isspace() or ch in "/\\" for ch in ident):
+        return ""
+    return "id:" + ident[:120]
+
+
+def canonical_profile_key(key: Any) -> str:
+    text = str(key or "").strip()
+    if text.startswith("email:"):
+        return profile_key(text[6:], "")
+    if text.startswith("id:"):
+        return profile_key("", text[3:])
+    return ""
+
+
+def _clean_profile_index(index: Any) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    if not isinstance(index, dict):
+        return cleaned
+    for key, value in index.items():
+        name = canonical_profile_key(key)
+        profile_id = valid_profile_id(value)
+        if name and profile_id:
+            cleaned[name] = profile_id
+    return cleaned
+
+
+def assign_profile(index: Any, key: str, new_id: str) -> tuple[dict[str, str], str]:
+    fresh = valid_profile_id(new_id)
+    cleaned = _clean_profile_index(index)
+    if not fresh:
+        return cleaned, ""
+    name = canonical_profile_key(key)
+    if not name:
+        return cleaned, fresh
+    current = cleaned.get(name, "")
+    if current:
+        return cleaned, current
+    cleaned[name] = fresh
+    return cleaned, fresh
+
+
+def bind_profile(index: Any, key: str, profile_id: str) -> dict[str, str]:
+    cleaned = _clean_profile_index(index)
+    name = canonical_profile_key(key)
+    ident = valid_profile_id(profile_id)
+    if not name or not ident:
+        return cleaned
+    cleaned[name] = ident
+    return cleaned
+
+
+def token_from_poll(payload: Any) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    raw = str(payload.get("accessToken") or payload.get("access_token") or "").strip()
+    if not raw:
+        return ""
+    return _normalized_token(raw)
