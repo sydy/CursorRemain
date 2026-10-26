@@ -19,19 +19,25 @@ sealed class PasswordLoginForm : Form
     readonly string _password;
     readonly string _profileId;
     readonly string _startUrl;
+    readonly string _pollUuid;
+    readonly string _pollVerifier;
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 1500 };
     DateTime _deadline;
+    DateTime _nextPoll = DateTime.MinValue;
     bool _done;
+    bool _polling;
 
     public string Token { get; private set; } = "";
 
-    public PasswordLoginForm(string email, string password, string? profileId = null, string? startUrl = null)
+    public PasswordLoginForm(string email, string password, string? profileId = null, string? startUrl = null, string? pollUuid = null, string? pollVerifier = null)
     {
         _email = email;
         _password = password;
         _profileId = CursorPasswordLogin.ValidProfileId(profileId);
         if (_profileId.Length == 0) _profileId = Guid.NewGuid().ToString("D");
         _startUrl = AllowedLoginUrl(startUrl);
+        _pollUuid = pollUuid ?? "";
+        _pollVerifier = pollVerifier ?? "";
         Text = "登录 Cursor 账号";
         StartPosition = FormStartPosition.CenterParent;
         MinimumSize = new Size(720, 560);
@@ -100,6 +106,22 @@ sealed class PasswordLoginForm : Form
         }
         await InjectAsync();
         await TryCaptureAsync();
+        await TryPollAsync();
+    }
+
+    async Task TryPollAsync()
+    {
+        if (_done || _polling || _pollUuid.Length == 0 || _pollVerifier.Length == 0 || DateTime.UtcNow < _nextPoll) return;
+        _polling = true;
+        _nextPoll = DateTime.UtcNow.AddSeconds(3);
+        try
+        {
+            var result = await CursorPasswordLogin.PollSession(_pollUuid, _pollVerifier);
+            if (_done || string.IsNullOrWhiteSpace(result.Token)) return;
+            Token = result.Token;
+            Finish(true, "已登录");
+        }
+        finally { _polling = false; }
     }
 
     async Task InjectAsync()

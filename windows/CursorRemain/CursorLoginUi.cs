@@ -22,8 +22,8 @@ static class CursorLoginUi
         if (running)
         {
             var answer = owner is null
-                ? MessageBox.Show(CursorAuth.ConfirmCloseMessage, "登录到 Cursor", MessageBoxButtons.OKCancel, MessageBoxIcon.Question)
-                : MessageBox.Show(owner, CursorAuth.ConfirmCloseMessage, "登录到 Cursor", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
+                ? MessageBox.Show(CursorAuth.ConfirmCloseMessage, "让 Cursor 使用此账号", MessageBoxButtons.OKCancel, MessageBoxIcon.Question)
+                : MessageBox.Show(owner, CursorAuth.ConfirmCloseMessage, "让 Cursor 使用此账号", MessageBoxButtons.OKCancel, MessageBoxIcon.Question);
             if (answer != DialogResult.OK)
                 return new CursorAuthApplyResult(false, "已取消");
         }
