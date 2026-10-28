@@ -504,10 +504,11 @@ pub fn chart_model_label(name: Option<&str>) -> String {
 
 pub const CSV_HEADER: &str = "日期(本地时间),用户,类型,模型,Token,费用,实付,折扣,云端Agent";
 
-pub fn usage_events_csv(events: &[Value]) -> String {
+pub fn usage_events_csv(events: &[Value], newline: &str) -> String {
+    let newline = if newline == "\n" { "\n" } else { "\r\n" };
     let mut out = String::from("\u{feff}");
     out.push_str(CSV_HEADER);
-    out.push_str("\r\n");
+    out.push_str(newline);
     for event in events {
         let amount = event.get("allocated_cny").and_then(Value::as_f64).filter(|n| *n > 0.0);
         let cells = [
@@ -522,7 +523,7 @@ pub fn usage_events_csv(events: &[Value]) -> String {
             if event["is_headless"].as_bool().unwrap_or(false) { "是" } else { "否" }.to_string(),
         ];
         out.push_str(&cells.map(|cell| csv_cell(&cell)).join(","));
-        out.push_str("\r\n");
+        out.push_str(newline);
     }
     out
 }

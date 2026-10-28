@@ -169,7 +169,7 @@ fn aggregated_usage_cases() {
 fn usage_event_parse_cases() {
     let root = fixture("usage_events_cases.json");
     let parsed = cursor_core::events::parse_page(&root["parse"][0]["payload"]);
-    let csv = cursor_core::events::usage_events_csv(parsed["events"].as_array().unwrap());
+    let csv = cursor_core::events::usage_events_csv(parsed["events"].as_array().unwrap(), "\r\n");
     assert!(csv.starts_with('\u{feff}'));
     assert!(csv.trim_start_matches('\u{feff}').starts_with(root["csv_header"].as_str().unwrap()));
     for row in root["kind"].as_array().unwrap() {
