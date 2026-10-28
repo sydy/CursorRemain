@@ -377,7 +377,8 @@ final class UsageParserFixtureTests: XCTestCase {
         let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: first["payload"] as Any))
         let csv = UsageEvents.toCSV(UsageEvents.parsePage(payload).events)
         XCTAssertTrue(csv.hasPrefix("\u{FEFF}"))
-        XCTAssertTrue(csv.drop(while: { $0 == "\u{FEFF}" }).hasPrefix(str(root["csv_header"])))
+        let body = String(csv.drop(while: { $0 == "\u{FEFF}" }))
+        XCTAssertTrue(body.hasPrefix(str(root["csv_header"])), body.prefix(240).description)
         XCTAssertEqual(UsageEvents.csvHeader, str(root["csv_header"]))
         for row in root["times"] as! [[String: Any]] {
             let ts = number64(row["timestamp_ms"]) ?? 0
