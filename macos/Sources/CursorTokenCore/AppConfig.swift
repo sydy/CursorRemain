@@ -301,6 +301,10 @@ public struct AppConfig: Equatable, Sendable {
     public static let colorModes: Set<String> = ["system", "light", "dark"]
 
     public static func normalizeColorMode(_ raw: String) -> String {
+        RustCore.string("normalize_appearance", ["input": raw])
+    }
+
+    static func normalizeColorModeCore(_ raw: String) -> String {
         let mode = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return colorModes.contains(mode) ? mode : "system"
     }
@@ -799,7 +803,7 @@ public enum ConfigStore {
         }
         let mode = ((raw["tray_display_mode"] as? String) ?? "ring").trimmingCharacters(in: .whitespaces).lowercased()
         cfg.trayDisplayMode = AppConfig.displayModes.contains(mode) ? mode : "ring"
-        cfg.colorMode = AppConfig.normalizeColorMode((raw["color_mode"] as? String) ?? "system")
+        cfg.colorMode = AppConfig.normalizeColorModeCore((raw["color_mode"] as? String) ?? "system")
         if let v = doubleValue(raw["monthly_plan_usd"]) { cfg.monthlyPlanUsd = UsageEvents.clampMonthlyPlanUsd(v) }
         if let v = doubleValue(raw["actual_cny"]) { cfg.actualCny = UsageEvents.clampActualCny(v) }
         if let v = doubleValue(raw["usd_cny_rate"]) {
@@ -1077,7 +1081,7 @@ public enum ConfigStore {
             "update_installed_sha": cfg.updateInstalledSha,
             "update_installed_asset_id": cfg.updateInstalledAssetId,
             "tray_display_mode": cfg.trayDisplayMode,
-            "color_mode": AppConfig.normalizeColorMode(cfg.colorMode),
+            "color_mode": AppConfig.normalizeColorModeCore(cfg.colorMode),
             "monthly_plan_usd": cfg.monthlyPlanUsd,
             "actual_cny": cfg.actualCny,
             "usd_cny_rate": cfg.usdCnyRate,

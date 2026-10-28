@@ -1,4 +1,4 @@
-use crate::{events, login, status, sync, token, update, usage, validity};
+use crate::{config, events, login, status, sync, token, update, usage, validity};
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -71,6 +71,8 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "merge_usage_events" => json!(events::merge(input["existing"].as_array().map(Vec::as_slice).unwrap_or(&[]), input["incoming"].as_array().map(Vec::as_slice).unwrap_or(&[]))),
         "prune_usage_events" => json!(events::prune(input["events"].as_array().map(Vec::as_slice).unwrap_or(&[]), input["min_timestamp_ms"].as_i64().unwrap_or(0))),
         "format_event_cost" => json!(events::format_cost(&input["event"])),
+        "usage_events_csv" => json!(events::usage_events_csv(input["events"].as_array().map(Vec::as_slice).unwrap_or(&[]))),
+        "normalize_appearance" => json!(config::normalize_appearance(input["input"].as_str())),
         "build_usage_report" => events::build_report(input["events"].as_array().map(Vec::as_slice).unwrap_or(&[]), &input["filter"], input.get("spend"), input.get("allocation")),
         "build_usage_chart" => events::build_chart(input["events"].as_array().map(Vec::as_slice).unwrap_or(&[]), input["hourly"].as_bool().unwrap_or(false), &strings(input, "hidden_models")),
         "chart_model_label" => json!(events::chart_model_label(input["input"].as_str())),

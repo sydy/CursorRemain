@@ -1,3 +1,4 @@
+pub mod config;
 pub mod events;
 pub mod ffi;
 pub mod jsonutil;

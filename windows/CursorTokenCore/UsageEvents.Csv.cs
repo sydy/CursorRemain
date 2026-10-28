@@ -52,6 +52,19 @@ public static partial class UsageEvents
 
     public static string ToCsv(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null, ReportAllocationWindow? allocation = null)
     {
+        if (spend is not null) return ToCsvCore(events, spend, allocationBase, allocation);
+        return RustCore.String("usage_events_csv", new { events = events.Select(CsvEventJson) });
+    }
+
+    static object CsvEventJson(UsageEvent ev) => new
+    {
+        timestamp_ms = ev.TimestampMs, user_email = ev.UserEmail, kind = ev.Kind, model = ev.Model,
+        tokens = ev.Tokens, charged_cents = ev.ChargedCents, total_cents = ev.TotalCents,
+        is_headless = ev.IsHeadless, allocated_cny = ev.AllocatedCny,
+    };
+
+    static string ToCsvCore(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null, ReportAllocationWindow? allocation = null)
+    {
         var rows = events as IList<UsageEvent> ?? events.ToList();
         Dictionary<string, double> cnyById = [];
         var rate = 0.0;

@@ -1586,6 +1586,17 @@ public enum UsageEvents {
     }
 
     public static func toCSV(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
+        if spend != nil { return toCSVCore(events, spend: spend, allocationBase: allocationBase, allocation: allocation) }
+        return RustCore.string("usage_events_csv", ["events": events.map { event in
+            [
+                "timestamp_ms": event.timestampMs, "user_email": event.userEmail, "kind": event.kind,
+                "model": event.model, "tokens": event.tokens, "charged_cents": event.chargedCents as Any,
+                "total_cents": event.totalCents as Any, "is_headless": event.isHeadless, "allocated_cny": event.allocatedCny,
+            ] as [String: Any]
+        }])
+    }
+
+    static func toCSVCore(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
         let allocated = spend == nil
             ? (byId: [String: Double](), planCny: 0.0, onDemandCny: 0.0, monthly: 0.0, rate: 0.0, actual: 0.0, usesActual: false, windowPlan: 0.0)
             : cnyById(allocationBase ?? events, spend: spend, allocation: allocation)

@@ -354,7 +354,10 @@ public sealed class AppConfig
             account.ActualCny = UsageEvents.ClampActualCny(ActualCny);
     }
 
-    public static string NormalizeAppearance(string? raw)
+    public static string NormalizeAppearance(string? raw) =>
+        RustCore.String("normalize_appearance", new { input = raw ?? "" });
+
+    internal static string NormalizeAppearanceCore(string? raw)
     {
         var mode = (raw ?? "").Trim().ToLowerInvariant();
         return mode is "system" or "light" or "dark" ? mode : "system";
@@ -688,7 +691,7 @@ public static class ConfigStore
         }
         var mode = Str(raw, "tray_display_mode", "ring").Trim().ToLowerInvariant();
         cfg.TrayDisplayMode = mode is "ring" or "number" or "dot" ? mode : "ring";
-        cfg.ColorMode = AppConfig.NormalizeAppearance(Str(raw, "color_mode", "system"));
+        cfg.ColorMode = AppConfig.NormalizeAppearanceCore(Str(raw, "color_mode", "system"));
         cfg.MonthlyPlanUsd = UsageEvents.ClampMonthlyPlanUsd(DoubleVal(raw, "monthly_plan_usd", 0));
         cfg.ActualCny = UsageEvents.ClampActualCny(DoubleVal(raw, "actual_cny", 0));
         cfg.UsdCnyRate = UsageEvents.ClampUsdCnyRate(DoubleVal(raw, "usd_cny_rate", UsageEvents.DefaultUsdCnyRate));
@@ -961,7 +964,7 @@ public static class ConfigStore
         update_installed_sha = cfg.UpdateInstalledSha,
         update_installed_asset_id = cfg.UpdateInstalledAssetId,
         tray_display_mode = cfg.TrayDisplayMode,
-        color_mode = AppConfig.NormalizeAppearance(cfg.ColorMode),
+        color_mode = AppConfig.NormalizeAppearanceCore(cfg.ColorMode),
         monthly_plan_usd = cfg.MonthlyPlanUsd,
         actual_cny = cfg.ActualCny,
         usd_cny_rate = cfg.UsdCnyRate,

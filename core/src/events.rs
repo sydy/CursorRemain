@@ -502,6 +502,35 @@ pub fn chart_model_label(name: Option<&str>) -> String {
     text.strip_prefix("cursor-").unwrap_or(text).to_string()
 }
 
+pub const CSV_HEADER: &str = "日期(本地时间),用户,类型,模型,Token,费用,实付,折扣,云端Agent";
+
+pub fn usage_events_csv(events: &[Value]) -> String {
+    let mut out = String::from("\u{feff}");
+    out.push_str(CSV_HEADER);
+    out.push_str("\r\n");
+    for event in events {
+        let amount = event.get("allocated_cny").and_then(Value::as_f64).filter(|n| *n > 0.0);
+        let cells = [
+            format_time(event["timestamp_ms"].as_i64().unwrap_or(0)),
+            event["user_email"].as_str().unwrap_or("").to_string(),
+            kind_label(event["kind"].as_str()).to_string(),
+            event["model"].as_str().unwrap_or("").to_string(),
+            event["tokens"].as_i64().unwrap_or(0).to_string(),
+            format_cost(event),
+            amount.map(|n| format_cny(Some(n))).unwrap_or_else(|| "—".to_string()),
+            format_discount(amount.unwrap_or(0.0), cost_cents(event), 0.0, event["kind"].as_str()),
+            if event["is_headless"].as_bool().unwrap_or(false) { "是" } else { "否" }.to_string(),
+        ];
+        out.push_str(&cells.map(|cell| csv_cell(&cell)).join(","));
+        out.push_str("\r\n");
+    }
+    out
+}
+
+fn csv_cell(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) { format!("\"{}\"", value.replace('"', "\"\"")) } else { value.to_string() }
+}
+
 pub fn format_time(timestamp_ms: i64) -> String { display(timestamp_ms).format("%Y-%m-%d %H:%M") }
 pub fn event_date(timestamp_ms: i64) -> String { display(timestamp_ms).format("%Y-%m-%d") }
 pub fn event_hour(timestamp_ms: i64) -> String { display(floor_hour(timestamp_ms)).format("%Y-%m-%d %H:00") }
