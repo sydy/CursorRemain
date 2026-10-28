@@ -512,7 +512,7 @@ pub fn usage_events_csv(events: &[Value], newline: &str) -> String {
     for event in events {
         let amount = event.get("allocated_cny").and_then(Value::as_f64).filter(|n| *n > 0.0);
         let cells = [
-            format_time(event["timestamp_ms"].as_i64().unwrap_or(0)),
+            event["timestamp_ms"].as_i64().filter(|n| *n > 0).map(format_time).unwrap_or_default(),
             event["user_email"].as_str().unwrap_or("").to_string(),
             kind_label(event["kind"].as_str()).to_string(),
             event["model"].as_str().unwrap_or("").to_string(),
