@@ -1597,7 +1597,23 @@ public enum UsageEvents {
         guard JSONSerialization.isValidJSONObject(["lf": true, "events": rows]) else {
             return toCSVCore(events, spend: nil, allocationBase: allocationBase, allocation: allocation)
         }
-        return RustCore.string("usage_events_csv", ["lf": true, "events": rows])
+        _ = RustCore.string("usage_events_csv", ["lf": true, "events": rows])
+        let raw = RustCore.lastText
+        guard raw.count >= 2, raw.hasPrefix("\""), raw.hasSuffix("\"") else { return raw }
+        let body = raw.dropFirst().dropLast()
+        var out = ""
+        var escaped = false
+        for char in body {
+            if escaped {
+                out.append(char == "n" ? "\n" : char)
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else {
+                out.append(char)
+            }
+        }
+        return out
     }
 
     static func toCSVCore(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {

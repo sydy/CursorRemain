@@ -376,10 +376,8 @@ final class UsageParserFixtureTests: XCTestCase {
         let first = (root["parse"] as! [[String: Any]])[0]
         let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: first["payload"] as Any))
         let csv = UsageEvents.toCSV(UsageEvents.parsePage(payload).events)
-        XCTAssertTrue(csv.hasPrefix("\u{FEFF}"), "raw=\(RustCore.lastText.prefix(120)) parsed=\(csv.prefix(40))")
-        let body = String(csv.drop(while: { $0 == "\u{FEFF}" }))
-        let codes = body.prefix(12).map { String($0.unicodeScalars.first!.value) }.joined(separator: ",")
-        XCTAssertTrue(body.hasPrefix(str(root["csv_header"])), "len=\(body.count) codes=\(codes) text=\(body.prefix(80))")
+        XCTAssertTrue(csv.hasPrefix("\u{FEFF}"))
+        XCTAssertTrue(csv.drop(while: { $0 == "\u{FEFF}" }).hasPrefix(str(root["csv_header"])))
         XCTAssertEqual(UsageEvents.csvHeader, str(root["csv_header"]))
         for row in root["times"] as! [[String: Any]] {
             let ts = number64(row["timestamp_ms"]) ?? 0
