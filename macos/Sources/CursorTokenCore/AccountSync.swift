@@ -635,7 +635,7 @@ public enum AccountSync {
 
     static func eventPayload(_ event: UsageEvent) -> [String: Any] {
         [
-            "id": event.id, "timestamp_ms": event.timestampMs, "model": event.model, "kind": event.kind,
+            "id": event.id, "timestamp_ms": NSNumber(value: event.timestampMs), "model": event.model, "kind": event.kind,
             "user_email": event.userEmail, "owning_user": event.owningUser, "tokens": event.tokens,
             "input_tokens": event.inputTokens, "output_tokens": event.outputTokens,
             "cache_write_tokens": event.cacheWriteTokens, "cache_read_tokens": event.cacheReadTokens,
