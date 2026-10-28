@@ -168,6 +168,12 @@ fn aggregated_usage_cases() {
 #[test]
 fn usage_event_parse_cases() {
     let root = fixture("usage_events_cases.json");
+    for row in root["sync_window"].as_array().unwrap() {
+        let got = cursor_core::events::resolve_sync_window(row["billing_cycle_start"].as_str(), row["billing_cycle_end"].as_str(), row["end_overridden"].as_bool().unwrap(), row["api_billing_cycle_end"].as_str(), row["now_ms"].as_i64().unwrap(), row["watermark_ms"].as_i64().unwrap());
+        assert_eq!(got["start_ms"], row["start_ms"], "{}", row["name"]);
+        assert_eq!(got["end_ms"], row["end_ms"]);
+        assert_eq!(got["stop_at_ms"], row["stop_at_ms"]);
+    }
     let parsed = cursor_core::events::parse_page(&root["parse"][0]["payload"]);
     let csv = cursor_core::events::usage_events_csv(parsed["events"].as_array().unwrap(), "\r\n");
     assert!(csv.starts_with('\u{feff}'));

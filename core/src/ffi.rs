@@ -79,6 +79,8 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "format_event_time" => json!(events::format_time(input["timestamp_ms"].as_i64().unwrap_or(0))),
         "event_date" => json!(events::event_date(input["timestamp_ms"].as_i64().unwrap_or(0))),
         "event_hour" => json!(events::event_hour(input["timestamp_ms"].as_i64().unwrap_or(0))),
+        "resolve_sync_window" => events::resolve_sync_window(input["billing_cycle_start"].as_str(), input["billing_cycle_end"].as_str(), input["end_overridden"].as_bool().unwrap_or(false), input["api_billing_cycle_end"].as_str(), input["now_ms"].as_i64().unwrap_or(0), input["watermark_ms"].as_i64().unwrap_or(0)),
+        "normalize_report_range" => events::normalize_report_range(input["start"].as_str(), input["end"].as_str()),
         "default_monthly_plan_usd" => json!(events::default_monthly_plan_usd(input["membership"].as_str())),
         "format_cny" => json!(events::format_cny(input["cny"].as_f64())),
         "format_discount" => json!(events::format_discount(input["cny"].as_f64().unwrap_or(f64::NAN), input["cents"].as_f64().unwrap_or(f64::NAN), input["rate"].as_f64().unwrap_or(f64::NAN), input["kind"].as_str())),

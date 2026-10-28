@@ -771,6 +771,12 @@ public static partial class UsageEvents
 
     public static (string Start, string End, bool Swapped) NormalizeReportRange(string? start, string? end)
     {
+        var result = RustCore.Call("normalize_report_range", new { start = start ?? "", end = end ?? "" });
+        return (result.GetProperty("start").GetString() ?? "", result.GetProperty("end").GetString() ?? "", result.GetProperty("swapped").GetBoolean());
+    }
+
+    internal static (string Start, string End, bool Swapped) NormalizeReportRangeCore(string? start, string? end)
+    {
         var s = SanitizeReportDate(start);
         var e = SanitizeReportDate(end);
         if (s.Length == 0 || e.Length == 0 || string.CompareOrdinal(s, e) <= 0)
@@ -1015,6 +1021,27 @@ public static partial class UsageEvents
     /// 若结束时间早于已有明细，则拉到 now，避免 startDate 大于 endDate 后一条都拉不回来。
     /// </summary>
     public static UsageEventsWindow ResolveSyncWindow(
+        string? billingCycleStart,
+        string? billingCycleEnd,
+        bool endOverridden,
+        string? apiBillingCycleEnd,
+        long nowMs,
+        long watermarkMs)
+    {
+        var result = RustCore.Call("resolve_sync_window", new
+        {
+            billing_cycle_start = billingCycleStart,
+            billing_cycle_end = billingCycleEnd,
+            end_overridden = endOverridden,
+            api_billing_cycle_end = apiBillingCycleEnd,
+            now_ms = nowMs,
+            watermark_ms = watermarkMs,
+        });
+        long? stop = result.GetProperty("stop_at_ms").ValueKind == JsonValueKind.Number ? result.GetProperty("stop_at_ms").GetInt64() : null;
+        return new UsageEventsWindow(result.GetProperty("start_ms").GetInt64(), result.GetProperty("end_ms").GetInt64(), stop);
+    }
+
+    internal static UsageEventsWindow ResolveSyncWindowCore(
         string? billingCycleStart,
         string? billingCycleEnd,
         bool endOverridden,

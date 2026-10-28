@@ -532,6 +532,33 @@ fn csv_cell(value: &str) -> String {
     if value.contains([',', '"', '\n', '\r']) { format!("\"{}\"", value.replace('"', "\"\"")) } else { value.to_string() }
 }
 
+pub fn resolve_sync_window(start: Option<&str>, end: Option<&str>, end_overridden: bool, api_end: Option<&str>, now_ms: i64, watermark_ms: i64) -> Value {
+    let cycle_start = event_timestamp_ms(start.unwrap_or("")).unwrap_or(now_ms - 30 * 86_400_000);
+    let end_iso = if end_overridden { api_end.unwrap_or("") } else { end.unwrap_or("") };
+    let mut cycle_end = event_timestamp_ms(end_iso).unwrap_or(now_ms).min(now_ms);
+    let mut start_ms = cycle_start;
+    let stop_at = if watermark_ms > 0 {
+        start_ms = cycle_start.max(watermark_ms - 60_000);
+        Some(watermark_ms)
+    } else {
+        None
+    };
+    if cycle_end < start_ms { cycle_end = now_ms; }
+    json!({"start_ms": start_ms, "end_ms": cycle_end, "stop_at_ms": stop_at})
+}
+
+pub fn normalize_report_range(start: Option<&str>, end: Option<&str>) -> Value {
+    let start = sanitize_report_date(start);
+    let end = sanitize_report_date(end);
+    if start.is_empty() || end.is_empty() || start <= end { json!({"start": start, "end": end, "swapped": false}) }
+    else { json!({"start": end, "end": start, "swapped": true}) }
+}
+
+fn sanitize_report_date(raw: Option<&str>) -> String {
+    let text = raw.unwrap_or("").trim();
+    if text.len() >= 10 && text.as_bytes().get(4) == Some(&b'-') && text.as_bytes().get(7) == Some(&b'-') { text[..10].to_string() } else { String::new() }
+}
+
 pub fn format_time(timestamp_ms: i64) -> String { display(timestamp_ms).format("%Y-%m-%d %H:%M") }
 pub fn event_date(timestamp_ms: i64) -> String { display(timestamp_ms).format("%Y-%m-%d") }
 pub fn event_hour(timestamp_ms: i64) -> String { display(floor_hour(timestamp_ms)).format("%Y-%m-%d %H:00") }

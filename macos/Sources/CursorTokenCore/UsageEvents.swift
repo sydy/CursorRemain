@@ -1064,6 +1064,11 @@ public enum UsageEvents {
     }
 
     public static func normalizeReportRange(_ start: Any?, _ end: Any?) -> (start: String, end: String, swapped: Bool) {
+        let result = RustCore.object("normalize_report_range", ["start": "\(start ?? "")", "end": "\(end ?? "")"])
+        return (result["start"] as? String ?? "", result["end"] as? String ?? "", result["swapped"] as? Bool ?? false)
+    }
+
+    static func normalizeReportRangeCore(_ start: Any?, _ end: Any?) -> (start: String, end: String, swapped: Bool) {
         let startDate = sanitizeReportDate(start)
         let endDate = sanitizeReportDate(end)
         if startDate.isEmpty || endDate.isEmpty || startDate <= endDate {
@@ -1737,6 +1742,26 @@ public enum UsageEvents {
         nowMs: Int64,
         watermarkMs: Int64
     ) -> UsageEventsWindow {
+        let result = RustCore.object("resolve_sync_window", [
+            "billing_cycle_start": billingCycleStart as Any,
+            "billing_cycle_end": billingCycleEnd as Any,
+            "end_overridden": endOverridden,
+            "api_billing_cycle_end": apiBillingCycleEnd as Any,
+            "now_ms": NSNumber(value: nowMs),
+            "watermark_ms": NSNumber(value: watermarkMs),
+        ])
+        let stop = result["stop_at_ms"] as? Int64 ?? (result["stop_at_ms"] as? NSNumber)?.int64Value
+        return UsageEventsWindow(startMs: (result["start_ms"] as? NSNumber)?.int64Value ?? 0, endMs: (result["end_ms"] as? NSNumber)?.int64Value ?? 0, stopAtMs: result["stop_at_ms"] is NSNull ? nil : stop)
+    }
+
+    static func resolveSyncWindowCore(
+        billingCycleStart: String?,
+        billingCycleEnd: String?,
+        endOverridden: Bool,
+        apiBillingCycleEnd: String?,
+        nowMs: Int64,
+        watermarkMs: Int64
+    ) -> UsageEventsWindow {
         let cycleStart = Int64(UsageParser.isoToMs(billingCycleStart) ?? Int(nowMs - 30 * 86_400 * 1000))
         let endIso = endOverridden ? apiBillingCycleEnd : billingCycleEnd
         var cycleEnd = Int64(UsageParser.isoToMs(endIso) ?? Int(nowMs))
@@ -1762,7 +1787,7 @@ public enum UsageEvents {
     ) async throws -> UsageEventsSyncResult {
         let existing = load(accountId: accountId, teamScope: teamScope, directory: directory)
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let window = resolveSyncWindow(
+        let window = resolveSyncWindowCore(
             billingCycleStart: usage?.billingCycleStart,
             billingCycleEnd: usage?.billingCycleEnd,
             endOverridden: usage?.billingCycleEndOverridden == true,

@@ -88,7 +88,7 @@ public static partial class UsageEvents
         var category = (filter.Category ?? "").Trim().ToLowerInvariant();
         var model = (filter.Model ?? "").Trim();
         var owning = (filter.OwningUser ?? "").Trim();
-        var (startDate, endDate, _) = NormalizeReportRange(filter.StartDate, filter.EndDate);
+        var (startDate, endDate, _) = NormalizeReportRangeCore(filter.StartDate, filter.EndDate);
         var startMs = ReportDateStartMs(startDate);
         var endMs = ReportDateEndMs(endDate);
         var source = events as IList<UsageEvent> ?? events.ToList();
