@@ -46,7 +46,10 @@ public static class StatusText
         return text;
     }
 
-    public static string StatusPillText(double? remaining, bool error = false)
+    public static string StatusPillText(double? remaining, bool error = false) =>
+        RustCore.String("status_pill_text", new { remaining, error });
+
+    internal static string StatusPillTextCore(double? remaining, bool error = false)
     {
         if (error) return "异常";
         if (remaining is null) return "等待刷新";
@@ -56,7 +59,10 @@ public static class StatusText
         return "状态良好";
     }
 
-    public static string FormatPlanCaption(string? membership, string? accountLabel = null)
+    public static string FormatPlanCaption(string? membership, string? accountLabel = null) =>
+        RustCore.String("format_plan_caption", new { membership = membership ?? "", label = accountLabel ?? "" });
+
+    internal static string FormatPlanCaptionCore(string? membership, string? accountLabel = null)
     {
         var raw = (membership ?? "").Trim();
         string name;
@@ -127,6 +133,18 @@ public static class StatusText
         usage.BillingCycleEndOverridden ? "到期" : "重置";
 
     public static List<(string, string)> BuildStatusLines(UsageSnapshot? usage, string? error, string? updatedAt = null, string? accountLabel = null)
+    {
+        var result = RustCore.Call("build_status_lines", new
+        {
+            usage = usage is null ? null : UsageParser.SnapshotJson(usage),
+            error,
+            updated_at = updatedAt,
+            label = accountLabel,
+        });
+        return result.EnumerateArray().Select(row => (row.GetProperty("key").GetString() ?? "", row.GetProperty("value").GetString() ?? "")).ToList();
+    }
+
+    internal static List<(string, string)> BuildStatusLinesCore(UsageSnapshot? usage, string? error, string? updatedAt = null, string? accountLabel = null)
     {
         if (error is not null) return [("状态", error)];
         if (usage is null) return [("状态", "等待刷新…")];

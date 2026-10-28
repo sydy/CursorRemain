@@ -23,7 +23,7 @@ public enum StatusText {
         if usage.showsAmount {
             spend = "金额 \(UsageParser.formatSpendRange(used: usage.usedCents, limit: usage.limitCents)) | "
         }
-        var plan = formatPlanCaption(usage.membershipType, accountLabel: accountLabel)
+        var plan = formatPlanCaptionCore(usage.membershipType, accountLabel: accountLabel)
         if usage.isUnlimited { plan += " · 不限量" }
         if usage.isXSubscription {
             let prepaid = usage.prepaidRemainingCents.map { " | 预付余额 \(UsageParser.formatUSDCents($0))" } ?? ""
@@ -62,6 +62,10 @@ public enum StatusText {
     }
 
     public static func statusPillText(_ remaining: Double?, error: Bool = false) -> String {
+        RustCore.string("status_pill_text", ["remaining": remaining as Any, "error": error])
+    }
+
+    static func statusPillTextCore(_ remaining: Double?, error: Bool = false) -> String {
         if error { return "异常" }
         guard let remaining else { return "等待刷新" }
         if remaining <= 0 { return "已耗尽" }
@@ -71,6 +75,10 @@ public enum StatusText {
     }
 
     public static func formatPlanCaption(_ membership: String?, accountLabel: String? = nil) -> String {
+        RustCore.string("format_plan_caption", ["membership": membership ?? "", "label": accountLabel ?? ""])
+    }
+
+    static func formatPlanCaptionCore(_ membership: String?, accountLabel: String? = nil) -> String {
         let raw = (membership ?? "").trimmingCharacters(in: .whitespaces)
         var name: String
         if raw.isEmpty {
@@ -149,6 +157,50 @@ public enum StatusText {
     }
 
     public static func buildStatusLines(
+        _ usage: UsageSnapshot?,
+        errorMessage: String?,
+        updatedAt: String? = nil,
+        accountLabel: String? = nil
+    ) -> [(String, String)] {
+        let result = RustCore.call("build_status_lines", [
+            "usage": usage.map(snapshotPayload) as Any,
+            "error": errorMessage as Any,
+            "updated_at": updatedAt as Any,
+            "label": accountLabel as Any,
+        ])
+        return (result as? [[String: Any]] ?? []).map { ($0["key"] as? String ?? "", $0["value"] as? String ?? "") }
+    }
+
+    static func snapshotPayload(_ usage: UsageSnapshot) -> [String: Any] {
+        [
+            "used_percent": usage.usedPercent,
+            "remaining_percent": usage.remainingPercent,
+            "shows_amount": usage.showsAmount,
+            "is_unlimited": usage.isUnlimited,
+            "is_team_account": usage.isTeamAccount,
+            "is_x_subscription": usage.isXSubscription,
+            "membership_type": usage.membershipType,
+            "billing_mode": usage.billingMode,
+            "used_cents": usage.usedCents as Any,
+            "limit_cents": usage.limitCents as Any,
+            "pooled_used_cents": usage.pooledUsedCents as Any,
+            "pooled_limit_cents": usage.pooledLimitCents as Any,
+            "on_demand_used_cents": usage.onDemandUsedCents as Any,
+            "on_demand_limit_cents": usage.onDemandLimitCents as Any,
+            "usage_reset_at": usage.usageResetAt as Any,
+            "days_remaining": usage.daysRemaining as Any,
+            "estimated_usable_days": usage.estimatedUsableDays as Any,
+            "billing_cycle_end": usage.billingCycleEnd as Any,
+            "billing_cycle_end_overridden": usage.billingCycleEndOverridden,
+            "total_tokens": usage.totalTokens as Any,
+            "auto_percent_used": usage.autoPercentUsed as Any,
+            "api_percent_used": usage.apiPercentUsed as Any,
+            "prepaid_remaining_cents": usage.prepaidRemainingCents as Any,
+            "grok_bot_percent_used": usage.grokBotPercentUsed as Any,
+        ]
+    }
+
+    static func buildStatusLinesCore(
         _ usage: UsageSnapshot?,
         errorMessage: String?,
         updatedAt: String? = nil,
@@ -315,7 +367,7 @@ public enum StatusText {
             }
             return text
         }
-        var lines = [formatPlanCaption(usage.membershipType), formatXReportNotice(), ""]
+        var lines = [formatPlanCaptionCore(usage.membershipType), formatXReportNotice(), ""]
         lines.append("已用  \(Self.oneDecimal(usage.usedPercent))%")
         lines.append("剩余  \(Self.oneDecimal(usage.remainingPercent))%")
         if let reset = usage.usageResetAt {

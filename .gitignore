@@ -24,6 +24,7 @@ server/.venv/
 
 macos/.build/
 macos/.swiftpm/
+core/target/
 windows/**/bin/
 windows/**/obj/
 windows/**/TestResults/

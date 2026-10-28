@@ -37,4 +37,7 @@
     <ProjectReference Include="..\CursorTokenCore\CursorTokenCore.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
   </ItemGroup>
+  <Target Name="CopyCursorCore" AfterTargets="Publish" Condition="Exists('$(NativeOutputDir)cursor_core.dll')">
+    <Copy SourceFiles="$(NativeOutputDir)cursor_core.dll" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -446,6 +446,10 @@ public enum UsageEvents {
     public static var displayTimeZone = TimeZone.current
 
     public static func kindLabel(_ kind: String?) -> String {
+        RustCore.string("kind_label", ["kind": kind ?? ""])
+    }
+
+    static func kindLabelCore(_ kind: String?) -> String {
         switch (kind ?? "").trimmingCharacters(in: .whitespaces).lowercased() {
         case kindIncluded: return "套餐内"
         case kindFree: return "免费"
@@ -455,10 +459,18 @@ public enum UsageEvents {
     }
 
     public static func classifyCategory(_ model: String?) -> String {
-        UsageParser.usageCategory(model)
+        RustCore.string("classify_category", ["model": model ?? ""])
+    }
+
+    static func classifyCategoryCore(_ model: String?) -> String {
+        UsageParser.usageCategoryCore(model)
     }
 
     public static func categoryLabel(_ category: String?) -> String {
+        RustCore.string("category_label", ["category": category ?? ""])
+    }
+
+    static func categoryLabelCore(_ category: String?) -> String {
         switch (category ?? "").trimmingCharacters(in: .whitespaces).lowercased() {
         case categoryFirstParty: return "First-party"
         case categoryGrokBot: return "Grok Bot"
@@ -480,6 +492,10 @@ public enum UsageEvents {
     }
 
     public static func classifyKind(_ kind: String?, usageBasedCosts: String? = nil, isChargeable: Bool = false) -> String {
+        RustCore.string("classify_kind", ["kind": kind ?? "", "costs": usageBasedCosts ?? "", "chargeable": isChargeable])
+    }
+
+    static func classifyKindCore(_ kind: String?, usageBasedCosts: String? = nil, isChargeable: Bool = false) -> String {
         let blob = "\(kind ?? "") \(usageBasedCosts ?? "")".trimmingCharacters(in: .whitespaces).lowercased()
         if blob.contains("free") { return kindFree }
         if blob.contains("included") { return kindIncluded }
@@ -497,12 +513,16 @@ public enum UsageEvents {
     }
 
     public static func formatCost(_ ev: UsageEvent) -> String {
+        RustCore.string("format_event_cost", ["event": eventJSON(ev)])
+    }
+
+    static func formatCostCore(_ ev: UsageEvent) -> String {
         let cents = costCents(ev)
         if ev.kind == kindFree { return "免费" }
         if ev.kind == kindIncluded {
-            return cents > 0 ? "\(UsageParser.formatUSDCents(cents)) 套餐内" : "套餐内"
+            return cents > 0 ? "\(UsageParser.formatUSDCentsCore(cents)) 套餐内" : "套餐内"
         }
-        return cents > 0 ? UsageParser.formatUSDCents(cents) : "—"
+        return cents > 0 ? UsageParser.formatUSDCentsCore(cents) : "—"
     }
 
     public static func clampUsdCnyRate(_ rate: Double) -> Double {
@@ -516,6 +536,10 @@ public enum UsageEvents {
     }
 
     public static func defaultMonthlyPlanUsd(_ membership: String?) -> Double {
+        doubleValue(RustCore.call("default_monthly_plan_usd", ["membership": membership ?? ""]))
+    }
+
+    static func defaultMonthlyPlanUsdCore(_ membership: String?) -> Double {
         var key = (membership ?? "").trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: " ", with: "")
         if key.hasSuffix("套餐") {
@@ -534,7 +558,7 @@ public enum UsageEvents {
 
     public static func resolveMonthlyPlanUsd(_ monthlyPlanUsd: Double, membership: String? = nil) -> Double {
         let stored = clampMonthlyPlanUsd(monthlyPlanUsd)
-        return stored > 0 ? stored : defaultMonthlyPlanUsd(membership)
+        return stored > 0 ? stored : defaultMonthlyPlanUsdCore(membership)
     }
 
     public static func isPlanCovered(_ kind: String?) -> Bool {
@@ -549,6 +573,10 @@ public enum UsageEvents {
     }
 
     public static func sanitizeChannel(_ raw: String?) -> String {
+        RustCore.string("sanitize_channel", ["input": raw ?? ""])
+    }
+
+    static func sanitizeChannelCore(_ raw: String?) -> String {
         let key = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased()
             .replacingOccurrences(of: "-", with: "_")
             .replacingOccurrences(of: " ", with: "")
@@ -558,7 +586,7 @@ public enum UsageEvents {
     }
 
     public static func channelLabel(_ channel: String?) -> String {
-        switch sanitizeChannel(channel) {
+        switch sanitizeChannelCore(channel) {
         case channelSelfPay: return "自费"
         case channelThirdParty: return "第三方"
         default: return "未标"
@@ -703,7 +731,7 @@ public enum UsageEvents {
             totalCny += amount
             totalTokens += ev.tokens
             if ev.kind == kindOnDemand { onDemandCny += amount }
-            let bucket = classifyCategory(ev.model)
+            let bucket = classifyCategoryCore(ev.model)
             var row = cats[bucket] ?? (0, 0, 0)
             row.0 += 1
             row.1 += ev.tokens
@@ -739,6 +767,52 @@ public enum UsageEvents {
     }
 
     public static func buildAccountCompareReport(_ items: [AccountCompareInput], nowMs: Int64? = nil) -> AccountCompareReport {
+        let result = RustCore.object("build_account_compare", [
+            "now_ms": nowMs as Any,
+            "items": items.map { item in
+                [
+                    "account_id": item.accountId,
+                    "channel": item.channel,
+                    "account_kind": item.accountKind,
+                    "temp_start_at": item.tempStartAt,
+                    "temp_valid_days": item.tempValidDays,
+                    "temp_valid_hours": item.tempValidHours,
+                    "billing_cycle_start": item.billingCycleStart,
+                    "billing_cycle_end": item.billingCycleEnd,
+                    "spend": item.spend.map { ["monthly_plan_usd": $0.monthlyPlanUsd, "usd_cny_rate": $0.usdCnyRate, "membership_type": $0.membershipType, "actual_cny": $0.actualCny] } as Any,
+                    "events": item.events.map(eventJSON),
+                ] as [String: Any]
+            },
+        ])
+        func cat(_ row: [String: Any], _ name: String) -> AccountCompareCategory {
+            let part = row[name] as? [String: Any] ?? [:]
+            return AccountCompareCategory(category: name, count: intValue(part["count"]), tokens: intValue(part["tokens"]), cny: doubleValue(part["cny"]))
+        }
+        let rows = (result["rows"] as? [[String: Any]] ?? []).map { row in
+            AccountCompareRow(
+                accountId: row["account_id"] as? String ?? "",
+                channel: row["channel"] as? String ?? "",
+                windowSource: row["window_source"] as? String ?? "",
+                windowDays: doubleValue(row["window_days"]),
+                planCny: doubleValue(row["plan_cny"]),
+                dailyHoldingCny: doubleValue(row["daily_holding_cny"]),
+                windowPlanCny: doubleValue(row["window_plan_cny"]),
+                onDemandCny: doubleValue(row["on_demand_cny"]),
+                totalCny: doubleValue(row["total_cny"]),
+                eventCount: intValue(row["event_count"]),
+                totalTokens: intValue(row["total_tokens"]),
+                firstParty: cat(row, "first_party"),
+                api: cat(row, "api"),
+                grokBot: cat(row, "grok_bot")
+            )
+        }
+        let groups = (result["groups"] as? [[String: Any]] ?? []).map { row in
+            AccountCompareGroup(channel: row["channel"] as? String ?? "", rows: [], dailyHoldingCny: doubleValue(row["daily_holding_cny"]), totalCny: doubleValue(row["total_cny"]), eventCount: intValue(row["event_count"]), totalTokens: intValue(row["total_tokens"]), firstParty: AccountCompareCategory(category: categoryFirstParty), api: AccountCompareCategory(category: categoryAPI), grokBot: AccountCompareCategory(category: categoryGrokBot))
+        }
+        return AccountCompareReport(rows: rows, groups: groups, holdingDays: holdingDays)
+    }
+
+    static func buildAccountCompareReportCore(_ items: [AccountCompareInput], nowMs: Int64? = nil) -> AccountCompareReport {
         let rows = items.map { buildAccountCompareRow($0, nowMs: nowMs) }
         var grouped: [String: [AccountCompareRow]] = [:]
         for key in channelOrder { grouped[key] = [] }
@@ -853,6 +927,10 @@ public enum UsageEvents {
     }
 
     public static func formatCNY(_ yuan: Double?) -> String {
+        RustCore.string("format_cny", ["cny": yuan as Any])
+    }
+
+    static func formatCNYCore(_ yuan: Double?) -> String {
         guard let yuan else { return "—" }
         let n = max(0, yuan)
         let f = NumberFormatter()
@@ -865,10 +943,14 @@ public enum UsageEvents {
 
     public static func formatEventCny(_ ev: UsageEvent, amount: Double? = nil) -> String {
         if ev.kind == kindFree { return "—" }
-        return formatCNY(amount ?? ev.allocatedCny)
+        return formatCNYCore(amount ?? ev.allocatedCny)
     }
 
     public static func formatDiscount(cny: Double, cents: Double, rate: Double, kind: String = "") -> String {
+        RustCore.string("format_discount", ["cny": cny, "cents": cents, "rate": rate, "kind": kind])
+    }
+
+    static func formatDiscountCore(cny: Double, cents: Double, rate: Double, kind: String = "") -> String {
         if kind.trimmingCharacters(in: .whitespaces).lowercased() == kindFree { return "—" }
         if cny.isNaN || cents.isNaN || rate.isNaN || cny.isInfinite || cents.isInfinite || rate.isInfinite {
             return "—"
@@ -880,7 +962,7 @@ public enum UsageEvents {
     }
 
     public static func formatEventDiscount(_ ev: UsageEvent, amount: Double? = nil, rate: Double) -> String {
-        formatDiscount(cny: amount ?? ev.allocatedCny, cents: costCents(ev), rate: rate, kind: ev.kind)
+        formatDiscountCore(cny: amount ?? ev.allocatedCny, cents: costCents(ev), rate: rate, kind: ev.kind)
     }
 
     public static func allocateEventCny(
@@ -945,6 +1027,10 @@ public enum UsageEvents {
     }
 
     public static func formatTime(_ timestampMs: Int64) -> String {
+        RustCore.string("format_event_time", ["timestamp_ms": timestampMs])
+    }
+
+    static func formatTimeCore(_ timestampMs: Int64) -> String {
         let dt = Date(timeIntervalSince1970: Double(max(0, timestampMs)) / 1000.0)
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -954,6 +1040,10 @@ public enum UsageEvents {
     }
 
     public static func eventDate(_ timestampMs: Int64) -> String {
+        RustCore.string("event_date", ["timestamp_ms": timestampMs])
+    }
+
+    static func eventDateCore(_ timestampMs: Int64) -> String {
         let dt = Date(timeIntervalSince1970: Double(max(0, timestampMs)) / 1000.0)
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -1022,6 +1112,10 @@ public enum UsageEvents {
     }
 
     public static func eventHour(_ timestampMs: Int64) -> String {
+        RustCore.string("event_hour", ["timestamp_ms": timestampMs])
+    }
+
+    static func eventHourCore(_ timestampMs: Int64) -> String {
         let dt = Date(timeIntervalSince1970: Double(floorHourMs(timestampMs)) / 1000.0)
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -1031,6 +1125,10 @@ public enum UsageEvents {
     }
 
     public static func chartModelLabel(_ name: String?) -> String {
+        RustCore.string("chart_model_label", ["input": name ?? ""])
+    }
+
+    static func chartModelLabelCore(_ name: String?) -> String {
         let text = (name ?? "").trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("cursor-") {
             return String(text.dropFirst(7))
@@ -1039,6 +1137,29 @@ public enum UsageEvents {
     }
 
     public static func buildChart(
+        _ events: [UsageEvent],
+        hourly: Bool,
+        hiddenModels: Set<String> = [],
+        hourlyWindowHours: Int = hourlyChartWindowHours
+    ) -> UsageChartSeries {
+        if hourlyWindowHours == hourlyChartWindowHours {
+            let result = RustCore.object("build_usage_chart", [
+                "events": events.map(eventJSON),
+                "hourly": hourly,
+                "hidden_models": Array(hiddenModels),
+            ])
+            let buckets = (result["buckets"] as? [[String: Any]] ?? []).map { row in
+                let slices = (row["slices"] as? [[String: Any]] ?? []).map { slice in
+                    ChartSlice(model: slice["model"] as? String ?? "", tokens: intValue(slice["tokens"]), cents: doubleValue(slice["cents"]), count: intValue(slice["count"]))
+                }
+                return ChartBucket(key: row["key"] as? String ?? "", label: row["label"] as? String ?? "", tokens: intValue(row["tokens"]), cents: doubleValue(row["cents"]), count: intValue(row["count"]), slices: slices)
+            }
+            return UsageChartSeries(hourly: result["hourly"] as? Bool ?? hourly, caption: result["caption"] as? String ?? "", models: result["models"] as? [String] ?? [], buckets: buckets)
+        }
+        return buildChartCore(events, hourly: hourly, hiddenModels: hiddenModels, hourlyWindowHours: hourlyWindowHours)
+    }
+
+    static func buildChartCore(
         _ events: [UsageEvent],
         hourly: Bool,
         hiddenModels: Set<String> = [],
@@ -1060,7 +1181,7 @@ public enum UsageEvents {
             let span = (lastMs - firstMs) / msHour + 1
             if span > window { firstMs = lastMs - (window - 1) * msHour }
             let count = Int((lastMs - firstMs) / msHour + 1)
-            keys = (0..<count).map { eventHour(firstMs + Int64($0) * msHour) }
+            keys = (0..<count).map { eventHourCore(firstMs + Int64($0) * msHour) }
             keyOf = eventHour
         } else {
             let lastMs = floorDayMs(events.map(\.timestampMs).max() ?? 0)
@@ -1071,7 +1192,7 @@ public enum UsageEvents {
             let last = Date(timeIntervalSince1970: Double(lastMs) / 1000.0)
             keys = []
             while day <= last {
-                keys.append(eventDate(Int64((day.timeIntervalSince1970 * 1000.0).rounded())))
+                keys.append(eventDateCore(Int64((day.timeIntervalSince1970 * 1000.0).rounded())))
                 guard let next = cal.date(byAdding: .day, value: 1, to: day) else { break }
                 day = next
             }
@@ -1183,6 +1304,54 @@ public enum UsageEvents {
     }
 
     public static func parsePage(_ payload: JSONValue) -> (events: [UsageEvent], totalCount: Int) {
+        let result = RustCore.object("parse_usage_page", ["payload": payload.raw])
+        let events = (result["events"] as? [[String: Any]] ?? []).map(eventFromRust)
+        return (events, result["total_count"] as? Int ?? events.count)
+    }
+
+    static func eventJSON(_ ev: UsageEvent) -> [String: Any] {
+        [
+            "id": ev.id,
+            "timestamp_ms": ev.timestampMs,
+            "model": ev.model,
+            "kind": ev.kind,
+            "user_email": ev.userEmail,
+            "owning_user": ev.owningUser,
+            "tokens": ev.tokens,
+            "input_tokens": ev.inputTokens,
+            "output_tokens": ev.outputTokens,
+            "cache_write_tokens": ev.cacheWriteTokens,
+            "cache_read_tokens": ev.cacheReadTokens,
+            "charged_cents": ev.chargedCents as Any,
+            "total_cents": ev.totalCents as Any,
+            "is_headless": ev.isHeadless,
+            "is_chargeable": ev.isChargeable,
+        ]
+    }
+
+    static func eventFromRust(_ row: [String: Any]) -> UsageEvent {
+        func whole(_ key: String) -> Int { row[key] as? Int ?? (row[key] as? NSNumber).map { Int($0.doubleValue) } ?? 0 }
+        func money(_ key: String) -> Double? { row[key] as? Double ?? (row[key] as? NSNumber)?.doubleValue }
+        return UsageEvent(
+            id: row["id"] as? String ?? "",
+            timestampMs: row["timestamp_ms"] as? Int64 ?? (row["timestamp_ms"] as? NSNumber)?.int64Value ?? 0,
+            model: row["model"] as? String ?? "",
+            kind: row["kind"] as? String ?? kindOther,
+            userEmail: row["user_email"] as? String ?? "",
+            owningUser: row["owning_user"] as? String ?? "",
+            tokens: whole("tokens"),
+            inputTokens: whole("input_tokens"),
+            outputTokens: whole("output_tokens"),
+            cacheWriteTokens: whole("cache_write_tokens"),
+            cacheReadTokens: whole("cache_read_tokens"),
+            chargedCents: money("charged_cents"),
+            totalCents: money("total_cents"),
+            isHeadless: row["is_headless"] as? Bool ?? false,
+            isChargeable: row["is_chargeable"] as? Bool ?? false
+        )
+    }
+
+    static func parsePageCore(_ payload: JSONValue) -> (events: [UsageEvent], totalCount: Int) {
         var rows = payload["usageEventsDisplay"].array
         if rows.isEmpty { rows = payload["usageEvents"].array }
         let events = rows.compactMap(parseEvent)
@@ -1205,7 +1374,7 @@ public enum UsageEvents {
         let kindRaw = item["kind"].asString() ?? item["type"].asString() ?? ""
         let costsRaw = item["usageBasedCosts"].asString() ?? item["cost"].asString() ?? ""
         let isChargeable = item["isChargeable"].asBool()
-        let kind = classifyKind(kindRaw, usageBasedCosts: costsRaw, isChargeable: isChargeable)
+        let kind = classifyKindCore(kindRaw, usageBasedCosts: costsRaw, isChargeable: isChargeable)
         let input = max(0, tokenUsage["inputTokens"].asInt() ?? item["inputTokens"].asInt() ?? 0)
         let output = max(0, tokenUsage["outputTokens"].asInt() ?? item["outputTokens"].asInt() ?? 0)
         let cacheWrite = max(0, tokenUsage["cacheWriteTokens"].asInt() ?? item["cacheWriteTokens"].asInt() ?? 0)
@@ -1261,6 +1430,66 @@ public enum UsageEvents {
     }
 
     public static func buildReport(_ events: [UsageEvent], filter: UsageReportFilter = UsageReportFilter(), spend: CnySpendSettings? = nil, allocation: ReportAllocationWindow? = nil) -> UsageReport {
+        let result = RustCore.object("build_usage_report", [
+                "events": events.map(eventJSON),
+                "filter": [
+                    "kind": filter.kind,
+                    "category": filter.category,
+                    "model": filter.model,
+                    "headless": filter.headless as Any,
+                    "owning_user": filter.owningUser,
+                    "start_date": filter.startDate,
+                    "end_date": filter.endDate,
+                ],
+                "spend": spend.map { ["monthly_plan_usd": $0.monthlyPlanUsd, "usd_cny_rate": $0.usdCnyRate, "membership_type": $0.membershipType, "actual_cny": $0.actualCny] } as Any,
+                "allocation": allocation.map { ["account_kind": $0.accountKind, "temp_start_at": $0.tempStartAt, "temp_valid_days": $0.tempValidDays, "temp_valid_hours": $0.tempValidHours, "billing_cycle_start": $0.billingCycleStart, "billing_cycle_end": $0.billingCycleEnd, "now_ms": $0.nowMs as Any] } as Any,
+            ])
+        return reportFromRust(result)
+    }
+
+    static func reportFromRust(_ result: [String: Any]) -> UsageReport {
+        let daily = (result["daily"] as? [[String: Any]] ?? []).map { row in
+            DailyUsageRow(date: row["date"] as? String ?? "", tokens: intValue(row["tokens"]), cents: doubleValue(row["cents"]), count: intValue(row["count"]))
+        }
+        let models = (result["models"] as? [[String: Any]] ?? []).map { row in
+            ModelUsageRow(name: row["name"] as? String ?? "", tokens: intValue(row["tokens"]), cents: doubleValue(row["cents"]), count: intValue(row["count"]), headlessCount: intValue(row["headless_count"]), cny: doubleValue(row["cny"]))
+        }
+        return UsageReport(
+            eventCount: intValue(result["event_count"]),
+            totalTokens: int64Value(result["total_tokens"]),
+            totalCents: doubleValue(result["total_cents"]),
+            hasCost: result["has_cost"] as? Bool ?? false,
+            includedCount: intValue(result["included_count"]),
+            freeCount: intValue(result["free_count"]),
+            onDemandCount: intValue(result["on_demand_count"]),
+            otherCount: intValue(result["other_count"]),
+            headlessCount: intValue(result["headless_count"]),
+            firstPartyCount: intValue(result["first_party_count"]),
+            apiCount: intValue(result["api_count"]),
+            grokBotCount: intValue(result["grok_bot_count"]),
+            daily: daily,
+            models: models,
+            events: (result["events"] as? [[String: Any]] ?? []).map { row in
+                var ev = eventFromRust(row)
+                ev.allocatedCny = doubleValue(row["allocated_cny"])
+                return ev
+            },
+            totalCny: doubleValue(result["total_cny"]),
+            planCny: doubleValue(result["plan_cny"]),
+            onDemandCny: doubleValue(result["on_demand_cny"]),
+            usdCnyRate: doubleValue(result["usd_cny_rate"]),
+            monthlyPlanUsd: doubleValue(result["monthly_plan_usd"]),
+            actualCny: doubleValue(result["actual_cny"]),
+            usesActualCny: result["uses_actual_cny"] as? Bool ?? false,
+            windowPlanCny: doubleValue(result["window_plan_cny"])
+        )
+    }
+
+    static func intValue(_ value: Any?) -> Int { value as? Int ?? (value as? NSNumber).map { Int($0.doubleValue) } ?? 0 }
+    static func int64Value(_ value: Any?) -> Int64 { value as? Int64 ?? (value as? NSNumber)?.int64Value ?? 0 }
+    static func doubleValue(_ value: Any?) -> Double { value as? Double ?? (value as? NSNumber)?.doubleValue ?? 0 }
+
+    static func buildReportCore(_ events: [UsageEvent], filter: UsageReportFilter = UsageReportFilter(), spend: CnySpendSettings? = nil, allocation: ReportAllocationWindow? = nil) -> UsageReport {
         let kind = filter.kind.trimmingCharacters(in: .whitespaces).lowercased()
         let category = filter.category.trimmingCharacters(in: .whitespaces).lowercased()
         let model = filter.model.trimmingCharacters(in: .whitespaces)
@@ -1272,7 +1501,7 @@ public enum UsageEvents {
         var selected: [UsageEvent] = []
         for (i, ev) in events.enumerated() {
             if !kind.isEmpty && ev.kind != kind { continue }
-            if !category.isEmpty && classifyCategory(ev.model) != category { continue }
+            if !category.isEmpty && classifyCategoryCore(ev.model) != category { continue }
             if !model.isEmpty && ev.model != model { continue }
             if let h = filter.headless, ev.isHeadless != h { continue }
             if !owning.isEmpty && ev.owningUser != owning { continue }
@@ -1305,13 +1534,13 @@ public enum UsageEvents {
             case kindOnDemand: onDemand += 1
             default: other += 1
             }
-            switch classifyCategory(ev.model) {
+            switch classifyCategoryCore(ev.model) {
             case categoryGrokBot: grokBot += 1
             case categoryFirstParty: firstParty += 1
             default: api += 1
             }
             if ev.isHeadless { headless += 1 }
-            let day = eventDate(ev.timestampMs)
+            let day = eventDateCore(ev.timestampMs)
             let d = dailyMap[day] ?? (0, 0, 0, 0)
             dailyMap[day] = (d.0 + ev.tokens, d.1 + cents, d.2 + 1, d.3 + ev.allocatedCny)
             let name = ev.model.isEmpty ? "—" : ev.model
@@ -1374,12 +1603,12 @@ public enum UsageEvents {
             let cnyText = amount == nil ? "—" : formatEventCny(ev, amount: amount)
             let discount = formatEventDiscount(ev, amount: amount ?? 0, rate: allocated.rate)
             let cols = [
-                escapeCSV(formatTime(ev.timestampMs)),
+                escapeCSV(formatTimeCore(ev.timestampMs)),
                 escapeCSV(ev.userEmail),
-                escapeCSV(kindLabel(ev.kind)),
+                escapeCSV(kindLabelCore(ev.kind)),
                 escapeCSV(ev.model),
                 escapeCSV(String(ev.tokens)),
-                escapeCSV(formatCost(ev)),
+                escapeCSV(formatCostCore(ev)),
                 escapeCSV(cnyText),
                 escapeCSV(discount),
                 escapeCSV(ev.isHeadless ? "是" : "否"),
@@ -1419,6 +1648,14 @@ public enum UsageEvents {
     }
 
     public static func merge(_ existing: [UsageEvent], incoming: [UsageEvent]) -> [UsageEvent] {
+        let result = RustCore.call("merge_usage_events", [
+            "existing": existing.map(eventJSON),
+            "incoming": incoming.map(eventJSON),
+        ])
+        return (result as? [[String: Any]] ?? []).map(eventFromRust)
+    }
+
+    static func mergeCore(_ existing: [UsageEvent], incoming: [UsageEvent]) -> [UsageEvent] {
         var byId: [String: UsageEvent] = [:]
         for ev in existing where !ev.id.isEmpty { byId[ev.id] = ev }
         for ev in incoming where !ev.id.isEmpty { byId[ev.id] = ev }
@@ -1426,6 +1663,14 @@ public enum UsageEvents {
     }
 
     public static func prune(_ events: [UsageEvent], minTimestampMs: Int64) -> [UsageEvent] {
+        let result = RustCore.call("prune_usage_events", [
+            "events": events.map(eventJSON),
+            "min_timestamp_ms": minTimestampMs,
+        ])
+        return (result as? [[String: Any]] ?? []).map(eventFromRust)
+    }
+
+    static func pruneCore(_ events: [UsageEvent], minTimestampMs: Int64) -> [UsageEvent] {
         events.filter { $0.timestampMs >= minTimestampMs }.sorted { $0.timestampMs > $1.timestampMs }
     }
 
@@ -1441,7 +1686,7 @@ public enum UsageEvents {
             else { continue }
             events.append(ev)
         }
-        return merge(events, incoming: [])
+        return mergeCore(events, incoming: [])
     }
 
     public static func save(_ events: [UsageEvent], accountId: String, teamScope: Bool, directory: URL? = nil) {
@@ -1525,13 +1770,13 @@ public enum UsageEvents {
             stopAtMs: stopAt,
             onPage: onPage
         )
-        var merged = merge(existing, incoming: fetched.events)
+        var merged = mergeCore(existing, incoming: fetched.events)
         if !teamScope, let userId {
             let uidText = String(userId)
             merged = merged.filter { $0.owningUser.isEmpty || $0.owningUser == uidText }
         }
         let minTs = min(cycleStart, nowMs - 120 * 86_400 * 1000)
-        let pruned = prune(merged, minTimestampMs: minTs)
+        let pruned = pruneCore(merged, minTimestampMs: minTs)
         save(pruned, accountId: accountId, teamScope: teamScope, directory: directory)
         return UsageEventsSyncResult(events: pruned, fetched: fetched.events.count, totalAvailable: fetched.totalCount, truncated: fetched.truncated)
     }

@@ -25,6 +25,7 @@ public readonly struct JsonBag
         _el is { ValueKind: JsonValueKind.Object } obj && obj.TryGetProperty(key, out _);
     public static JsonBag Parse(JsonElement el) => new(el.Clone());
     public bool IsObject => _el is { ValueKind: JsonValueKind.Object };
+    public JsonElement RawElement => _el ?? default;
     public bool IsEmpty =>
         _el is null or { ValueKind: JsonValueKind.Null or JsonValueKind.Undefined }
         || (_el is { ValueKind: JsonValueKind.Object } e && !e.EnumerateObject().Any());

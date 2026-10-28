@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$ROOT/.." && pwd)"
 cd "$ROOT"
+cargo build --release --manifest-path "$REPO/core/Cargo.toml"
 swift build -c release --product CursorRemain
 BIN="$(swift build -c release --show-bin-path)/CursorRemain"
 DIST="$ROOT/dist/CursorRemain.app"

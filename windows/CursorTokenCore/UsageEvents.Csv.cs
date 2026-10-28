@@ -78,12 +78,12 @@ public static partial class UsageEvents
                 amount = ev.AllocatedCny;
             var cnyText = amount is null ? "—" : FormatEventCny(ev, amount);
             var discount = FormatEventDiscount(ev, amount ?? 0, rate);
-            sb.Append(EscapeCsv(FormatTime(ev.TimestampMs))).Append(',');
+            sb.Append(EscapeCsv(FormatTimeCore(ev.TimestampMs))).Append(',');
             sb.Append(EscapeCsv(ev.UserEmail)).Append(',');
-            sb.Append(EscapeCsv(KindLabel(ev.Kind))).Append(',');
+            sb.Append(EscapeCsv(KindLabelCore(ev.Kind))).Append(',');
             sb.Append(EscapeCsv(ev.Model)).Append(',');
             sb.Append(EscapeCsv(ev.Tokens.ToString(CultureInfo.InvariantCulture))).Append(',');
-            sb.Append(EscapeCsv(FormatCost(ev))).Append(',');
+            sb.Append(EscapeCsv(FormatCostCore(ev))).Append(',');
             sb.Append(EscapeCsv(cnyText)).Append(',');
             sb.Append(EscapeCsv(discount)).Append(',');
             sb.Append(EscapeCsv(ev.IsHeadless ? "是" : "否"));

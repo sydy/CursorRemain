@@ -14,3 +14,4 @@ Golden JSON fixtures shared by Python, Swift (`macos/`), and C# (`windows/`).
 
 Python tests in `tests/test_fixtures.py` lock these to the reference parser.
 Swift and C# unit tests load the same files so both native ports stay aligned.
+`core/` 也读取同一批 Token、用量摘要、Grok Bot、模型聚合和格式化夹具；这一阶段它只作对照，桌面端仍调用各自的实现。

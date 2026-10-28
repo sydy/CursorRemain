@@ -71,8 +71,9 @@ jobs:
     - uses: actions/setup-dotnet@v4
       with:
         dotnet-version: "8.0.x"
-    - name: Run C# core tests
-      run: dotnet test windows/CursorTokenCore.Tests/CursorTokenCore.Tests.csproj -c Release --verbosity normal
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Run Rust core tests
+      run: cargo test --manifest-path core/Cargo.toml
 
   build-server-image:
     name: Build server image
@@ -91,6 +92,9 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Build Rust core
+      run: cargo build --release --manifest-path core/Cargo.toml
     - name: Swift tests
       run: swift test --package-path macos
     - name: Compile menu bar app
@@ -134,6 +138,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Rust core
+        run: cargo build --release --manifest-path core/Cargo.toml
+      - name: Test C# core against Rust
+        run: dotnet test windows/CursorTokenCore.Tests/CursorTokenCore.Tests.csproj -c Release --verbosity normal
       - name: Publish self-contained exe
         shell: pwsh
         run: |

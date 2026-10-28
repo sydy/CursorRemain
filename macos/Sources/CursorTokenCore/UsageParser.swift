@@ -227,12 +227,20 @@ extension UsageSnapshot {
 
 public enum UsageParser {
     public static func formatMembershipType(_ raw: String?) -> String {
+        RustCore.string("format_membership", ["input": raw ?? ""])
+    }
+
+    static func formatMembershipTypeCore(_ raw: String?) -> String {
         let key = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if key.isEmpty { return "未知" }
         return membershipLabels[key.lowercased()] ?? key
     }
 
     public static func isTeamMembership(_ membership: String?, limitType: String? = nil) -> Bool {
+        RustCore.bool("is_team_membership", ["membership": membership ?? "", "limit_type": limitType ?? ""])
+    }
+
+    static func isTeamMembershipCore(_ membership: String?, limitType: String? = nil) -> Bool {
         if (limitType ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "team" {
             return true
         }
@@ -246,8 +254,18 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
+        return RustCore.string("dashboard_url", ["membership": memb, "limit_type": limit, "x": preferGrokDashboard(usage, membership: memb)])
+    }
+
+    static func dashboardURLCore(for usage: UsageSnapshot? = nil, membership: String = "", limitType: String = "") -> String {
+        var memb = membership
+        var limit = limitType
+        if let usage {
+            memb = usage.membershipType
+            limit = usage.limitType
+        }
         if preferGrokDashboard(usage, membership: memb) { return grokDashboardURL }
-        return isTeamMembership(memb, limitType: limit) ? usageURL : billingURL
+        return isTeamMembershipCore(memb, limitType: limit) ? usageURL : billingURL
     }
 
     public static func dashboardMenuLabel(_ usage: UsageSnapshot? = nil, membership: String = "", limitType: String = "") -> String {
@@ -257,8 +275,7 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
-        if preferGrokDashboard(usage, membership: memb) { return "打开用量" }
-        return isTeamMembership(memb, limitType: limit) ? "打开用量" : "打开用量账单"
+        return RustCore.string("dashboard_menu_label", ["membership": memb, "limit_type": limit, "x": preferGrokDashboard(usage, membership: memb)])
     }
 
     public static func dashboardButtonLabel(_ usage: UsageSnapshot? = nil, membership: String = "", limitType: String = "") -> String {
@@ -268,18 +285,22 @@ public enum UsageParser {
             memb = usage.membershipType
             limit = usage.limitType
         }
-        if preferGrokDashboard(usage, membership: memb) { return "用量" }
-        return isTeamMembership(memb, limitType: limit) ? "用量" : "账单"
+        return RustCore.string("dashboard_button_label", ["membership": memb, "limit_type": limit, "x": preferGrokDashboard(usage, membership: memb)])
     }
 
     public static func dashboardLinkLabel(_ usage: UsageSnapshot?) -> String {
-        if let usage, usage.isXSubscription || isXMembership(usage.membershipType) || usage.isTeamAccount {
-            return "查看用量 →"
-        }
-        return "查看用量账单 →"
+        RustCore.string("dashboard_link_label", [
+            "membership": usage?.membershipType ?? "",
+            "x": usage?.isXSubscription == true || isXMembershipCore(usage?.membershipType),
+            "team": usage?.isTeamAccount == true,
+        ])
     }
 
     public static func formatUSDCents(_ cents: Double?) -> String {
+        RustCore.string("format_usd_cents", ["cents": cents as Any])
+    }
+
+    static func formatUSDCentsCore(_ cents: Double?) -> String {
         guard let cents else { return "—" }
         var dollars = cents / 100.0
         if dollars < 0 { dollars = 0 }
@@ -290,33 +311,65 @@ public enum UsageParser {
     }
 
     public static func formatSpendRange(used: Double?, limit: Double?) -> String {
-        "\(formatUSDCents(used)) / \(formatUSDCents(limit))"
+        RustCore.string("format_spend_range", ["used": used as Any, "limit": limit as Any])
+    }
+
+    static func formatSpendRangeCore(used: Double?, limit: Double?) -> String {
+        "\(formatUSDCentsCore(used)) / \(formatUSDCentsCore(limit))"
     }
 
     public static func isGrokBotModel(_ name: String?) -> Bool {
+        RustCore.bool("is_grok_bot_model", ["input": name ?? ""])
+    }
+
+    static func isGrokBotModelCore(_ name: String?) -> Bool {
         let key = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return key.hasPrefix("grok-bot-") || key.hasPrefix("sand-")
     }
 
     public static func isFirstPartyModel(_ name: String?) -> Bool {
+        RustCore.bool("is_first_party_model", ["input": name ?? ""])
+    }
+
+    static func isFirstPartyModelCore(_ name: String?) -> Bool {
         let key = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if key.isEmpty || isGrokBotModel(key) { return false }
+        if key.isEmpty || isGrokBotModelCore(key) { return false }
         return key == "auto" || key == "default" || key.hasPrefix("cursor-") || key.hasPrefix("composer-") || key.hasPrefix("grok-")
     }
 
     public static func usageCategory(_ name: String?) -> String {
-        if isGrokBotModel(name) { return "grok_bot" }
-        if isFirstPartyModel(name) { return "first_party" }
+        RustCore.string("usage_category", ["input": name ?? ""])
+    }
+
+    static func usageCategoryCore(_ name: String?) -> String {
+        if isGrokBotModelCore(name) { return "grok_bot" }
+        if isFirstPartyModelCore(name) { return "first_party" }
         return "api"
     }
 
     public static func applySandUsage(_ snapshot: inout UsageSnapshot, _ payload: JSONValue, now: Date = Date()) {
+        let result = RustCore.call("apply_sand_usage", [
+            "snapshot": snapshotJSON(snapshot),
+            "payload": payload.raw,
+            "now": isoNow(now),
+        ])
+        let parsed = snapshotFromRust(result)
+        let raw = snapshot.raw
+        let models = snapshot.modelUsages
+        let tokens = snapshot.totalTokens
+        copySnapshot(parsed, &snapshot)
+        snapshot.raw = raw
+        snapshot.modelUsages = models
+        snapshot.totalTokens = tokens
+    }
+
+    static func applySandUsageCore(_ snapshot: inout UsageSnapshot, _ payload: JSONValue, now: Date = Date()) {
         if isUnifiedWeekly(payload) {
             applyUnifiedWeekly(&snapshot, payload, now: now)
             return
         }
         if snapshot.isXSubscription { return }
-        guard let parsed = parseSandUsageStatus(payload, now: now) else { return }
+        guard let parsed = parseSandUsageStatusCore(payload, now: now) else { return }
         snapshot.grokBotPercentUsed = parsed.percentUsed
         snapshot.grokBotRemainingPercent = parsed.remainingPercent
         snapshot.grokBotPeriodStart = parsed.periodStart
@@ -356,6 +409,18 @@ public enum UsageParser {
     }
 
     public static func parseSandUsageStatus(_ payload: JSONValue, now: Date = Date()) -> GrokBotUsage? {
+        let result = RustCore.call("parse_sand_usage", ["payload": payload.raw, "now": isoNow(now)])
+        guard let dict = result as? [String: Any] else { return nil }
+        return GrokBotUsage(
+            percentUsed: dict["percent_used"] as? Double ?? 0,
+            remainingPercent: dict["remaining_percent"] as? Double ?? 0,
+            periodStart: dict["period_start"] as? String,
+            resetAt: dict["reset_at"] as? String,
+            daysRemaining: dict["days_remaining"] as? Int
+        )
+    }
+
+    static func parseSandUsageStatusCore(_ payload: JSONValue, now: Date = Date()) -> GrokBotUsage? {
         guard payload.isObject, !payload.isEmpty else { return nil }
         if isUnifiedWeekly(payload) { return nil }
         if optBool(payload, "usesPooledEnterpriseAllowance", "uses_pooled_enterprise_allowance") == true { return nil }
@@ -375,6 +440,10 @@ public enum UsageParser {
     }
 
     public static func formatTokenCount(_ count: Double?) -> String {
+        RustCore.string("format_token_count", ["n": count as Any])
+    }
+
+    static func formatTokenCountCore(_ count: Double?) -> String {
         guard let count else { return "—" }
         // Keep Int64 so usage-report KPI totals above Int32.max (≈21.47亿) still format.
         var n = Int64(count.rounded())
@@ -385,6 +454,110 @@ public enum UsageParser {
     }
 
     public static func parseUsageSummary(_ payload: JSONValue, now: Date = Date()) -> UsageSnapshot {
+        let result = RustCore.call("parse_usage_summary", ["payload": payload.raw, "now": isoNow(now)])
+        var snap = snapshotFromRust(result)
+        snap.raw = payload
+        return snap
+    }
+
+    static func isoNow(_ now: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: now)
+    }
+
+    static func snapshotJSON(_ snapshot: UsageSnapshot) -> [String: Any] {
+        [
+            "used_percent": snapshot.usedPercent,
+            "remaining_percent": snapshot.remainingPercent,
+            "is_x_subscription": snapshot.isXSubscription,
+            "membership_type": snapshot.membershipType,
+            "billing_mode": snapshot.billingMode,
+            "usage_reset_at": snapshot.usageResetAt as Any,
+            "days_remaining": snapshot.daysRemaining as Any,
+            "days_elapsed": snapshot.daysElapsed as Any,
+            "estimated_usable_days": snapshot.estimatedUsableDays as Any,
+            "grok_bot_percent_used": snapshot.grokBotPercentUsed as Any,
+        ]
+    }
+
+    static func snapshotFromRust(_ value: Any) -> UsageSnapshot {
+        let dict = value as? [String: Any] ?? [:]
+        func num(_ key: String) -> Double? { dict[key] as? Double ?? (dict[key] as? NSNumber)?.doubleValue }
+        func text(_ key: String) -> String { dict[key] as? String ?? "" }
+        func optionalText(_ key: String) -> String? { dict[key] as? String }
+        func whole(_ key: String) -> Int? { dict[key] as? Int ?? (dict[key] as? NSNumber).map { Int($0.doubleValue) } }
+        return UsageSnapshot(
+            usedPercent: num("used_percent") ?? 0,
+            remainingPercent: num("remaining_percent") ?? 0,
+            autoPercentUsed: num("auto_percent_used"),
+            apiPercentUsed: num("api_percent_used"),
+            totalPercentUsed: num("total_percent_used"),
+            membershipType: text("membership_type"),
+            billingCycleStart: optionalText("billing_cycle_start"),
+            billingCycleEnd: optionalText("billing_cycle_end"),
+            daysRemaining: whole("days_remaining"),
+            daysElapsed: num("days_elapsed"),
+            estimatedUsableDays: num("estimated_usable_days"),
+            raw: .null,
+            totalTokens: nil,
+            modelUsages: [],
+            billingMode: text("billing_mode"),
+            usedCents: num("used_cents"),
+            limitCents: num("limit_cents"),
+            remainingCents: num("remaining_cents"),
+            onDemandUsedCents: num("on_demand_used_cents"),
+            onDemandLimitCents: num("on_demand_limit_cents"),
+            pooledUsedCents: num("pooled_used_cents"),
+            pooledLimitCents: num("pooled_limit_cents"),
+            limitType: text("limit_type"),
+            isUnlimited: dict["is_unlimited"] as? Bool ?? false,
+            billingCycleEndOverridden: false,
+            apiBillingCycleEnd: nil,
+            grokBotPercentUsed: num("grok_bot_percent_used"),
+            grokBotRemainingPercent: num("grok_bot_remaining_percent"),
+            grokBotPeriodStart: optionalText("grok_bot_period_start"),
+            grokBotResetAt: optionalText("grok_bot_reset_at"),
+            grokBotDaysRemaining: whole("grok_bot_days_remaining"),
+            isXSubscription: dict["is_x_subscription"] as? Bool ?? false,
+            usageResetAt: optionalText("usage_reset_at"),
+            prepaidRemainingCents: num("prepaid_remaining_cents")
+        )
+    }
+
+    static func copySnapshot(_ from: UsageSnapshot, _ to: inout UsageSnapshot) {
+        to.usedPercent = from.usedPercent
+        to.remainingPercent = from.remainingPercent
+        to.autoPercentUsed = from.autoPercentUsed
+        to.apiPercentUsed = from.apiPercentUsed
+        to.totalPercentUsed = from.totalPercentUsed
+        to.membershipType = from.membershipType
+        to.billingCycleStart = from.billingCycleStart
+        to.billingCycleEnd = from.billingCycleEnd
+        to.daysRemaining = from.daysRemaining
+        to.daysElapsed = from.daysElapsed
+        to.estimatedUsableDays = from.estimatedUsableDays
+        to.billingMode = from.billingMode
+        to.usedCents = from.usedCents
+        to.limitCents = from.limitCents
+        to.remainingCents = from.remainingCents
+        to.onDemandUsedCents = from.onDemandUsedCents
+        to.onDemandLimitCents = from.onDemandLimitCents
+        to.pooledUsedCents = from.pooledUsedCents
+        to.pooledLimitCents = from.pooledLimitCents
+        to.limitType = from.limitType
+        to.isUnlimited = from.isUnlimited
+        to.isXSubscription = from.isXSubscription
+        to.usageResetAt = from.usageResetAt
+        to.prepaidRemainingCents = from.prepaidRemainingCents
+        to.grokBotPercentUsed = from.grokBotPercentUsed
+        to.grokBotRemainingPercent = from.grokBotRemainingPercent
+        to.grokBotPeriodStart = from.grokBotPeriodStart
+        to.grokBotResetAt = from.grokBotResetAt
+        to.grokBotDaysRemaining = from.grokBotDaysRemaining
+    }
+
+    static func parseUsageSummaryCore(_ payload: JSONValue, now: Date = Date()) -> UsageSnapshot {
         let individual = object(payload["individualUsage"])
         let team = object(payload["teamUsage"])
         let plan = object(individual["plan"])
@@ -404,7 +577,7 @@ public enum UsageParser {
         }
 
         let rawMembership = payload["membershipType"].asString() ?? payload["plan"].asString() ?? ""
-        let membership = formatMembershipType(rawMembership)
+        let membership = formatMembershipTypeCore(rawMembership)
         let limitType = (payload["limitType"].asString() ?? "").trimmingCharacters(in: .whitespaces)
         let isUnlimited = payload["isUnlimited"].asBool()
         let cycleStartRaw = payload["billingCycleStart"].asString() ?? payload["startOfMonth"].asString()
@@ -432,7 +605,7 @@ public enum UsageParser {
         } else {
             // Team usage page "Your monthly usage $X / $Y" comes from overall/pooled/plan cents.
             // plan.totalPercentUsed is a separate cached metric and can freeze at 0% or 100%.
-            if isTeamMembership(membership, limitType: limitType) && !xPlan {
+            if isTeamMembershipCore(membership, limitType: limitType) && !xPlan {
                 for meter in [overallMeter, pooledMeter, planMeter] {
                     guard let applied = percentFromSpendMeter(meter) else { continue }
                     usedCents = applied.used
@@ -479,7 +652,7 @@ public enum UsageParser {
                     if usedPercent == nil {
                         usedPercent = 0
                     } else if ["overall", "pooled", "on_demand"].contains(pickedSource)
-                        || (isTeamMembership(membership, limitType: limitType) && !xPlan)
+                        || (isTeamMembershipCore(membership, limitType: limitType) && !xPlan)
                     {
                         billingMode = "amount"
                     } else {
@@ -554,6 +727,10 @@ public enum UsageParser {
     }
 
     public static func membershipKey(_ raw: String?) -> String {
+        RustCore.string("membership_key", ["input": raw ?? ""])
+    }
+
+    static func membershipKeyCore(_ raw: String?) -> String {
         var key = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "-", with: "_")
@@ -562,17 +739,21 @@ public enum UsageParser {
     }
 
     public static func isXMembership(_ raw: String?) -> Bool {
-        xMemberships.contains(membershipKey(raw))
+        RustCore.bool("is_x_membership", ["input": raw ?? ""])
+    }
+
+    static func isXMembershipCore(_ raw: String?) -> Bool {
+        xMemberships.contains(membershipKeyCore(raw))
     }
 
     static func preferGrokDashboard(_ usage: UsageSnapshot?, membership: String) -> Bool {
-        if let usage, usage.isXSubscription || isXMembership(usage.membershipType) { return true }
-        return isXMembership(membership)
+        if let usage, usage.isXSubscription || isXMembershipCore(usage.membershipType) { return true }
+        return isXMembershipCore(membership)
     }
 
     static func looksLikeXPlan(_ membership: String?, _ payload: JSONValue, cycleStart: String?, cycleEnd: String?) -> Bool {
-        if isXMembership(membership) { return true }
-        let key = membershipKey(membership)
+        if isXMembershipCore(membership) { return true }
+        let key = membershipKeyCore(membership)
         if key != "ultra" && key != "free" && key != "hobby" { return false }
         let span = cycleSpanDays(cycleStart, cycleEnd)
         let shortCycle = span.map { $0 >= 1 && $0 <= 8 } ?? false
@@ -656,6 +837,28 @@ public enum UsageParser {
     }
 
     public static func parseAggregatedUsage(
+        _ payload: JSONValue,
+        autoPercent: Double? = nil,
+        apiPercent: Double? = nil
+    ) -> (models: [ModelTokenUsage], total: Int) {
+        let result = RustCore.object("parse_aggregated_usage", [
+            "payload": payload.raw,
+            "auto_percent": autoPercent as Any,
+            "api_percent": apiPercent as Any,
+        ])
+        let models = (result["models"] as? [[String: Any]] ?? []).map { row in
+            ModelTokenUsage(
+                name: row["name"] as? String ?? "",
+                tokens: row["tokens"] as? Int ?? 0,
+                cents: row["cents"] as? Double ?? 0,
+                tier: row["tier"] as? Int ?? 1,
+                usagePercent: row["usage_percent"] as? Double
+            )
+        }
+        return (models, result["total"] as? Int ?? 0)
+    }
+
+    static func parseAggregatedUsageCore(
         _ payload: JSONValue,
         autoPercent: Double? = nil,
         apiPercent: Double? = nil
@@ -835,7 +1038,7 @@ public enum UsageParser {
 
     static func modelTier(_ name: String, _ tier: JSONValue) -> Int {
         if let t = tier.asInt() { return t }
-        return isFirstPartyModel(name) ? cursorModelTier : 1
+        return isFirstPartyModelCore(name) ? cursorModelTier : 1
     }
 
     static func allocateUsagePercents(_ models: [ModelTokenUsage], categoryPercent: Double?) -> [ModelTokenUsage] {

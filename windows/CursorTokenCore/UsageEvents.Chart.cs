@@ -5,13 +5,51 @@ namespace CursorTokenCore;
 
 public static partial class UsageEvents
 {
-    public static string ChartModelLabel(string? name)
+    public static string ChartModelLabel(string? name) =>
+        RustCore.String("chart_model_label", new { input = name ?? "" });
+
+    static string ChartModelLabelCore(string? name)
     {
         var text = (name ?? "").Trim();
         return text.StartsWith("cursor-", StringComparison.Ordinal) ? text[7..] : text;
     }
 
     public static UsageChartSeries BuildChart(
+        IEnumerable<UsageEvent> events,
+        bool hourly,
+        IEnumerable<string>? hiddenModels = null,
+        int hourlyWindowHours = HourlyChartWindowHours)
+    {
+        if (hourlyWindowHours == HourlyChartWindowHours)
+        {
+            var result = RustCore.Call("build_usage_chart", new
+            {
+                events = events.Select(EventJson).ToList(),
+                hourly,
+                hidden_models = (hiddenModels ?? []).ToList(),
+            });
+            return new UsageChartSeries
+            {
+                Hourly = result.GetProperty("hourly").GetBoolean(),
+                Caption = result.GetProperty("caption").GetString() ?? "",
+                Models = result.GetProperty("models").EnumerateArray().Select(x => x.GetString() ?? "").ToList(),
+                Buckets = result.GetProperty("buckets").EnumerateArray().Select(row => new ChartBucket(
+                    row.GetProperty("key").GetString() ?? "",
+                    row.GetProperty("label").GetString() ?? "",
+                    row.GetProperty("tokens").GetInt64(),
+                    row.GetProperty("cents").GetDouble(),
+                    row.GetProperty("count").GetInt32(),
+                    row.GetProperty("slices").EnumerateArray().Select(slice => new ChartSlice(
+                        slice.GetProperty("model").GetString() ?? "",
+                        slice.GetProperty("tokens").GetInt64(),
+                        slice.GetProperty("cents").GetDouble(),
+                        slice.GetProperty("count").GetInt32())).ToList())).ToList(),
+            };
+        }
+        return BuildChartCore(events, hourly, hiddenModels, hourlyWindowHours);
+    }
+
+    static UsageChartSeries BuildChartCore(
         IEnumerable<UsageEvent> events,
         bool hourly,
         IEnumerable<string>? hiddenModels = null,
@@ -35,8 +73,8 @@ public static partial class UsageEvents
             var span = (lastMs - firstMs) / MsHour + 1;
             if (span > window) firstMs = lastMs - (window - 1) * MsHour;
             var count = (int)((lastMs - firstMs) / MsHour + 1);
-            keys = Enumerable.Range(0, count).Select(i => EventHour(firstMs + i * MsHour)).ToList();
-            keyOf = EventHour;
+            keys = Enumerable.Range(0, count).Select(i => EventHourCore(firstMs + i * MsHour)).ToList();
+            keyOf = EventHourCore;
         }
         else
         {
@@ -45,7 +83,7 @@ public static partial class UsageEvents
             keys = [];
             for (var day = ToDisplay(firstMs).Date; day <= ToDisplay(lastMs).Date; day = day.AddDays(1))
                 keys.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            keyOf = EventDate;
+            keyOf = EventDateCore;
         }
 
         var cells = new Dictionary<(string key, string model), (long tokens, double cents, int count)>();

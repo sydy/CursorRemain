@@ -7,6 +7,10 @@ public enum AccountValidity {
     public static let maxHours = 23
 
     public static func sanitizeKind(_ raw: String?) -> String {
+        RustCore.string("sanitize_account_kind", ["input": raw ?? ""])
+    }
+
+    static func sanitizeKindCore(_ raw: String?) -> String {
         let key = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased().replacingOccurrences(of: "-", with: "_")
         if key == "temporary" || key == "temp" || key == "short" { return temporary }
         return longTerm
@@ -17,10 +21,15 @@ public enum AccountValidity {
 
     public static func isTemporary(_ account: Account?) -> Bool {
         guard let account else { return false }
-        return sanitizeKind(account.accountKind) == temporary
+        return sanitizeKindCore(account.accountKind) == temporary
     }
 
     public static func computeEndIso(startAt: String?, days: Int, hours: Int) -> String? {
+        let result = RustCore.call("compute_account_end", ["start": startAt ?? "", "days": days, "hours": hours])
+        return result as? String
+    }
+
+    static func computeEndIsoCore(startAt: String?, days: Int, hours: Int) -> String? {
         guard let start = AccountSync.parseIso(startAt) else { return nil }
         let d = clampDays(days)
         let h = clampHours(hours)
@@ -31,11 +40,35 @@ public enum AccountValidity {
 
     public static func accountEndIso(_ account: Account?) -> String? {
         guard isTemporary(account), let account else { return nil }
-        return computeEndIso(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours)
+        return computeEndIsoCore(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours)
     }
 
     public static func applyEndOverride(_ snap: inout UsageSnapshot, account: Account?, now: Date = Date()) {
-        guard let end = accountEndIso(account) else { return }
+        let result = RustCore.object("apply_account_end_override", [
+            "account": [
+                "account_kind": account?.accountKind ?? "",
+                "temp_start_at": account?.tempStartAt ?? "",
+                "temp_valid_days": account?.tempValidDays ?? 0,
+                "temp_valid_hours": account?.tempValidHours ?? 0,
+            ],
+            "api_end": snap.billingCycleEnd as Any,
+            "now": isoNow(now),
+            "days_remaining": snap.daysRemaining ?? 0,
+        ])
+        snap.billingCycleEnd = result["billing_cycle_end"] as? String
+        snap.daysRemaining = result["days_remaining"] as? Int ?? (result["days_remaining"] as? NSNumber)?.intValue
+        snap.billingCycleEndOverridden = result["overridden"] as? Bool ?? false
+        snap.apiBillingCycleEnd = result["api_billing_cycle_end"] as? String
+    }
+
+    static func isoNow(_ now: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.string(from: now)
+    }
+
+    static func applyEndOverrideCore(_ snap: inout UsageSnapshot, account: Account?, now: Date = Date()) {
+        guard let account, sanitizeKindCore(account.accountKind) == temporary, let end = computeEndIsoCore(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours) else { return }
         if !snap.billingCycleEndOverridden {
             snap.apiBillingCycleEnd = snap.billingCycleEnd
         }

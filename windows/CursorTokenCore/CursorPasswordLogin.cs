@@ -28,21 +28,30 @@ public static class CursorPasswordLogin
 
     public static bool LooksLikeEmail(string? value) => CursorAuth.LooksLikeEmail(value);
 
-    public static string SanitizeEmail(string? raw)
+    public static string SanitizeEmail(string? raw) =>
+        RustCore.String("sanitize_email", new { input = raw ?? "" });
+
+    internal static string SanitizeEmailCore(string? raw)
     {
         var text = (raw ?? "").Trim().ToLowerInvariant();
         if (!LooksLikeEmail(text) || !EmailRe.IsMatch(text)) return "";
         return text;
     }
 
-    public static string DefaultLabel(string email, string? existingLabel = null)
+    public static string DefaultLabel(string email, string? existingLabel = null) =>
+        RustCore.String("default_account_label", new { email, existing = existingLabel ?? "" });
+
+    internal static string DefaultLabelCore(string email, string? existingLabel = null)
     {
         var current = (existingLabel ?? "").Trim();
         if (current.Length > 0) return current;
-        return SanitizeEmail(email);
+        return SanitizeEmailCore(email);
     }
 
-    public static string? TokenFromCookies(IEnumerable<(string Name, string Value)> cookies)
+    public static string? TokenFromCookies(IEnumerable<(string Name, string Value)> cookies) =>
+        RustCore.String("token_from_cookies", new { cookies = cookies.Select(c => new { name = c.Name, value = c.Value }).ToList() });
+
+    internal static string? TokenFromCookiesCore(IEnumerable<(string Name, string Value)> cookies)
     {
         foreach (var (name, value) in cookies)
         {
@@ -55,12 +64,15 @@ public static class CursorPasswordLogin
         return "";
     }
 
-    public static string AutofillScript(string email, string password)
+    public static string AutofillScript(string email, string password) =>
+        RustCore.String("autofill_script", new { email, password });
+
+    internal static string AutofillScriptCore(string email, string password)
     {
         var payload = JsonSerializer.Serialize(
             new Dictionary<string, string>
             {
-                ["email"] = SanitizeEmail(email),
+                ["email"] = SanitizeEmailCore(email),
                 ["password"] = password ?? "",
             },
             new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
@@ -88,7 +100,10 @@ public static class CursorPasswordLogin
             "})();";
     }
 
-    public static string CodeChallenge(string? verifier)
+    public static string CodeChallenge(string? verifier) =>
+        RustCore.String("code_challenge", new { verifier = verifier ?? "" });
+
+    internal static string CodeChallengeCore(string? verifier)
     {
         var text = (verifier ?? "").Trim();
         if (text.Length == 0) return "";
@@ -96,15 +111,21 @@ public static class CursorPasswordLogin
         return Convert.ToBase64String(digest).TrimEnd('=').Replace('+', '-').Replace('/', '_');
     }
 
-    public static string LoginDeepUrl(string? uuid, string? verifier)
+    public static string LoginDeepUrl(string? uuid, string? verifier) =>
+        RustCore.String("login_deep_url", new { uuid = uuid ?? "", verifier = verifier ?? "" });
+
+    internal static string LoginDeepUrlCore(string? uuid, string? verifier)
     {
         var loginId = (uuid ?? "").Trim();
-        var challenge = CodeChallenge(verifier);
+        var challenge = CodeChallengeCore(verifier);
         if (loginId.Length == 0 || challenge.Length == 0) return "";
         return $"{LoginDeepUrlBase}?challenge={PercentEncode(challenge)}&uuid={PercentEncode(loginId)}&mode=login";
     }
 
-    public static string TokenFromCallback(string? text)
+    public static string TokenFromCallback(string? text) =>
+        RustCore.String("token_from_callback", new { input = text ?? "" });
+
+    internal static string TokenFromCallbackCore(string? text)
     {
         var raw = (text ?? "").Trim();
         if (raw.Length == 0) return "";
@@ -137,9 +158,12 @@ public static class CursorPasswordLogin
         return Regex.IsMatch(text, "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$") ? text : "";
     }
 
-    public static string ProfileKey(string? email, string? accountId = null)
+    public static string ProfileKey(string? email, string? accountId = null) =>
+        RustCore.String("profile_key", new { email = email ?? "", account_id = accountId ?? "" });
+
+    internal static string ProfileKeyCore(string? email, string? accountId = null)
     {
-        var mail = SanitizeEmail(email);
+        var mail = SanitizeEmailCore(email);
         if (mail.Length > 0) return "email:" + mail;
         var ident = (accountId ?? "").Trim();
         if (ident.Length == 0 || ident.Any(ch => char.IsWhiteSpace(ch) || ch is '/' or '\\')) return "";
@@ -149,8 +173,8 @@ public static class CursorPasswordLogin
     public static string CanonicalProfileKey(string? key)
     {
         var text = key ?? "";
-        if (text.StartsWith("email:", StringComparison.Ordinal)) return ProfileKey(text[6..]);
-        if (text.StartsWith("id:", StringComparison.Ordinal)) return ProfileKey("", text[3..]);
+        if (text.StartsWith("email:", StringComparison.Ordinal)) return ProfileKeyCore(text[6..]);
+        if (text.StartsWith("id:", StringComparison.Ordinal)) return ProfileKeyCore("", text[3..]);
         return "";
     }
 
@@ -168,6 +192,19 @@ public static class CursorPasswordLogin
     }
 
     public static (Dictionary<string, string> Index, string ProfileId) AssignProfile(
+        IEnumerable<KeyValuePair<string, string>>? index, string? key, string? newId)
+    {
+        var result = RustCore.Call("assign_profile", new
+        {
+            index = (index ?? []).ToDictionary(kv => kv.Key, kv => kv.Value),
+            key = key ?? "",
+            new_id = newId ?? "",
+        });
+        var stored = result.GetProperty("index").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? "");
+        return (stored, result.GetProperty("profile_id").GetString() ?? "");
+    }
+
+    internal static (Dictionary<string, string> Index, string ProfileId) AssignProfileCore(
         IEnumerable<KeyValuePair<string, string>>? index, string? key, string? newId)
     {
         var fresh = ValidProfileId(newId);
@@ -191,7 +228,10 @@ public static class CursorPasswordLogin
         return cleaned;
     }
 
-    public static string TokenFromPoll(JsonElement payload)
+    public static string TokenFromPoll(JsonElement payload) =>
+        RustCore.String("token_from_poll", payload);
+
+    internal static string TokenFromPollCore(JsonElement payload)
     {
         var access = ReadString(payload, "accessToken");
         if (access.Length == 0) access = ReadString(payload, "access_token");

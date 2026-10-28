@@ -6,6 +6,12 @@ public enum Token {
     public static let junk: [Character] = ["\u{2026}", "\u{2022}", "\u{FEFF}", "\u{200B}", "\u{200C}", "\u{200D}", "\u{00A0}"]
 
     public static func normalize(_ raw: String) throws -> String {
+        let result = RustCore.object("normalize_token", ["input": raw])
+        if result["ok"] as? Bool == true { return result["value"] as? String ?? "" }
+        throw CursorAPIError(result["error"] as? String ?? "Token 无效", statusCode: 401)
+    }
+
+    static func normalizeCore(_ raw: String) throws -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
         if value.isEmpty { return "" }
@@ -55,13 +61,17 @@ public enum Token {
     }
 
     public static func variants(_ token: String) -> [String] {
+        RustCore.strings("token_variants", ["input": token])
+    }
+
+    static func variantsCore(_ token: String) -> [String] {
         var list: [String] = []
         func add(_ value: String?) {
             let text = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if !text.isEmpty, !list.contains(text) { list.append(text) }
         }
         let raw = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        do { add(try normalize(raw)) } catch { /* skip */ }
+        do { add(try normalizeCore(raw)) } catch { /* skip */ }
         add(raw)
         var jwt = raw
         if raw.contains("%3A%3A") {
@@ -94,8 +104,12 @@ public enum Token {
     }
 
     public static func accountId(from token: String) -> String {
+        RustCore.string("account_id", ["input": token])
+    }
+
+    static func accountIdCore(from token: String) -> String {
         let value: String
-        do { value = try normalize(token) } catch {
+        do { value = try normalizeCore(token) } catch {
             value = token.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         if value.isEmpty { return "" }
@@ -111,22 +125,26 @@ public enum Token {
         }
         if looksLikeJWT(jwt) {
             let uid = extractUserId(fromJWT: jwt)
-            if !uid.isEmpty { return safeAccountId(uid) }
+            if !uid.isEmpty { return safeAccountIdCore(uid) }
         }
         let trimmedPrefix = prefix.trimmingCharacters(in: .whitespaces)
         if !trimmedPrefix.isEmpty {
             let last = trimmedPrefix.split(separator: "|").last.map(String.init) ?? trimmedPrefix
-            return safeAccountId(last)
+            return safeAccountIdCore(last)
         }
         if looksLikeJWT(value) {
             let uid = extractUserId(fromJWT: value)
-            if !uid.isEmpty { return safeAccountId(uid) }
+            if !uid.isEmpty { return safeAccountIdCore(uid) }
         }
         let digest = SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
         return "tok_" + digest.prefix(16)
     }
 
     public static func safeAccountId(_ value: String) -> String {
+        RustCore.string("safe_account_id", ["input": value])
+    }
+
+    static func safeAccountIdCore(_ value: String) -> String {
         let pattern = try! NSRegularExpression(pattern: "[^A-Za-z0-9._-]+")
         let range = NSRange(value.startIndex..., in: value)
         var cleaned = pattern.stringByReplacingMatches(in: value, range: range, withTemplate: "_")
@@ -172,9 +190,13 @@ public enum Token {
     }
 
     public static func extractJWT(_ token: String) -> String {
+        RustCore.string("extract_jwt", ["input": token])
+    }
+
+    static func extractJWTCore(_ token: String) -> String {
         var value = token.trimmingCharacters(in: .whitespacesAndNewlines)
         if value.isEmpty { return "" }
-        do { value = try normalize(value) } catch { /* keep trimmed raw */ }
+        do { value = try normalizeCore(value) } catch { /* keep trimmed raw */ }
         var jwt = value
         for sep in ["%3A%3A", "%3a%3a", "::"] {
             if let r = value.range(of: sep) {
@@ -187,13 +209,13 @@ public enum Token {
     }
 
     public static func jwtSubject(_ token: String) -> String {
-        let jwt = looksLikeJWT(token) ? token : extractJWT(token)
+        let jwt = looksLikeJWT(token) ? token : extractJWTCore(token)
         guard let payload = jwtPayload(jwt) else { return "" }
         return payload["sub"] as? String ?? ""
     }
 
     public static func jwtClaim(_ token: String, _ name: String) -> String {
-        let jwt = looksLikeJWT(token) ? token : extractJWT(token)
+        let jwt = looksLikeJWT(token) ? token : extractJWTCore(token)
         guard let payload = jwtPayload(jwt) else { return "" }
         if let text = payload[name] as? String { return text }
         if let num = payload[name] as? NSNumber { return num.stringValue }
@@ -202,12 +224,20 @@ public enum Token {
 
     /// JWT `type` claim: `session` signs Cursor in; `web` is a browser cookie.
     public static func jwtType(_ token: String) -> String {
+        RustCore.string("jwt_type", ["input": token])
+    }
+
+    static func jwtTypeCore(_ token: String) -> String {
         jwtClaim(token, "type").trimmingCharacters(in: .whitespaces).lowercased()
     }
 
     public static func canWriteToCursor(_ token: String) -> Bool {
-        let jwt = extractJWT(token)
+        RustCore.bool("can_write_to_cursor", ["input": token])
+    }
+
+    static func canWriteToCursorCore(_ token: String) -> Bool {
+        let jwt = extractJWTCore(token)
         guard looksLikeJWT(jwt) else { return false }
-        return jwtType(jwt) != "web"
+        return jwtTypeCore(jwt) != "web"
     }
 }

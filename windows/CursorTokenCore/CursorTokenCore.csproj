@@ -10,6 +10,9 @@
     <InternalsVisibleTo Include="CursorTokenCore.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="$(NativeOutputDir)cursor_core.dll" Link="cursor_core.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(NativeOutputDir)cursor_core.dll')" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
     <PackageReference Include="System.IO.FileSystem.AccessControl" Version="5.0.0" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

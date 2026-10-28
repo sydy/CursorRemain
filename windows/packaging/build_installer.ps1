@@ -19,6 +19,10 @@ $exe = Join-Path $PublishDir "CursorRemain.exe"
 if (-not (Test-Path -LiteralPath $exe)) {
     throw "Missing $exe. Publish the app into $PublishDir first."
 }
+$core = Join-Path $PublishDir "cursor_core.dll"
+if (-not (Test-Path -LiteralPath $core)) {
+    throw "Missing $core. Build core/ in release before publishing."
+}
 if (-not $AppVersion) {
     $versionFile = Join-Path $RepoRoot "VERSION"
     if (Test-Path -LiteralPath $versionFile) {

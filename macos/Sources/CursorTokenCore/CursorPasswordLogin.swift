@@ -35,6 +35,10 @@ public enum CursorPasswordLogin {
     }
 
     public static func sanitizeEmail(_ raw: String?) -> String {
+        RustCore.string("sanitize_email", ["input": raw ?? ""])
+    }
+
+    static func sanitizeEmailCore(_ raw: String?) -> String {
         let text = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased()
         if !looksLikeEmail(text) { return "" }
         let range = NSRange(text.startIndex..., in: text)
@@ -43,12 +47,20 @@ public enum CursorPasswordLogin {
     }
 
     public static func defaultLabel(_ email: String, existing: String = "") -> String {
+        RustCore.string("default_account_label", ["email": email, "existing": existing])
+    }
+
+    static func defaultLabelCore(_ email: String, existing: String = "") -> String {
         let current = existing.trimmingCharacters(in: .whitespaces)
         if !current.isEmpty { return current }
-        return sanitizeEmail(email)
+        return sanitizeEmailCore(email)
     }
 
     public static func tokenFromCookies(_ cookies: [(name: String, value: String)]) -> String? {
+        RustCore.string("token_from_cookies", ["cookies": cookies.map { ["name": $0.name, "value": $0.value] }])
+    }
+
+    static func tokenFromCookiesCore(_ cookies: [(name: String, value: String)]) -> String? {
         for item in cookies {
             if item.name.caseInsensitiveCompare(Token.cookieName) != .orderedSame { continue }
             let raw = item.value.trimmingCharacters(in: .whitespaces)
@@ -59,8 +71,12 @@ public enum CursorPasswordLogin {
     }
 
     public static func autofillScript(email: String, password: String) -> String {
+        RustCore.string("autofill_script", ["email": email, "password": password])
+    }
+
+    static func autofillScriptCore(email: String, password: String) -> String {
         let payloadObj: [String: String] = [
-            "email": sanitizeEmail(email),
+            "email": sanitizeEmailCore(email),
             "password": password,
         ]
         let data = (try? JSONSerialization.data(withJSONObject: payloadObj, options: [])) ?? Data("{}".utf8)
@@ -90,6 +106,10 @@ public enum CursorPasswordLogin {
     }
 
     public static func codeChallenge(_ verifier: String) -> String {
+        RustCore.string("code_challenge", ["verifier": verifier])
+    }
+
+    static func codeChallengeCore(_ verifier: String) -> String {
         let text = verifier.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return "" }
         let digest = Data(SHA256.hash(data: Data(text.utf8)))
@@ -100,13 +120,21 @@ public enum CursorPasswordLogin {
     }
 
     public static func loginDeepURL(uuid: String, verifier: String) -> String {
+        RustCore.string("login_deep_url", ["uuid": uuid, "verifier": verifier])
+    }
+
+    static func loginDeepURLCore(uuid: String, verifier: String) -> String {
         let loginId = uuid.trimmingCharacters(in: .whitespacesAndNewlines)
-        let challenge = codeChallenge(verifier)
+        let challenge = codeChallengeCore(verifier)
         if loginId.isEmpty || challenge.isEmpty { return "" }
         return "\(loginDeepURLBase)?challenge=\(percentEncode(challenge))&uuid=\(percentEncode(loginId))&mode=login"
     }
 
     public static func tokenFromCallback(_ text: String?) -> String {
+        RustCore.string("token_from_callback", ["input": text ?? ""])
+    }
+
+    static func tokenFromCallbackCore(_ text: String?) -> String {
         let raw = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty { return "" }
         if !raw.contains("://"), !raw.lowercased().hasPrefix("cursor.com") {
@@ -131,6 +159,10 @@ public enum CursorPasswordLogin {
     }
 
     public static func tokenFromPoll(_ payload: [String: Any]) -> String {
+        RustCore.string("token_from_poll", payload)
+    }
+
+    static func tokenFromPollCore(_ payload: [String: Any]) -> String {
         let camel = payload["accessToken"] as? String ?? ""
         let snake = payload["access_token"] as? String ?? ""
         let raw = camel.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -147,7 +179,11 @@ public enum CursorPasswordLogin {
     }
 
     public static func profileKey(email: String, accountId: String = "") -> String {
-        let mail = sanitizeEmail(email)
+        RustCore.string("profile_key", ["email": email, "account_id": accountId])
+    }
+
+    static func profileKeyCore(email: String, accountId: String = "") -> String {
+        let mail = sanitizeEmailCore(email)
         if !mail.isEmpty { return "email:" + mail }
         let ident = accountId.trimmingCharacters(in: .whitespacesAndNewlines)
         if ident.isEmpty || ident.contains(where: { $0.isWhitespace || $0 == "/" || $0 == "\\" }) { return "" }
@@ -171,6 +207,12 @@ public enum CursorPasswordLogin {
     }
 
     public static func assignProfile(_ index: [String: String], key: String, newId: String) -> (index: [String: String], profileId: String) {
+        let result = RustCore.object("assign_profile", ["index": index, "key": key, "new_id": newId])
+        let stored = (result["index"] as? [String: Any] ?? [:]).mapValues { "\($0)" }
+        return (stored, result["profile_id"] as? String ?? "")
+    }
+
+    static func assignProfileCore(_ index: [String: String], key: String, newId: String) -> (index: [String: String], profileId: String) {
         let fresh = validProfileId(newId)
         var cleaned = cleanProfileIndex(index)
         if fresh.isEmpty { return (cleaned, "") }

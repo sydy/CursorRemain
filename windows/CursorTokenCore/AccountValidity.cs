@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 namespace CursorTokenCore;
 
@@ -9,7 +10,10 @@ public static class AccountValidity
     public const int MaxDays = 999;
     public const int MaxHours = 23;
 
-    public static string SanitizeKind(string? raw)
+    public static string SanitizeKind(string? raw) =>
+        RustCore.String("sanitize_account_kind", new { input = raw ?? "" });
+
+    internal static string SanitizeKindCore(string? raw)
     {
         var key = (raw ?? "").Trim().ToLowerInvariant().Replace('-', '_');
         return key is "temporary" or "temp" or "short" ? Temporary : LongTerm;
@@ -19,9 +23,15 @@ public static class AccountValidity
     public static int ClampHours(object? raw) => ClampInt(raw, 0, MaxHours);
 
     public static bool IsTemporary(Account? account) =>
-        account is not null && SanitizeKind(account.AccountKind) == Temporary;
+        account is not null && SanitizeKindCore(account.AccountKind) == Temporary;
 
     public static string? ComputeEndIso(string? startAt, int days, int hours)
+    {
+        var result = RustCore.Call("compute_account_end", new { start = startAt ?? "", days, hours });
+        return result.ValueKind == JsonValueKind.String ? result.GetString() : null;
+    }
+
+    internal static string? ComputeEndIsoCore(string? startAt, int days, int hours)
     {
         var start = AccountSync.ParseIso(startAt);
         if (start is null) return null;
@@ -34,10 +44,31 @@ public static class AccountValidity
     public static string? AccountEndIso(Account? account)
     {
         if (!IsTemporary(account) || account is null) return null;
-        return ComputeEndIso(account.TempStartAt, account.TempValidDays, account.TempValidHours);
+        return ComputeEndIsoCore(account.TempStartAt, account.TempValidDays, account.TempValidHours);
     }
 
     public static void ApplyEndOverride(UsageSnapshot snap, Account? account, DateTimeOffset? now = null)
+    {
+        var result = RustCore.Call("apply_account_end_override", new
+        {
+            account = new
+            {
+                account_kind = account?.AccountKind ?? "",
+                temp_start_at = account?.TempStartAt ?? "",
+                temp_valid_days = account?.TempValidDays ?? 0,
+                temp_valid_hours = account?.TempValidHours ?? 0,
+            },
+            api_end = snap.BillingCycleEnd,
+            now = (now ?? DateTimeOffset.UtcNow).ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+            days_remaining = snap.DaysRemaining ?? 0,
+        });
+        snap.BillingCycleEnd = result.GetProperty("billing_cycle_end").ValueKind == JsonValueKind.String ? result.GetProperty("billing_cycle_end").GetString() : null;
+        snap.DaysRemaining = result.GetProperty("days_remaining").GetInt32();
+        snap.BillingCycleEndOverridden = result.GetProperty("overridden").GetBoolean();
+        snap.ApiBillingCycleEnd = result.GetProperty("api_billing_cycle_end").ValueKind == JsonValueKind.String ? result.GetProperty("api_billing_cycle_end").GetString() : null;
+    }
+
+    static void ApplyEndOverrideCore(UsageSnapshot snap, Account? account, DateTimeOffset? now = null)
     {
         var end = AccountEndIso(account);
         if (string.IsNullOrEmpty(end)) return;
@@ -56,7 +87,7 @@ public static class AccountValidity
         snap.BillingCycleEndOverridden ? snap.ApiBillingCycleEnd ?? "" : snap.BillingCycleEnd;
 
     public static bool ValidityEquals(Account a, string kind, string startAt, int days, int hours) =>
-        SanitizeKind(a.AccountKind) == SanitizeKind(kind)
+        SanitizeKindCore(a.AccountKind) == SanitizeKindCore(kind)
         && (a.TempStartAt ?? "").Trim() == (startAt ?? "").Trim()
         && ClampDays(a.TempValidDays) == ClampDays(days)
         && ClampHours(a.TempValidHours) == ClampHours(hours);

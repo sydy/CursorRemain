@@ -7,7 +7,9 @@ var targets: [Target] = [
         path: "Sources/CursorTokenCore",
         linkerSettings: [
             .linkedLibrary("sqlite3"),
+            .linkedLibrary("cursor_core", .when(platforms: [.macOS])),
             .linkedFramework("Security", .when(platforms: [.macOS])),
+            .unsafeFlags(["-L../core/target/release"], .when(platforms: [.macOS])),
         ]
     ),
     .testTarget(
@@ -16,6 +18,8 @@ var targets: [Target] = [
         path: "Tests/CursorTokenCoreTests",
         linkerSettings: [
             .linkedLibrary("sqlite3"),
+            .linkedLibrary("cursor_core", .when(platforms: [.macOS])),
+            .unsafeFlags(["-L../../core/target/release"], .when(platforms: [.macOS])),
         ]
     ),
 ]
