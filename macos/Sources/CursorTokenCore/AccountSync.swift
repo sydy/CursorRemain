@@ -589,6 +589,82 @@ public enum AccountSync {
     }
 
     public static func mergeSnapshots(_ local: SyncSnapshot, _ remote: SyncSnapshot) -> SyncSnapshot {
+        snapshotFromRust(RustCore.object("merge_sync_snapshots", ["local": snapshotPayload(local), "remote": snapshotPayload(remote)]))
+    }
+
+    static func snapshotPayload(_ snap: SyncSnapshot) -> [String: Any] {
+        [
+            "updated_at": snap.updatedAt,
+            "device_id": snap.deviceId,
+            "active_account_id": snap.activeAccountId,
+            "active_account_updated_at": snap.activeAccountUpdatedAt,
+            "accounts": snap.accounts.map { account in
+                [
+                    "id": account.id, "label": account.label, "email": account.email, "password": account.password,
+                    "token": account.token, "membership_type": account.membershipType, "account_kind": account.accountKind,
+                    "temp_start_at": account.tempStartAt, "temp_valid_days": account.tempValidDays,
+                    "temp_valid_hours": account.tempValidHours, "actual_cny": account.actualCny, "channel": account.channel,
+                    "sync_updated_at": account.syncUpdatedAt, "last_remaining": account.lastRemaining as Any,
+                    "last_error": account.lastError, "usage_updated_at": account.usageUpdatedAt,
+                    "billing_cycle_start": account.billingCycleStart, "billing_cycle_end": account.billingCycleEnd,
+                ]
+            },
+            "deleted": snap.deleted.map { ["id": $0.id, "deleted_at": $0.deletedAt] },
+            "settings": snap.settings.map { settings in
+                [
+                    "refresh_interval_minutes": settings.refreshIntervalMinutes,
+                    "alert_thresholds": settings.alertThresholds,
+                    "notify_enabled": settings.notifyEnabled,
+                    "notify_exhaustion_risk": settings.notifyExhaustionRisk,
+                    "tray_display_mode": settings.trayDisplayMode,
+                    "monthly_plan_usd": settings.monthlyPlanUsd,
+                    "usd_cny_rate": settings.usdCnyRate,
+                    "field_updated_at": settings.fieldUpdatedAt,
+                ] as [String: Any]
+            } as Any,
+            "usage": snap.usage?.map { row in
+                [
+                    "account_id": row.accountId,
+                    "history": row.history.map { ["ts": $0.ts, "remaining": $0.remaining, "auto": $0.auto as Any, "api": $0.api as Any] },
+                    "events": row.events.map(eventPayload),
+                    "team_events": row.teamEvents.map(eventPayload),
+                ]
+            } as Any,
+        ]
+    }
+
+    static func eventPayload(_ event: UsageEvent) -> [String: Any] {
+        [
+            "id": event.id, "timestamp_ms": event.timestampMs, "model": event.model, "kind": event.kind,
+            "user_email": event.userEmail, "owning_user": event.owningUser, "tokens": event.tokens,
+            "input_tokens": event.inputTokens, "output_tokens": event.outputTokens,
+            "cache_write_tokens": event.cacheWriteTokens, "cache_read_tokens": event.cacheReadTokens,
+            "charged_cents": event.chargedCents as Any, "total_cents": event.totalCents as Any,
+            "is_headless": event.isHeadless, "is_chargeable": event.isChargeable,
+        ]
+    }
+
+    static func snapshotFromRust(_ raw: [String: Any]) -> SyncSnapshot {
+        var snap = parseSnapshot(raw)
+        if let rows = raw["usage"] as? [[String: Any]] {
+            snap.usage = rows.map { row in
+                let history = (row["history"] as? [[String: Any]] ?? []).compactMap { point -> HistoryPoint? in
+                    guard let ts = point["ts"] as? Double ?? (point["ts"] as? NSNumber)?.doubleValue,
+                          let remaining = point["remaining"] as? Double ?? (point["remaining"] as? NSNumber)?.doubleValue else { return nil }
+                    return HistoryPoint(ts: ts, remaining: remaining, auto: point["auto"] as? Double ?? (point["auto"] as? NSNumber)?.doubleValue, api: point["api"] as? Double ?? (point["api"] as? NSNumber)?.doubleValue)
+                }
+                return SyncUsage(
+                    accountId: row["account_id"] as? String ?? "",
+                    history: history,
+                    events: (row["events"] as? [[String: Any]] ?? []).map(UsageEvents.eventFromRust),
+                    teamEvents: (row["team_events"] as? [[String: Any]] ?? []).map(UsageEvents.eventFromRust)
+                )
+            }
+        }
+        return snap
+    }
+
+    static func mergeSnapshotsCore(_ local: SyncSnapshot, _ remote: SyncSnapshot) -> SyncSnapshot {
         var tombstones: [String: String] = [:]
         for row in sanitizeDeleted(local.deleted) + sanitizeDeleted(remote.deleted) {
             if let prev = tombstones[row.id], compareIso(row.deletedAt, prev) < 0 { continue }

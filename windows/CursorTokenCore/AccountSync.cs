@@ -526,6 +526,78 @@ public static class AccountSync
 
     public static SyncSnapshot MergeSnapshots(SyncSnapshot local, SyncSnapshot remote)
     {
+        var result = RustCore.Call("merge_sync_snapshots", new { local = SnapshotJson(local), remote = SnapshotJson(remote) });
+        return SnapshotFromJson(result);
+    }
+
+    static object SnapshotJson(SyncSnapshot snap) => new
+    {
+        updated_at = snap.UpdatedAt,
+        device_id = snap.DeviceId,
+        active_account_id = snap.ActiveAccountId,
+        active_account_updated_at = snap.ActiveAccountUpdatedAt,
+        accounts = snap.Accounts.Select(a => new
+        {
+            id = a.Id, label = a.Label, email = a.Email, password = a.Password, token = a.Token,
+            membership_type = a.MembershipType, account_kind = a.AccountKind, temp_start_at = a.TempStartAt,
+            temp_valid_days = a.TempValidDays, temp_valid_hours = a.TempValidHours, actual_cny = a.ActualCny,
+            channel = a.Channel, sync_updated_at = a.SyncUpdatedAt, last_remaining = a.LastRemaining,
+            last_error = a.LastError, usage_updated_at = a.UsageUpdatedAt,
+            billing_cycle_start = a.BillingCycleStart, billing_cycle_end = a.BillingCycleEnd,
+        }),
+        deleted = snap.Deleted.Select(d => new { id = d.Id, deleted_at = d.DeletedAt }),
+        settings = snap.Settings is null ? null : (object)new
+        {
+            refresh_interval_minutes = snap.Settings.RefreshIntervalMinutes,
+            alert_thresholds = snap.Settings.AlertThresholds,
+            notify_enabled = snap.Settings.NotifyEnabled,
+            notify_exhaustion_risk = snap.Settings.NotifyExhaustionRisk,
+            tray_display_mode = snap.Settings.TrayDisplayMode,
+            monthly_plan_usd = snap.Settings.MonthlyPlanUsd,
+            usd_cny_rate = snap.Settings.UsdCnyRate,
+            field_updated_at = snap.Settings.FieldUpdatedAt,
+        },
+        usage = snap.Usage?.Select(u => new
+        {
+            account_id = u.AccountId,
+            history = u.History.Select(h => new { ts = h.Ts, remaining = h.Remaining, auto = h.Auto, api = h.Api }),
+            events = u.Events.Select(EventJson),
+            team_events = u.TeamEvents.Select(EventJson),
+        }),
+    };
+
+    static object EventJson(UsageEvent ev) => new
+    {
+        id = ev.Id, timestamp_ms = ev.TimestampMs, model = ev.Model, kind = ev.Kind,
+        user_email = ev.UserEmail, owning_user = ev.OwningUser, tokens = ev.Tokens,
+        input_tokens = ev.InputTokens, output_tokens = ev.OutputTokens,
+        cache_write_tokens = ev.CacheWriteTokens, cache_read_tokens = ev.CacheReadTokens,
+        charged_cents = ev.ChargedCents, total_cents = ev.TotalCents,
+        is_headless = ev.IsHeadless, is_chargeable = ev.IsChargeable,
+    };
+
+    static SyncSnapshot SnapshotFromJson(JsonElement raw)
+    {
+        var snap = ParseSnapshot(raw);
+        if (raw.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Array)
+        {
+            snap.Usage = usage.EnumerateArray().Select(row => new SyncUsage
+            {
+                AccountId = Str(row, "account_id"),
+                History = row.TryGetProperty("history", out var history) ? history.EnumerateArray().Select(point => new HistoryPoint(
+                    point.GetProperty("ts").GetDouble(),
+                    point.GetProperty("remaining").GetDouble(),
+                    point.TryGetProperty("auto", out var auto) && auto.ValueKind == JsonValueKind.Number ? auto.GetDouble() : null,
+                    point.TryGetProperty("api", out var api) && api.ValueKind == JsonValueKind.Number ? api.GetDouble() : null)).ToList() : [],
+                Events = UsageEvents.EventsFromRust(row, "events"),
+                TeamEvents = UsageEvents.EventsFromRust(row, "team_events"),
+            }).ToList();
+        }
+        return snap;
+    }
+
+    static SyncSnapshot MergeSnapshotsCore(SyncSnapshot local, SyncSnapshot remote)
+    {
         var tombstones = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var row in SanitizeDeleted(local.Deleted).Concat(SanitizeDeleted(remote.Deleted)))
         {

@@ -820,6 +820,11 @@ public static partial class UsageEvents
         return (events, result.GetProperty("total_count").GetInt32());
     }
 
+    internal static List<UsageEvent> EventsFromRust(JsonElement row, string key) =>
+        row.TryGetProperty(key, out var events) && events.ValueKind == JsonValueKind.Array
+            ? events.EnumerateArray().Select(EventFromRust).ToList()
+            : [];
+
     static UsageEvent EventFromRust(JsonElement row) => new()
     {
         Id = row.GetProperty("id").GetString() ?? "",
