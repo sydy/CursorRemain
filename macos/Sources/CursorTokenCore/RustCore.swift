@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 
 enum RustCore {
+    static var lastText = ""
     static func call(_ op: String, _ input: Any) -> Any {
         let data: Data
         do {
@@ -18,6 +19,7 @@ enum RustCore {
         guard let ptr else { fatalError("cursor_core 没有返回结果") }
         defer { cr_free(ptr) }
         let text = String(cString: ptr)
+        lastText = text
         guard let output = text.data(using: .utf8),
               let value = try? JSONSerialization.jsonObject(with: output, options: [.fragmentsAllowed])
         else {
