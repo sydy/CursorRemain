@@ -1587,13 +1587,17 @@ public enum UsageEvents {
 
     public static func toCSV(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
         if spend != nil { return toCSVCore(events, spend: spend, allocationBase: allocationBase, allocation: allocation) }
-        return RustCore.string("usage_events_csv", ["lf": true, "events": events.map { event in
+        let rows: [[String: Any]] = events.map { event in
             [
-                "timestamp_ms": NSNumber(value: event.timestampMs), "user_email": event.userEmail, "kind": event.kind,
+                "timestamp_ms": event.timestampMs, "user_email": event.userEmail, "kind": event.kind,
                 "model": event.model, "tokens": event.tokens, "charged_cents": event.chargedCents as Any,
                 "total_cents": event.totalCents as Any, "is_headless": event.isHeadless, "allocated_cny": event.allocatedCny,
-            ] as [String: Any]
-        }])
+            ]
+        }
+        guard JSONSerialization.isValidJSONObject(["lf": true, "events": rows]) else {
+            return toCSVCore(events, spend: nil, allocationBase: allocationBase, allocation: allocation)
+        }
+        return RustCore.string("usage_events_csv", ["lf": true, "events": rows])
     }
 
     static func toCSVCore(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
