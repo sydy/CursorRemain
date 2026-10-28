@@ -1456,7 +1456,7 @@ public enum UsageEvents {
         }
         return UsageReport(
             eventCount: intValue(result["event_count"]),
-            totalTokens: int64Value(result["total_tokens"]),
+            totalTokens: intValue(result["total_tokens"]),
             totalCents: doubleValue(result["total_cents"]),
             hasCost: result["has_cost"] as? Bool ?? false,
             includedCount: intValue(result["included_count"]),
