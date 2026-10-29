@@ -92,6 +92,7 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "sanitize_channel" => json!(events::sanitize_channel(input["input"].as_str())),
         "channel_label" => json!(events::channel_label(input["input"].as_str())),
         "build_account_compare" => events::build_account_compare(input["items"].as_array().map(Vec::as_slice).unwrap_or(&[]), input["now_ms"].as_i64()),
+        "account_compare_csv" => json!(events::account_compare_csv(&input["report"], if input["lf"].as_bool().unwrap_or(false) { "\n" } else { "\r\n" })),
         "merge_sync_snapshots" => sync::merge_snapshots(&input["local"], &input["remote"]),
         "sanitize_account_kind" => json!(validity::sanitize_kind(input["input"].as_str())),
         "compute_account_end" => json!(validity::compute_end_iso(input["start"].as_str(), input["days"].as_i64().unwrap_or(0), input["hours"].as_i64().unwrap_or(0))),

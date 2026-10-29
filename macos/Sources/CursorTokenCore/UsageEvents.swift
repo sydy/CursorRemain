@@ -772,7 +772,9 @@ public enum UsageEvents {
             "items": items.map { item in
                 [
                     "account_id": item.accountId,
+                    "label": item.label,
                     "channel": item.channel,
+                    "membership_type": item.membershipType,
                     "account_kind": item.accountKind,
                     "temp_start_at": item.tempStartAt,
                     "temp_valid_days": item.tempValidDays,
@@ -791,7 +793,9 @@ public enum UsageEvents {
         let rows = (result["rows"] as? [[String: Any]] ?? []).map { row in
             AccountCompareRow(
                 accountId: row["account_id"] as? String ?? "",
+                label: row["label"] as? String ?? "",
                 channel: row["channel"] as? String ?? "",
+                membershipType: row["membership_type"] as? String ?? "",
                 windowSource: row["window_source"] as? String ?? "",
                 windowDays: doubleValue(row["window_days"]),
                 planCny: doubleValue(row["plan_cny"]),
@@ -807,7 +811,7 @@ public enum UsageEvents {
             )
         }
         let groups = (result["groups"] as? [[String: Any]] ?? []).map { row in
-            AccountCompareGroup(channel: row["channel"] as? String ?? "", rows: [], dailyHoldingCny: doubleValue(row["daily_holding_cny"]), totalCny: doubleValue(row["total_cny"]), eventCount: intValue(row["event_count"]), totalTokens: intValue(row["total_tokens"]), firstParty: AccountCompareCategory(category: categoryFirstParty), api: AccountCompareCategory(category: categoryAPI), grokBot: AccountCompareCategory(category: categoryGrokBot))
+            AccountCompareGroup(channel: row["channel"] as? String ?? "", rows: [], dailyHoldingCny: doubleValue(row["daily_holding_cny"]), totalCny: doubleValue(row["total_cny"]), eventCount: intValue(row["event_count"]), totalTokens: intValue(row["total_tokens"]), firstParty: cat(row, "first_party"), api: cat(row, "api"), grokBot: cat(row, "grok_bot"))
         }
         return AccountCompareReport(rows: rows, groups: groups, holdingDays: holdingDays)
     }
@@ -850,6 +854,48 @@ public enum UsageEvents {
     }
 
     public static func accountCompareToCSV(_ report: AccountCompareReport) -> String {
+        _ = RustCore.string("account_compare_csv", ["lf": true, "report": compareReportJSON(report)])
+        return decodeRustText(RustCore.lastText)
+    }
+
+    static func compareReportJSON(_ report: AccountCompareReport) -> [String: Any] {
+        func rowJSON(_ label: String, _ channel: String, _ membership: String, _ window: String, _ days: Double, _ daily: Double, _ total: Double, _ count: Int, _ tokens: Int, _ perMillion: Double?, _ perRequest: Double?, _ first: AccountCompareCategory, _ api: AccountCompareCategory, _ grok: AccountCompareCategory) -> [String: Any] {
+            [
+                "label": label, "channel_label": channel, "membership_type": membership, "window_label": window, "window_days": days,
+                "daily_holding_cny": daily, "total_cny": total, "event_count": count, "total_tokens": tokens,
+                "cny_per_million": perMillion as Any, "cny_per_request": perRequest as Any,
+                "first_party": categoryJSON(first), "api": categoryJSON(api), "grok_bot": categoryJSON(grok),
+            ]
+        }
+        return [
+            "rows": report.rows.map { rowJSON($0.label, $0.channelLabel, $0.membershipType, $0.windowLabel, $0.windowDays, $0.dailyHoldingCny, $0.totalCny, $0.eventCount, $0.totalTokens, $0.cnyPerMillion, $0.cnyPerRequest, $0.firstParty, $0.api, $0.grokBot) },
+            "groups": report.groups.map { rowJSON("", $0.channelLabel, "", "", 0, $0.dailyHoldingCny, $0.totalCny, $0.eventCount, $0.totalTokens, $0.cnyPerMillion, $0.cnyPerRequest, $0.firstParty, $0.api, $0.grokBot) },
+        ]
+    }
+
+    static func categoryJSON(_ cat: AccountCompareCategory) -> [String: Any] {
+        ["count": cat.count, "tokens": cat.tokens, "cny": cat.cny, "cny_per_million": cat.cnyPerMillion as Any, "cny_per_request": cat.cnyPerRequest as Any]
+    }
+
+    static func decodeRustText(_ raw: String) -> String {
+        guard raw.count >= 2, raw.hasPrefix("\""), raw.hasSuffix("\"") else { return raw }
+        let body = raw.dropFirst().dropLast()
+        var out = ""
+        var escaped = false
+        for char in body {
+            if escaped {
+                out.append(char == "n" ? "\n" : char)
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else {
+                out.append(char)
+            }
+        }
+        return out
+    }
+
+    static func accountCompareToCSVCore(_ report: AccountCompareReport) -> String {
         var lines = [
             "账号,渠道,套餐,窗口,窗口天数,日均持有,窗口实付,请求,Token,¥/百万Token,¥/次,First-party次数,First-party Token,First-party实付,First-party ¥/百万,First-party ¥/次,API次数,API Token,API实付,API ¥/百万,API ¥/次,Grok Bot次数,Grok Bot Token,Grok Bot实付,Grok Bot ¥/百万,Grok Bot ¥/次",
         ]
@@ -1603,22 +1649,7 @@ public enum UsageEvents {
             return toCSVCore(events, spend: nil, allocationBase: allocationBase, allocation: allocation)
         }
         _ = RustCore.string("usage_events_csv", ["lf": true, "events": rows])
-        let raw = RustCore.lastText
-        guard raw.count >= 2, raw.hasPrefix("\""), raw.hasSuffix("\"") else { return raw }
-        let body = raw.dropFirst().dropLast()
-        var out = ""
-        var escaped = false
-        for char in body {
-            if escaped {
-                out.append(char == "n" ? "\n" : char)
-                escaped = false
-            } else if char == "\\" {
-                escaped = true
-            } else {
-                out.append(char)
-            }
-        }
-        return out
+        return decodeRustText(RustCore.lastText)
     }
 
     static func toCSVCore(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {

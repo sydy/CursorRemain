@@ -5,7 +5,35 @@ namespace CursorTokenCore;
 
 public static partial class UsageEvents
 {
-    public static string AccountCompareToCsv(AccountCompareReport report)
+    public static string AccountCompareToCsv(AccountCompareReport report) =>
+        RustCore.String("account_compare_csv", new { report = CompareReportJson(report) });
+
+    static object CompareReportJson(AccountCompareReport report) => new
+    {
+        rows = report.Rows.Select(row => new
+        {
+            label = row.Label, channel_label = row.ChannelLabel, membership_type = row.MembershipType,
+            window_label = row.WindowLabel, window_days = row.WindowDays, daily_holding_cny = row.DailyHoldingCny,
+            total_cny = row.TotalCny, event_count = row.EventCount, total_tokens = row.TotalTokens,
+            cny_per_million = row.CnyPerMillion, cny_per_request = row.CnyPerRequest,
+            first_party = CategoryJson(row.FirstParty), api = CategoryJson(row.Api), grok_bot = CategoryJson(row.GrokBot),
+        }),
+        groups = report.Groups.Select(group => new
+        {
+            channel_label = group.ChannelLabel, daily_holding_cny = group.DailyHoldingCny,
+            total_cny = group.TotalCny, event_count = group.EventCount, total_tokens = group.TotalTokens,
+            cny_per_million = group.CnyPerMillion, cny_per_request = group.CnyPerRequest,
+            first_party = CategoryJson(group.FirstParty), api = CategoryJson(group.Api), grok_bot = CategoryJson(group.GrokBot),
+        }),
+    };
+
+    static object CategoryJson(AccountCompareCategory cat) => new
+    {
+        count = cat.Count, tokens = cat.Tokens, cny = cat.Cny,
+        cny_per_million = cat.CnyPerMillion, cny_per_request = cat.CnyPerRequest,
+    };
+
+    static string AccountCompareToCsvCore(AccountCompareReport report)
     {
         var sb = new StringBuilder();
         sb.AppendLine("账号,渠道,套餐,窗口,窗口天数,日均持有,窗口实付,请求,Token,¥/百万Token,¥/次,First-party次数,First-party Token,First-party实付,First-party ¥/百万,First-party ¥/次,API次数,API Token,API实付,API ¥/百万,API ¥/次,Grok Bot次数,Grok Bot Token,Grok Bot实付,Grok Bot ¥/百万,Grok Bot ¥/次");

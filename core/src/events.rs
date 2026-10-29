@@ -198,6 +198,10 @@ pub fn sanitize_channel(raw: Option<&str>) -> &'static str {
     }
 }
 
+pub fn window_label(source: &str) -> &'static str {
+    match source { "cycle" => "本周期", "validity" => "有效期", _ => "近30天" }
+}
+
 pub fn channel_label(channel: Option<&str>) -> &'static str {
     match sanitize_channel(channel) { "self_pay" => "自费", "third_party" => "第三方", _ => "未标" }
 }
@@ -352,12 +356,21 @@ pub fn build_account_compare(items: &[Value], now_ms: Option<i64>) -> Value {
     for channel in ["self_pay", "third_party", ""] {
         let bucket: Vec<&Value> = rows.iter().filter(|row| row["channel"].as_str() == Some(channel)).collect();
         if bucket.is_empty() { continue; }
+        let sum_cat = |name: &str| category_json(&(
+            bucket.iter().map(|row| row[name]["count"].as_i64().unwrap_or(0)).sum(),
+            bucket.iter().map(|row| row[name]["tokens"].as_i64().unwrap_or(0)).sum(),
+            bucket.iter().map(|row| row[name]["cny"].as_f64().unwrap_or(0.0)).sum(),
+        ));
         groups.push(json!({
             "channel": channel,
+            "channel_label": channel_label(Some(channel)),
             "daily_holding_cny": bucket.iter().map(|row| row["daily_holding_cny"].as_f64().unwrap_or(0.0)).sum::<f64>(),
             "total_cny": bucket.iter().map(|row| row["total_cny"].as_f64().unwrap_or(0.0)).sum::<f64>(),
             "event_count": bucket.iter().map(|row| row["event_count"].as_i64().unwrap_or(0)).sum::<i64>(),
             "total_tokens": bucket.iter().map(|row| row["total_tokens"].as_i64().unwrap_or(0)).sum::<i64>(),
+            "first_party": sum_cat("first_party"),
+            "api": sum_cat("api"),
+            "grok_bot": sum_cat("grok_bot"),
         }));
     }
     json!({"rows": rows, "groups": groups, "holding_days": 30.0})
@@ -389,11 +402,17 @@ fn compare_row(item: &Value, now_ms: Option<i64>) -> Value {
         let row = cats.entry(bucket.to_string()).or_insert((0, 0, 0.0));
         row.0 += 1; row.1 += ev["tokens"].as_i64().unwrap_or(0); row.2 += amount;
     }
-    let cat = |name: &str| { let row = cats.get(name).copied().unwrap_or((0, 0, 0.0)); json!({"count": row.0, "tokens": row.1, "cny": row.2}) };
+    let cat = |name: &str| category_json(&cats.get(name).copied().unwrap_or((0, 0, 0.0)));
     let denom = if total_tokens > 0 { total_tokens as f64 / 1_000_000.0 } else { 0.0 };
+    let label = item["label"].as_str().unwrap_or("").trim();
+    let account_id = item["account_id"].as_str().unwrap_or("");
     json!({
-        "account_id": item["account_id"].as_str().unwrap_or(""),
+        "account_id": account_id,
+        "label": if label.is_empty() { account_id } else { label },
         "channel": sanitize_channel(item["channel"].as_str()),
+        "channel_label": channel_label(item["channel"].as_str()),
+        "membership_type": item["membership_type"].as_str().unwrap_or(""),
+        "window_label": window_label(source),
         "window_source": source,
         "window_days": days,
         "plan_cny": plan,
@@ -408,6 +427,17 @@ fn compare_row(item: &Value, now_ms: Option<i64>) -> Value {
         "first_party": cat("first_party"),
         "api": cat("api"),
         "grok_bot": cat("grok_bot"),
+    })
+}
+
+fn category_json(row: &(i64, i64, f64)) -> Value {
+    let denom = if row.1 > 0 { row.1 as f64 / 1_000_000.0 } else { 0.0 };
+    json!({
+        "count": row.0,
+        "tokens": row.1,
+        "cny": row.2,
+        "cny_per_million": if denom > 1e-12 { Value::from(row.2.max(0.0) / denom) } else { Value::Null },
+        "cny_per_request": if row.0 > 0 { Value::from(row.2.max(0.0) / row.0 as f64) } else { Value::Null },
     })
 }
 
@@ -503,6 +533,46 @@ pub fn chart_model_label(name: Option<&str>) -> String {
 }
 
 pub const CSV_HEADER: &str = "日期(本地时间),用户,类型,模型,Token,费用,实付,折扣,云端Agent";
+pub const COMPARE_CSV_HEADER: &str = "账号,渠道,套餐,窗口,窗口天数,日均持有,窗口实付,请求,Token,¥/百万Token,¥/次,First-party次数,First-party Token,First-party实付,First-party ¥/百万,First-party ¥/次,API次数,API Token,API实付,API ¥/百万,API ¥/次,Grok Bot次数,Grok Bot Token,Grok Bot实付,Grok Bot ¥/百万,Grok Bot ¥/次";
+
+pub fn account_compare_csv(report: &Value, newline: &str) -> String {
+    let mut out = String::from(COMPARE_CSV_HEADER);
+    out.push_str(newline);
+    for row in report["rows"].as_array().into_iter().flatten() {
+        out.push_str(&compare_csv_line(row, false));
+        out.push_str(newline);
+    }
+    for group in report["groups"].as_array().into_iter().flatten() {
+        out.push_str(&compare_csv_line(group, true));
+        out.push_str(newline);
+    }
+    out
+}
+
+fn compare_csv_line(row: &Value, group: bool) -> String {
+    let name = if group { format!("{}合计", row["channel_label"].as_str().unwrap_or("")) } else { row["label"].as_str().unwrap_or("").to_string() };
+    let mut cells = vec![
+        csv_cell(&name), csv_cell(row["channel_label"].as_str().unwrap_or("")),
+        csv_cell(if group { "" } else { row["membership_type"].as_str().unwrap_or("") }),
+        csv_cell(if group { "" } else { row["window_label"].as_str().unwrap_or("") }),
+        if group || row["window_days"].as_f64().unwrap_or(0.0) <= 0.0 { String::new() } else { format!("{:.2}", row["window_days"].as_f64().unwrap_or(0.0)) },
+        format!("{:.4}", row["daily_holding_cny"].as_f64().unwrap_or(0.0)),
+        format!("{:.4}", row["total_cny"].as_f64().unwrap_or(0.0)),
+        row["event_count"].as_i64().unwrap_or(0).to_string(),
+        row["total_tokens"].as_i64().unwrap_or(0).to_string(),
+        optional_money(row, "cny_per_million"), optional_money(row, "cny_per_request"),
+    ];
+    for key in ["first_party", "api", "grok_bot"] { cells.extend(compare_category_cells(&row[key])); }
+    cells.join(",")
+}
+
+fn compare_category_cells(row: &Value) -> [String; 5] {
+    [row["count"].as_i64().unwrap_or(0).to_string(), row["tokens"].as_i64().unwrap_or(0).to_string(), format!("{:.4}", row["cny"].as_f64().unwrap_or(0.0)), optional_money(row, "cny_per_million"), optional_money(row, "cny_per_request")]
+}
+
+fn optional_money(row: &Value, key: &str) -> String {
+    row[key].as_f64().map(|n| format!("{n:.4}")).unwrap_or_default()
+}
 
 pub fn usage_events_csv(events: &[Value], newline: &str) -> String {
     let newline = if newline == "\n" { "\n" } else { "\r\n" };

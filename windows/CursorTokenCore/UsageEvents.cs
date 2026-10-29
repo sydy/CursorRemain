@@ -561,7 +561,9 @@ public static partial class UsageEvents
             items = items.Select(item => new
             {
                 account_id = item.AccountId,
+                label = item.Label,
                 channel = item.Channel,
+                membership_type = item.MembershipType,
                 account_kind = item.AccountKind,
                 temp_start_at = item.TempStartAt,
                 temp_valid_days = item.TempValidDays,
@@ -582,7 +584,9 @@ public static partial class UsageEvents
         var rows = result.GetProperty("rows").EnumerateArray().Select(row => new AccountCompareRow
         {
             AccountId = row.GetProperty("account_id").GetString() ?? "",
+            Label = row.GetProperty("label").GetString() ?? "",
             Channel = row.GetProperty("channel").GetString() ?? "",
+            MembershipType = row.GetProperty("membership_type").GetString() ?? "",
             WindowSource = row.GetProperty("window_source").GetString() ?? "",
             WindowDays = row.GetProperty("window_days").GetDouble(),
             PlanCny = row.GetProperty("plan_cny").GetDouble(),
@@ -603,6 +607,9 @@ public static partial class UsageEvents
             TotalCny = row.GetProperty("total_cny").GetDouble(),
             EventCount = row.GetProperty("event_count").GetInt32(),
             TotalTokens = row.GetProperty("total_tokens").GetInt64(),
+            FirstParty = Cat(row, "first_party"),
+            Api = Cat(row, "api"),
+            GrokBot = Cat(row, "grok_bot"),
         }).ToList();
         return new AccountCompareReport { Rows = rows, Groups = groups, HoldingDays = 30 };
     }
