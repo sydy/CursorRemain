@@ -56,6 +56,28 @@ pub fn format_token_save_result(ok: i64, fail: i64) -> String {
     else { format!("成功 {ok} / 失败 {fail}") }
 }
 
+pub fn format_compare_sync(ok: i64, failures: &[String], stamp: &str) -> String {
+    if failures.is_empty() { return format!("已同步 {ok} 个账号  ·  {stamp}"); }
+    let mut detail = failures.iter().take(3).cloned().collect::<Vec<_>>().join("；");
+    if failures.len() > 3 { detail.push_str(&format!(" 等{}个", failures.len())); }
+    format!("已同步 {ok} 个账号，{} 个失败（{detail}）  ·  {stamp}", failures.len())
+}
+
+pub fn format_report_sync_result(count: i64, fetched: i64, stamp: &str, truncated: bool, total_available: i64, note: &str, has_token: bool) -> String {
+    if !has_token { return "未配置 Token，请先在设置里导入账号".to_string(); }
+    if note == "team_personal" { return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。".to_string(); }
+    let extra = if truncated { format!("（服务端约 {total_available} 条，已截到最近 {count} 条）") } else { String::new() };
+    if fetched > 0 { format!("已同步 {count} 条（新增 {fetched}）{extra}  ·  {stamp}") }
+    else if count > 0 { format!("已是最新  ·  {count} 条{extra}  ·  {stamp}") }
+    else { format!("还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  {stamp}") }
+}
+
+pub fn format_compare_sync_progress(index: i64, total: i64, name: &str, page: i64) -> String {
+    let label = if name.trim().is_empty() { "账号" } else { name.trim() };
+    let text = format!("正在同步 {label}（{}/{}）…", index.max(1), total.max(1));
+    if page > 1 { format!("{text}第 {page} 页") } else { text }
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };

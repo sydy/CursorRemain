@@ -55,6 +55,12 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "format_export_filename" => json!(status::format_export_filename(text(input, "prefix"), input["label"].as_str(), text(input, "day"))),
         "format_compare_account_name" => json!(status::format_compare_account_name(input["name"].as_str(), input["active"].as_bool().unwrap_or(false))),
         "format_token_save_result" => json!(status::format_token_save_result(input["ok"].as_i64().unwrap_or(0), input["fail"].as_i64().unwrap_or(0))),
+        "format_compare_sync" => {
+            let failures = input["failures"].as_array().map(|rows| rows.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+            json!(status::format_compare_sync(input["ok"].as_i64().unwrap_or(0), &failures, text(input, "stamp")))
+        },
+        "format_report_sync_result" => json!(status::format_report_sync_result(input["count"].as_i64().unwrap_or(0), input["fetched"].as_i64().unwrap_or(0), text(input, "stamp"), input["truncated"].as_bool().unwrap_or(false), input["total_available"].as_i64().unwrap_or(0), text(input, "note"), input["has_token"].as_bool().unwrap_or(true))),
+        "format_compare_sync_progress" => json!(status::format_compare_sync_progress(input["index"].as_i64().unwrap_or(0), input["total"].as_i64().unwrap_or(0), text(input, "name"), input["page"].as_i64().unwrap_or(0))),
         "format_estimated_days" => json!(status::format_estimated_days(input.get("usage"))),
         "format_estimate_caption" => json!(status::format_estimate_caption(input.get("usage"))),
         "build_status_lines" => status::build_status_lines(input.get("usage").filter(|v| !v.is_null()), input["error"].as_str(), input["updated_at"].as_str(), input["label"].as_str(), input["now"].as_str()),

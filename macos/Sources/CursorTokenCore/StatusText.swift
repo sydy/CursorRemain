@@ -322,6 +322,10 @@ public enum StatusText {
     }
 
     public static func formatCompareSync(ok: Int, failures: [String], stamp: String) -> String {
+        RustCore.string("format_compare_sync", ["ok": ok, "failures": failures, "stamp": stamp])
+    }
+
+    static func formatCompareSyncCore(ok: Int, failures: [String], stamp: String) -> String {
         if failures.isEmpty {
             return "已同步 \(ok) 个账号  ·  \(stamp)"
         }
@@ -394,6 +398,18 @@ public enum StatusText {
         note: String = "",
         hasToken: Bool = true
     ) -> String {
+        RustCore.string("format_report_sync_result", ["count": count, "fetched": fetched, "stamp": stamp, "truncated": truncated, "total_available": totalAvailable, "note": note, "has_token": hasToken])
+    }
+
+    static func formatReportSyncResultCore(
+        count: Int,
+        fetched: Int,
+        stamp: String,
+        truncated: Bool = false,
+        totalAvailable: Int = 0,
+        note: String = "",
+        hasToken: Bool = true
+    ) -> String {
         if !hasToken { return "未配置 Token，请先在设置里导入账号" }
         if note == UsageEvents.noteTeamPersonal {
             return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。"
@@ -427,6 +443,10 @@ public enum StatusText {
     }
 
     public static func formatCompareSyncProgress(index: Int, total: Int, name: String, page: Int = 0) -> String {
+        RustCore.string("format_compare_sync_progress", ["index": index, "total": total, "name": name, "page": page])
+    }
+
+    static func formatCompareSyncProgressCore(index: Int, total: Int, name: String, page: Int = 0) -> String {
         let label = name.trimmingCharacters(in: .whitespaces)
         let text = "正在同步 \(label.isEmpty ? "账号" : label)（\(max(1, index))/\(max(1, total))）…"
         return page > 1 ? text + "第 \(page) 页" : text

@@ -221,7 +221,10 @@ public static class StatusText
         return value.Length <= maxLen ? value : value[..(maxLen - 1)] + "…";
     }
 
-    public static string FormatCompareSync(int ok, IReadOnlyList<string> failures, string stamp)
+    public static string FormatCompareSync(int ok, IReadOnlyList<string> failures, string stamp) =>
+        RustCore.String("format_compare_sync", new { ok, failures, stamp });
+
+    static string FormatCompareSyncCore(int ok, IReadOnlyList<string> failures, string stamp)
     {
         if (failures.Count == 0)
             return $"已同步 {ok} 个账号  ·  {stamp}";
@@ -289,6 +292,16 @@ public static class StatusText
         bool truncated = false,
         int totalAvailable = 0,
         string note = "",
+        bool hasToken = true) =>
+        RustCore.String("format_report_sync_result", new { count, fetched, stamp, truncated, total_available = totalAvailable, note, has_token = hasToken });
+
+    static string FormatReportSyncResultCore(
+        int count,
+        int fetched,
+        string stamp,
+        bool truncated = false,
+        int totalAvailable = 0,
+        string note = "",
         bool hasToken = true)
     {
         if (!hasToken) return "未配置 Token，请先在设置里导入账号";
@@ -323,7 +336,10 @@ public static class StatusText
     public static string FormatReportFilterEmpty(int total) =>
         total <= 0 ? "" : $"当前筛选无结果（本地共 {total} 条，可清空筛选）";
 
-    public static string FormatCompareSyncProgress(int index, int total, string? name, int page = 0)
+    public static string FormatCompareSyncProgress(int index, int total, string? name, int page = 0) =>
+        RustCore.String("format_compare_sync_progress", new { index, total, name = name ?? "", page });
+
+    static string FormatCompareSyncProgressCore(int index, int total, string? name, int page = 0)
     {
         var label = string.IsNullOrWhiteSpace(name) ? "账号" : name.Trim();
         var text = $"正在同步 {label}（{Math.Max(1, index)}/{Math.Max(1, total)}）…";
