@@ -145,7 +145,10 @@ public static class Token
         return cleaned.Length > 80 ? cleaned[..80] : cleaned;
     }
 
-    public static bool IsAuthErrorMessage(string? message)
+    public static bool IsAuthErrorMessage(string? message) =>
+        RustCore.Call("is_auth_error_message", new { message = message ?? "" }).GetBoolean();
+
+    static bool IsAuthErrorMessageCore(string? message)
     {
         if (string.IsNullOrEmpty(message)) return false;
         var text = message.ToLowerInvariant();

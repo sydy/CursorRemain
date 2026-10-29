@@ -335,11 +335,26 @@ public enum StatusText {
     }
 
     public static func formatReportPerMillionKpi(totalCny: Double, totalTokens: Int) -> String {
+        RustCore.string("format_report_per_million_kpi", ["total_cny": totalCny, "total_tokens": totalTokens])
+    }
+
+    static func formatReportPerMillionKpiCore(totalCny: Double, totalTokens: Int) -> String {
         guard let per = UsageEvents.unitCny(totalCny, totalTokens > 0 ? Double(totalTokens) / 1_000_000.0 : 0) else { return "" }
         return "≈" + UsageEvents.formatCNY(per)
     }
 
     public static func formatReportSpendKpi(
+        totalCny: Double,
+        planCny: Double,
+        onDemandCny: Double,
+        usdCnyRate: Double,
+        usesActual: Bool,
+        windowPlanCny: Double = 0
+    ) -> String {
+        RustCore.string("format_report_spend_kpi", ["total_cny": totalCny, "plan_cny": planCny, "on_demand_cny": onDemandCny, "usd_cny_rate": usdCnyRate, "uses_actual": usesActual, "window_plan_cny": windowPlanCny])
+    }
+
+    static func formatReportSpendKpiCore(
         totalCny: Double,
         planCny: Double,
         onDemandCny: Double,
@@ -421,6 +436,10 @@ public enum StatusText {
     }
 
     public static func formatFlyoutError(_ errorMessage: String?) -> String {
+        RustCore.string("format_flyout_error", ["error": errorMessage ?? ""])
+    }
+
+    static func formatFlyoutErrorCore(_ errorMessage: String?) -> String {
         let text = (errorMessage ?? "").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return "等待刷新…" }
         guard Token.isAuthErrorMessage(text) else { return text }
@@ -431,14 +450,26 @@ public enum StatusText {
         "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。"
 
     public static func formatCompareHint(mixedWindows: Bool) -> String {
+        RustCore.string("format_compare_hint", ["mixed": mixedWindows])
+    }
+
+    static func formatCompareHintCore(mixedWindows: Bool) -> String {
         mixedWindows ? compareHint + " 当前表里计费窗口不一致，绿色仅供参考。" : compareHint
     }
 
     public static func formatReportSyncProgress(_ page: Int) -> String {
+        RustCore.string("format_report_sync_progress", ["page": page])
+    }
+
+    static func formatReportSyncProgressCore(_ page: Int) -> String {
         page <= 1 ? "正在同步本周期明细…" : "正在同步本周期明细…第 \(page) 页"
     }
 
     public static func formatReportFilterEmpty(_ total: Int) -> String {
+        RustCore.string("format_report_filter_empty", ["total": total])
+    }
+
+    static func formatReportFilterEmptyCore(_ total: Int) -> String {
         total <= 0 ? "" : "当前筛选无结果（本地共 \(total) 条，可清空筛选）"
     }
 
@@ -523,6 +554,10 @@ public enum StatusText {
     public static func formatExportEmpty() -> String { "当前没有可导出的明细" }
 
     public static func formatAccountMenuTitle(_ label: String?, remaining: Double?) -> String {
+        RustCore.string("format_account_menu_title", ["label": label ?? "", "remaining": remaining as Any])
+    }
+
+    static func formatAccountMenuTitleCore(_ label: String?, remaining: Double?) -> String {
         let name = (label ?? "").trimmingCharacters(in: .whitespaces)
         let title = name.isEmpty ? "未命名账号" : name
         guard let remaining else { return title }

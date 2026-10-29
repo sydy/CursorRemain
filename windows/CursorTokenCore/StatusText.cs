@@ -234,13 +234,25 @@ public static class StatusText
         return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
     }
 
-    public static string FormatReportPerMillionKpi(double totalCny, long totalTokens)
+    public static string FormatReportPerMillionKpi(double totalCny, long totalTokens) =>
+        RustCore.String("format_report_per_million_kpi", new { total_cny = totalCny, total_tokens = totalTokens });
+
+    static string FormatReportPerMillionKpiCore(double totalCny, long totalTokens)
     {
         var per = UsageEvents.UnitCny(totalCny, totalTokens > 0 ? totalTokens / 1_000_000.0 : 0);
         return per is null ? "" : "≈" + UsageEvents.FormatCny(per);
     }
 
     public static string FormatReportSpendKpi(
+        double totalCny,
+        double planCny,
+        double onDemandCny,
+        double usdCnyRate,
+        bool usesActual,
+        double windowPlanCny = 0) =>
+        RustCore.String("format_report_spend_kpi", new { total_cny = totalCny, plan_cny = planCny, on_demand_cny = onDemandCny, usd_cny_rate = usdCnyRate, uses_actual = usesActual, window_plan_cny = windowPlanCny });
+
+    static string FormatReportSpendKpiCore(
         double totalCny,
         double planCny,
         double onDemandCny,
@@ -313,7 +325,10 @@ public static class StatusText
         return $"还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  {stamp}";
     }
 
-    public static string FormatFlyoutError(string? error)
+    public static string FormatFlyoutError(string? error) =>
+        RustCore.String("format_flyout_error", new { error = error ?? "" });
+
+    static string FormatFlyoutErrorCore(string? error)
     {
         var text = (error ?? "").Trim();
         if (text.Length == 0) return "等待刷新…";
@@ -324,16 +339,25 @@ public static class StatusText
     public const string CompareHint =
         "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。";
 
-    public static string FormatCompareHint(bool mixedWindows)
+    public static string FormatCompareHint(bool mixedWindows) =>
+        RustCore.String("format_compare_hint", new { mixed = mixedWindows });
+
+    static string FormatCompareHintCore(bool mixedWindows)
     {
         if (!mixedWindows) return CompareHint;
         return CompareHint + " 当前表里计费窗口不一致，绿色仅供参考。";
     }
 
     public static string FormatReportSyncProgress(int page) =>
+        RustCore.String("format_report_sync_progress", new { page });
+
+    static string FormatReportSyncProgressCore(int page) =>
         page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
 
     public static string FormatReportFilterEmpty(int total) =>
+        RustCore.String("format_report_filter_empty", new { total });
+
+    static string FormatReportFilterEmptyCore(int total) =>
         total <= 0 ? "" : $"当前筛选无结果（本地共 {total} 条，可清空筛选）";
 
     public static string FormatCompareSyncProgress(int index, int total, string? name, int page = 0) =>
@@ -401,7 +425,10 @@ public static class StatusText
 
     public static string FormatExportEmpty() => "当前没有可导出的明细";
 
-    public static string FormatAccountMenuTitle(string? label, double? remaining)
+    public static string FormatAccountMenuTitle(string? label, double? remaining) =>
+        RustCore.String("format_account_menu_title", new { label = label ?? "", remaining });
+
+    static string FormatAccountMenuTitleCore(string? label, double? remaining)
     {
         var name = string.IsNullOrWhiteSpace(label) ? "未命名账号" : label.Trim();
         return remaining is { } pct ? $"{name}  {pct:0}%" : name;

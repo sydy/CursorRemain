@@ -78,6 +78,57 @@ pub fn format_compare_sync_progress(index: i64, total: i64, name: &str, page: i6
     if page > 1 { format!("{text}第 {page} 页") } else { text }
 }
 
+pub fn format_report_per_million_kpi(total_cny: f64, total_tokens: i64) -> String {
+    let denom = if total_tokens > 0 { total_tokens as f64 / 1_000_000.0 } else { 0.0 };
+    if denom <= 1e-12 { String::new() } else { format!("≈¥{:.2}", (total_cny.max(0.0) / denom)) }
+}
+
+pub fn format_report_spend_kpi(total: f64, plan: f64, on_demand: f64, rate: f64, uses_actual: bool, window_plan: f64) -> String {
+    if plan <= 0.0 && on_demand <= 0.0 && total <= 0.0 { return String::new(); }
+    let rate = if rate.is_finite() { format!("{rate:.2}") } else { "NaN".to_string() };
+    if uses_actual {
+        let mut text = format!("    已分摊 {}（月成本 {}", cny(total), cny(plan));
+        if window_plan > 0.0 && (window_plan - plan).abs() > 0.005 { text.push_str(&format!("，本窗口折算 {}", cny(window_plan))); }
+        format!("{text}，按需已计入）· 汇率 {rate}")
+    } else {
+        format!("    已分摊 {}（月费 {} + 按需 {}）· 汇率 {rate}", cny(total), cny(plan), cny(on_demand))
+    }
+}
+
+fn cny(amount: f64) -> String { format!("¥{:.2}", amount.max(0.0)) }
+
+pub fn is_auth_error_message(message: &str) -> bool {
+    if message.is_empty() { return false; }
+    let text = message.to_lowercase();
+    ["token 已过期", "token 无效", "未配置 token", "未配置 session", "workoscursorsessiontoken", "unauthorized", "forbidden"].iter().any(|key| text.contains(key))
+        || (message.contains("过期") || message.contains("无效")) && (text.contains("token") || message.contains("Token"))
+}
+
+pub fn format_flyout_error(error: &str) -> String {
+    let text = error.trim();
+    if text.is_empty() { return "等待刷新…".to_string(); }
+    if !is_auth_error_message(text) { return text.to_string(); }
+    if text.contains("未配置") { "未配置 Token，点下方「粘贴 Token」导入".to_string() } else { "登录已过期，点下方「粘贴 Token」更新".to_string() }
+}
+
+pub fn format_compare_hint(mixed: bool) -> String {
+    let hint = "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。";
+    if mixed { format!("{hint} 当前表里计费窗口不一致，绿色仅供参考。") } else { hint.to_string() }
+}
+
+pub fn format_report_sync_progress(page: i64) -> String {
+    if page <= 1 { "正在同步本周期明细…".to_string() } else { format!("正在同步本周期明细…第 {page} 页") }
+}
+
+pub fn format_report_filter_empty(total: i64) -> String {
+    if total <= 0 { String::new() } else { format!("当前筛选无结果（本地共 {total} 条，可清空筛选）") }
+}
+
+pub fn format_account_menu_title(label: &str, remaining: Option<f64>) -> String {
+    let name = if label.trim().is_empty() { "未命名账号" } else { label.trim() };
+    match remaining { Some(pct) => format!("{name}  {:.0}%", pct), None => name.to_string() }
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };

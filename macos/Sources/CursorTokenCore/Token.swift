@@ -154,6 +154,10 @@ public enum Token {
     }
 
     public static func isAuthErrorMessage(_ message: String?) -> Bool {
+        RustCore.bool("is_auth_error_message", ["message": message ?? ""])
+    }
+
+    static func isAuthErrorMessageCore(_ message: String?) -> Bool {
         guard let message, !message.isEmpty else { return false }
         let text = message.lowercased()
         let keys = [
