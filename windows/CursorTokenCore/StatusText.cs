@@ -211,7 +211,10 @@ public static class StatusText
         return rows;
     }
 
-    public static string ShortError(string? text, int maxLen = 40)
+    public static string ShortError(string? text, int maxLen = 40) =>
+        RustCore.String("short_error", new { text = text ?? "", max_len = maxLen });
+
+    static string ShortErrorCore(string? text, int maxLen = 40)
     {
         var value = (text ?? "同步失败").Trim();
         if (value.Length == 0) value = "同步失败";
@@ -335,7 +338,10 @@ public static class StatusText
         return text;
     }
 
-    public static string ExportFileSlug(string? label)
+    public static string ExportFileSlug(string? label) =>
+        RustCore.String("export_file_slug", new { label = label ?? "" });
+
+    static string ExportFileSlugCore(string? label)
     {
         var text = (label ?? "").Trim();
         if (text.Length == 0) return "";
@@ -348,20 +354,29 @@ public static class StatusText
             : "";
     }
 
-    public static string FormatExportFilename(string prefix, string? label = null, string? day = null)
+    public static string FormatExportFilename(string prefix, string? label = null, string? day = null) =>
+        RustCore.String("format_export_filename", new { prefix, label = label ?? "", day = string.IsNullOrWhiteSpace(day) ? DateTimeOffset.Now.ToString("yyyyMMdd") : day.Trim() });
+
+    static string FormatExportFilenameCore(string prefix, string? label = null, string? day = null)
     {
         var stamp = string.IsNullOrWhiteSpace(day) ? DateTimeOffset.Now.ToString("yyyyMMdd") : day.Trim();
         var slug = ExportFileSlug(label);
         return string.IsNullOrEmpty(slug) ? $"{prefix}-{stamp}.csv" : $"{prefix}-{slug}-{stamp}.csv";
     }
 
-    public static string FormatCompareAccountName(string? name, bool isActive)
+    public static string FormatCompareAccountName(string? name, bool isActive) =>
+        RustCore.String("format_compare_account_name", new { name = name ?? "", active = isActive });
+
+    static string FormatCompareAccountNameCore(string? name, bool isActive)
     {
         var text = string.IsNullOrWhiteSpace(name) ? "未命名账号" : name.Trim();
         return isActive ? text + "  · 当前" : text;
     }
 
-    public static string FormatTokenSaveResult(int ok, int fail)
+    public static string FormatTokenSaveResult(int ok, int fail) =>
+        RustCore.String("format_token_save_result", new { ok, fail });
+
+    static string FormatTokenSaveResultCore(int ok, int fail)
     {
         if (ok <= 0 && fail <= 0) return "";
         if (fail <= 0) return ok > 1 ? $"已保存 {ok} 个账号" : "";

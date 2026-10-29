@@ -311,6 +311,10 @@ public enum StatusText {
     }
 
     public static func shortError(_ text: String?, maxLen: Int = 40) -> String {
+        RustCore.string("short_error", ["text": text ?? "", "max_len": maxLen])
+    }
+
+    static func shortErrorCore(_ text: String?, maxLen: Int = 40) -> String {
         var value = (text ?? "同步失败").trimmingCharacters(in: .whitespaces)
         if value.isEmpty { value = "同步失败" }
         if value.count <= maxLen { return value }
@@ -436,6 +440,10 @@ public enum StatusText {
     }
 
     public static func exportFileSlug(_ label: String?) -> String {
+        RustCore.string("export_file_slug", ["label": label ?? ""])
+    }
+
+    static func exportFileSlugCore(_ label: String?) -> String {
         let text = (label ?? "").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return "" }
         let cleaned = String(text.map { ch in
@@ -447,6 +455,17 @@ public enum StatusText {
     }
 
     public static func formatExportFilename(_ prefix: String, label: String? = nil, day: String? = nil) -> String {
+        let stamp = day?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? day!.trimmingCharacters(in: .whitespacesAndNewlines) : exportDay()
+        return RustCore.string("format_export_filename", ["prefix": prefix, "label": label ?? "", "day": stamp])
+    }
+
+    static func exportDay() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        return formatter.string(from: Date())
+    }
+
+    static func formatExportFilenameCore(_ prefix: String, label: String? = nil, day: String? = nil) -> String {
         let stamp: String = {
             if let day, !day.trimmingCharacters(in: .whitespaces).isEmpty {
                 return day.trimmingCharacters(in: .whitespaces)
@@ -462,12 +481,20 @@ public enum StatusText {
     }
 
     public static func formatCompareAccountName(_ name: String, isActive: Bool) -> String {
+        RustCore.string("format_compare_account_name", ["name": name, "active": isActive])
+    }
+
+    static func formatCompareAccountNameCore(_ name: String, isActive: Bool) -> String {
         let text = name.trimmingCharacters(in: .whitespaces)
         let label = text.isEmpty ? "未命名账号" : text
         return isActive ? "\(label)  · 当前" : label
     }
 
     public static func formatTokenSaveResult(ok: Int, fail: Int) -> String {
+        RustCore.string("format_token_save_result", ["ok": ok, "fail": fail])
+    }
+
+    static func formatTokenSaveResultCore(ok: Int, fail: Int) -> String {
         if ok <= 0 && fail <= 0 { return "" }
         if fail <= 0 { return ok > 1 ? "已保存 \(ok) 个账号" : "" }
         return "成功 \(ok) / 失败 \(fail)"

@@ -24,6 +24,38 @@ pub fn format_plan_caption(membership: Option<&str>, account_label: Option<&str>
     }
 }
 
+pub fn short_error(text: Option<&str>, max_len: usize) -> String {
+    let max_len = max_len.max(1);
+    let mut value = text.unwrap_or("").trim().to_string();
+    if value.is_empty() { value = "同步失败".to_string(); }
+    if value.chars().count() <= max_len { value } else { value.chars().take(max_len - 1).collect::<String>() + "…" }
+}
+
+pub fn export_file_slug(label: Option<&str>) -> String {
+    let chars: String = label.unwrap_or("").trim().chars().map(|ch| {
+        if ch.is_ascii_alphanumeric() || ('\u{4e00}'..='\u{9fff}').contains(&ch) || ch == '-' || ch == '_' { ch } else { '-' }
+    }).collect();
+    let slug = chars.trim_matches('-');
+    slug.chars().take(24).collect()
+}
+
+pub fn format_export_filename(prefix: &str, label: Option<&str>, day: &str) -> String {
+    let slug = export_file_slug(label);
+    if slug.is_empty() { format!("{prefix}-{day}.csv") } else { format!("{prefix}-{slug}-{day}.csv") }
+}
+
+pub fn format_compare_account_name(name: Option<&str>, active: bool) -> String {
+    let text = name.unwrap_or("").trim();
+    let text = if text.is_empty() { "未命名账号" } else { text };
+    if active { format!("{text}  · 当前") } else { text.to_string() }
+}
+
+pub fn format_token_save_result(ok: i64, fail: i64) -> String {
+    if ok <= 0 && fail <= 0 { String::new() }
+    else if fail <= 0 { if ok > 1 { format!("已保存 {ok} 个账号") } else { String::new() } }
+    else { format!("成功 {ok} / 失败 {fail}") }
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };
