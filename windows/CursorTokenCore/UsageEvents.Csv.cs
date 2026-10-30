@@ -80,12 +80,33 @@ public static partial class UsageEvents
 
     public static string ToCsv(IEnumerable<UsageEvent> events, CnySpendSettings? spend = null, IEnumerable<UsageEvent>? allocationBase = null, ReportAllocationWindow? allocation = null)
     {
-        if (spend is not null) return ToCsvCore(events, spend, allocationBase, allocation);
-        return RustCore.String("usage_events_csv", new { events = events.Select(CsvEventJson) });
+        return RustCore.String("usage_events_csv", new
+        {
+            events = events.Select(CsvEventJson).ToList(),
+            spend = spend is null ? null : new
+            {
+                monthly_plan_usd = spend.Value.MonthlyPlanUsd,
+                usd_cny_rate = spend.Value.UsdCnyRate,
+                membership_type = spend.Value.MembershipType,
+                actual_cny = spend.Value.ActualCny,
+            },
+            allocation_base = allocationBase?.Select(CsvEventJson).ToList(),
+            allocation = allocation is null ? null : new
+            {
+                account_kind = allocation.Value.AccountKind,
+                temp_start_at = allocation.Value.TempStartAt,
+                temp_valid_days = allocation.Value.TempValidDays,
+                temp_valid_hours = allocation.Value.TempValidHours,
+                billing_cycle_start = allocation.Value.BillingCycleStart,
+                billing_cycle_end = allocation.Value.BillingCycleEnd,
+                now_ms = allocation.Value.NowMs,
+            },
+        });
     }
 
     static object CsvEventJson(UsageEvent ev) => new
     {
+        id = ev.Id,
         timestamp_ms = ev.TimestampMs, user_email = ev.UserEmail, kind = ev.Kind, model = ev.Model,
         tokens = ev.Tokens, charged_cents = ev.ChargedCents, total_cents = ev.TotalCents,
         is_headless = ev.IsHeadless, allocated_cny = ev.AllocatedCny,

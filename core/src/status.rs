@@ -424,6 +424,82 @@ fn local_clock(unix: f64) -> (u32, u32, u32, u32, u32) {
     (month, day, clock / 3600, clock % 3600 / 60, clock % 60)
 }
 
+pub fn is_exhaustion_risk(estimated_usable_days: Option<f64>, days_remaining: Option<i64>) -> bool {
+    match (estimated_usable_days, days_remaining) {
+        (Some(est), Some(rem)) => est <= 0.0 || est < rem as f64,
+        _ => false,
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedDateTime {
+    pub year: i32,
+    pub month: u32,
+    pub day: u32,
+    pub hour: u32,
+    pub minute: u32,
+    pub second: u32,
+}
+
+impl ParsedDateTime {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "year": self.year,
+            "month": self.month,
+            "day": self.day,
+            "hour": self.hour,
+            "minute": self.minute,
+            "second": self.second,
+        })
+    }
+}
+
+pub fn parse_settings_stamp(raw: &str) -> Option<ParsedDateTime> {
+    let text = raw.trim();
+    if text.is_empty() {
+        return None;
+    }
+    let (date_part, time_part) = match text.split_once(' ') {
+        Some((d, t)) => (d, Some(t)),
+        None => (text, None),
+    };
+    let (year, month, day) = if date_part.contains('-') {
+        let parts: Vec<&str> = date_part.split('-').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        (parts[0].parse::<i32>().ok()?, parts[1].parse::<u32>().ok()?, parts[2].parse::<u32>().ok()?)
+    } else if date_part.contains('/') {
+        let parts: Vec<&str> = date_part.split('/').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+        (parts[0].parse::<i32>().ok()?, parts[1].parse::<u32>().ok()?, parts[2].parse::<u32>().ok()?)
+    } else {
+        return None;
+    };
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let (hour, minute, second) = match time_part {
+        Some(time) => {
+            let parts: Vec<&str> = time.split(':').collect();
+            if parts.len() == 2 {
+                (parts[0].parse::<u32>().ok()?, parts[1].parse::<u32>().ok()?, 0)
+            } else if parts.len() == 3 {
+                (parts[0].parse::<u32>().ok()?, parts[1].parse::<u32>().ok()?, parts[2].parse::<u32>().ok()?)
+            } else {
+                return None;
+            }
+        }
+        None => (0, 0, 0),
+    };
+    if hour > 23 || minute > 59 || second > 59 {
+        return None;
+    }
+    Some(ParsedDateTime { year, month, day, hour, minute, second })
+}
+
 fn civil_from_days(days: i64) -> (i32, u32, u32) {
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;

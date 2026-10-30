@@ -1653,18 +1653,51 @@ public enum UsageEvents {
     }
 
     public static func toCSV(_ events: [UsageEvent], spend: CnySpendSettings? = nil, allocationBase: [UsageEvent]? = nil, allocation: ReportAllocationWindow? = nil) -> String {
-        if spend != nil { return toCSVCore(events, spend: spend, allocationBase: allocationBase, allocation: allocation) }
         let rows: [[String: Any]] = events.map { event in
             [
+                "id": event.id,
                 "timestamp_ms": event.timestampMs, "user_email": event.userEmail, "kind": event.kind,
                 "model": event.model, "tokens": event.tokens, "charged_cents": event.chargedCents as Any,
                 "total_cents": event.totalCents as Any, "is_headless": event.isHeadless, "allocated_cny": event.allocatedCny,
             ]
         }
-        guard JSONSerialization.isValidJSONObject(["lf": true, "events": rows]) else {
-            return toCSVCore(events, spend: nil, allocationBase: allocationBase, allocation: allocation)
+        var payload: [String: Any] = [
+            "lf": true,
+            "events": rows,
+        ]
+        if let spend {
+            payload["spend"] = [
+                "monthly_plan_usd": spend.monthlyPlanUsd,
+                "usd_cny_rate": spend.usdCnyRate,
+                "membership_type": spend.membershipType,
+                "actual_cny": spend.actualCny,
+            ]
         }
-        _ = RustCore.string("usage_events_csv", ["lf": true, "events": rows])
+        if let allocationBase {
+            payload["allocation_base"] = allocationBase.map { event in
+                [
+                    "id": event.id,
+                    "timestamp_ms": event.timestampMs, "user_email": event.userEmail, "kind": event.kind,
+                    "model": event.model, "tokens": event.tokens, "charged_cents": event.chargedCents as Any,
+                    "total_cents": event.totalCents as Any, "is_headless": event.isHeadless, "allocated_cny": event.allocatedCny,
+                ]
+            }
+        }
+        if let allocation {
+            payload["allocation"] = [
+                "account_kind": allocation.accountKind,
+                "temp_start_at": allocation.tempStartAt,
+                "temp_valid_days": allocation.tempValidDays,
+                "temp_valid_hours": allocation.tempValidHours,
+                "billing_cycle_start": allocation.billingCycleStart,
+                "billing_cycle_end": allocation.billingCycleEnd,
+                "now_ms": allocation.nowMs,
+            ]
+        }
+        guard JSONSerialization.isValidJSONObject(payload) else {
+            return toCSVCore(events, spend: spend, allocationBase: allocationBase, allocation: allocation)
+        }
+        _ = RustCore.string("usage_events_csv", payload)
         return decodeRustText(RustCore.lastText)
     }
 

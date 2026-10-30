@@ -16,12 +16,16 @@ public enum AccountValidity {
         return longTerm
     }
 
-    public static func clampDays(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxDays) }
-    public static func clampHours(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxHours) }
+    public static func clampDays(_ raw: Any?) -> Int {
+        RustCore.intValue("clamp_account_days", ["value": raw as Any])
+    }
+    public static func clampHours(_ raw: Any?) -> Int {
+        RustCore.intValue("clamp_account_hours", ["value": raw as Any])
+    }
 
     public static func isTemporary(_ account: Account?) -> Bool {
         guard let account else { return false }
-        return sanitizeKindCore(account.accountKind) == temporary
+        return sanitizeKind(account.accountKind) == temporary
     }
 
     public static func computeEndIso(startAt: String?, days: Int, hours: Int) -> String? {
@@ -31,8 +35,8 @@ public enum AccountValidity {
 
     static func computeEndIsoCore(startAt: String?, days: Int, hours: Int) -> String? {
         guard let start = AccountSync.parseIso(startAt) else { return nil }
-        let d = clampDays(days)
-        let h = clampHours(hours)
+        let d = clampDaysCore(days)
+        let h = clampHoursCore(hours)
         if d == 0 && h == 0 { return nil }
         let end = start.addingTimeInterval(TimeInterval(d * 86_400 + h * 3_600))
         return AccountSync.nowIso(end)
@@ -40,7 +44,7 @@ public enum AccountValidity {
 
     public static func accountEndIso(_ account: Account?) -> String? {
         guard isTemporary(account), let account else { return nil }
-        return computeEndIsoCore(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours)
+        return computeEndIso(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours)
     }
 
     public static func applyEndOverride(_ snap: inout UsageSnapshot, account: Account?, now: Date = Date()) {
@@ -83,6 +87,9 @@ public enum AccountValidity {
         }
         return snap.billingCycleEnd
     }
+
+    static func clampDaysCore(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxDays) }
+    static func clampHoursCore(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxHours) }
 
     static func clampInt(_ raw: Any?, lo: Int, hi: Int) -> Int {
         let n: Int

@@ -196,6 +196,13 @@ public enum UsageHistory {
 
 public enum AlertLogic {
     public static func isExhaustionRisk(_ snapshot: UsageSnapshot) -> Bool {
+        RustCore.bool("is_exhaustion_risk", [
+            "estimated_usable_days": snapshot.estimatedUsableDays as Any,
+            "days_remaining": snapshot.daysRemaining as Any,
+        ])
+    }
+
+    static func isExhaustionRiskCore(_ snapshot: UsageSnapshot) -> Bool {
         guard let est = snapshot.estimatedUsableDays, let resetLeft = snapshot.daysRemaining else { return false }
         if est <= 0 { return true }
         return est < Double(resetLeft)

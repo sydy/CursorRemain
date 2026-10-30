@@ -601,12 +601,41 @@ fn optional_money(row: &Value, key: &str) -> String {
 }
 
 pub fn usage_events_csv(events: &[Value], newline: &str) -> String {
+    usage_events_csv_full(events, None, None, None, newline)
+}
+
+pub fn usage_events_csv_full(
+    events: &[Value],
+    spend: Option<&Value>,
+    allocation_base: Option<&[Value]>,
+    allocation: Option<&Value>,
+    newline: &str,
+) -> String {
     let newline = if newline == "\n" { "\n" } else { "\r\n" };
     let mut out = String::from("\u{feff}");
     out.push_str(CSV_HEADER);
     out.push_str(newline);
-    for event in events {
-        let amount = event.get("allocated_cny").and_then(Value::as_f64).filter(|n| *n > 0.0);
+    let (cny_by_id_map, rate) = if let Some(spend) = spend {
+        let base = allocation_base.unwrap_or(events);
+        let split = cny_by_id(base, Some(spend), allocation);
+        (Some(split.by_id), split.rate)
+    } else {
+        (None, 0.0)
+    };
+    for (i, event) in events.iter().enumerate() {
+        let key = event["id"].as_str().filter(|s| !s.is_empty()).map(str::to_string).unwrap_or_else(|| format!("#{i}"));
+        let amount = if let Some(ref map) = cny_by_id_map {
+            map.get(&key).copied()
+        } else {
+            event.get("allocated_cny").and_then(Value::as_f64).filter(|n| *n > 0.0)
+        };
+        let is_free = event["kind"].as_str().map(|k| k.eq_ignore_ascii_case("free")).unwrap_or(false);
+        let cny_text = if is_free {
+            "—".to_string()
+        } else {
+            amount.map(|n| format_cny(Some(n))).unwrap_or_else(|| "—".to_string())
+        };
+        let discount = format_discount(amount.unwrap_or(0.0), cost_cents(event), rate, event["kind"].as_str());
         let cells = [
             event["timestamp_ms"].as_i64().filter(|n| *n > 0).map(format_time).unwrap_or_default(),
             event["user_email"].as_str().unwrap_or("").to_string(),
@@ -614,8 +643,8 @@ pub fn usage_events_csv(events: &[Value], newline: &str) -> String {
             event["model"].as_str().unwrap_or("").to_string(),
             event["tokens"].as_i64().unwrap_or(0).to_string(),
             format_cost(event),
-            amount.map(|n| format_cny(Some(n))).unwrap_or_else(|| "—".to_string()),
-            format_discount(amount.unwrap_or(0.0), cost_cents(event), 0.0, event["kind"].as_str()),
+            cny_text,
+            discount,
             if event["is_headless"].as_bool().unwrap_or(false) { "是" } else { "否" }.to_string(),
         ];
         out.push_str(&cells.map(|cell| csv_cell(&cell)).join(","));

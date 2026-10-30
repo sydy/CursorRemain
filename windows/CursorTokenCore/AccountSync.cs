@@ -128,7 +128,13 @@ public static class AccountSync
         return null;
     }
 
-    public static int CompareIso(string? left, string? right)
+    public static int CompareIso(string? left, string? right) =>
+        RustCore.Call("compare_iso", new { left = left ?? "", right = right ?? "" }).GetInt32();
+
+    public static string NewerIso(string? left, string? right) =>
+        RustCore.String("newer_iso", new { left = left ?? "", right = right ?? "" });
+
+    internal static int CompareIsoCore(string? left, string? right)
     {
         var a = ParseIso(left);
         var b = ParseIso(right);
@@ -138,8 +144,8 @@ public static class AccountSync
         return a.Value.CompareTo(b.Value);
     }
 
-    public static string NewerIso(string? left, string? right) =>
-        CompareIso(left, right) >= 0 ? left ?? "" : right ?? "";
+    internal static string NewerIsoCore(string? left, string? right) =>
+        CompareIsoCore(left, right) >= 0 ? left ?? "" : right ?? "";
 
     public static string ResolveSyncPath(string path)
     {

@@ -228,6 +228,14 @@ public enum AccountSync {
     }
 
     public static func compareIso(_ left: String?, _ right: String?) -> Int {
+        RustCore.intValue("compare_iso", ["left": left ?? "", "right": right ?? ""])
+    }
+
+    public static func newerIso(_ left: String?, _ right: String?) -> String {
+        RustCore.string("newer_iso", ["left": left ?? "", "right": right ?? ""])
+    }
+
+    static func compareIsoCore(_ left: String?, _ right: String?) -> Int {
         let a = parseIso(left)
         let b = parseIso(right)
         if a == nil && b == nil { return 0 }
@@ -238,8 +246,8 @@ public enum AccountSync {
         return 0
     }
 
-    public static func newerIso(_ left: String?, _ right: String?) -> String {
-        compareIso(left, right) >= 0 ? (left ?? "") : (right ?? "")
+    static func newerIsoCore(_ left: String?, _ right: String?) -> String {
+        compareIsoCore(left, right) >= 0 ? (left ?? "") : (right ?? "")
     }
 
     public static func resolveSyncPath(_ path: String) -> String {

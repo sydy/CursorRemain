@@ -19,11 +19,13 @@ public static class AccountValidity
         return key is "temporary" or "temp" or "short" ? Temporary : LongTerm;
     }
 
-    public static int ClampDays(object? raw) => ClampInt(raw, 0, MaxDays);
-    public static int ClampHours(object? raw) => ClampInt(raw, 0, MaxHours);
+    public static int ClampDays(object? raw) =>
+        RustCore.Call("clamp_account_days", new { value = raw }).GetInt32();
+    public static int ClampHours(object? raw) =>
+        RustCore.Call("clamp_account_hours", new { value = raw }).GetInt32();
 
     public static bool IsTemporary(Account? account) =>
-        account is not null && SanitizeKindCore(account.AccountKind) == Temporary;
+        account is not null && SanitizeKind(account.AccountKind) == Temporary;
 
     public static string? ComputeEndIso(string? startAt, int days, int hours)
     {
@@ -35,8 +37,8 @@ public static class AccountValidity
     {
         var start = AccountSync.ParseIso(startAt);
         if (start is null) return null;
-        var d = ClampDays(days);
-        var h = ClampHours(hours);
+        var d = ClampDaysCore(days);
+        var h = ClampHoursCore(hours);
         if (d == 0 && h == 0) return null;
         return AccountSync.NowIso(start.Value.AddDays(d).AddHours(h));
     }
@@ -44,7 +46,7 @@ public static class AccountValidity
     public static string? AccountEndIso(Account? account)
     {
         if (!IsTemporary(account) || account is null) return null;
-        return ComputeEndIsoCore(account.TempStartAt, account.TempValidDays, account.TempValidHours);
+        return ComputeEndIso(account.TempStartAt, account.TempValidDays, account.TempValidHours);
     }
 
     public static void ApplyEndOverride(UsageSnapshot snap, Account? account, DateTimeOffset? now = null)
@@ -87,10 +89,26 @@ public static class AccountValidity
         snap.BillingCycleEndOverridden ? snap.ApiBillingCycleEnd ?? "" : snap.BillingCycleEnd;
 
     public static bool ValidityEquals(Account a, string kind, string startAt, int days, int hours) =>
+        RustCore.Bool("validity_equals", new
+        {
+            a_kind = a.AccountKind ?? "",
+            a_start = a.TempStartAt ?? "",
+            a_days = (object)a.TempValidDays,
+            a_hours = (object)a.TempValidHours,
+            b_kind = kind ?? "",
+            b_start = startAt ?? "",
+            b_days = (object)days,
+            b_hours = (object)hours,
+        });
+
+    internal static bool ValidityEqualsCore(Account a, string kind, string startAt, int days, int hours) =>
         SanitizeKindCore(a.AccountKind) == SanitizeKindCore(kind)
         && (a.TempStartAt ?? "").Trim() == (startAt ?? "").Trim()
-        && ClampDays(a.TempValidDays) == ClampDays(days)
-        && ClampHours(a.TempValidHours) == ClampHours(hours);
+        && ClampDaysCore(a.TempValidDays) == ClampDaysCore(days)
+        && ClampHoursCore(a.TempValidHours) == ClampHoursCore(hours);
+
+    internal static int ClampDaysCore(object? raw) => ClampInt(raw, 0, MaxDays);
+    internal static int ClampHoursCore(object? raw) => ClampInt(raw, 0, MaxHours);
 
     static int ClampInt(object? raw, int lo, int hi)
     {

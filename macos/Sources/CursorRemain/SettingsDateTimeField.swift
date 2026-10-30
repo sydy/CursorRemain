@@ -29,17 +29,7 @@ enum SettingsDateTime {
     }
 
     static func parse(_ raw: String) -> Date? {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return nil }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.isLenient = false
-        for pattern in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd HH:mm:ss", "yyyy/M/d H:m", "yyyy-MM-dd"] {
-            formatter.dateFormat = pattern
-            if let date = formatter.date(from: text) { return clamp(date) }
-        }
-        return nil
+        SettingsStamp.parse(raw).map(clamp)
     }
 
     static func clamp(_ date: Date) -> Date {

@@ -410,7 +410,7 @@ fn sanitize_deleted(raw: &[Value]) -> Vec<Value> {
     best.into_iter().map(|(id, deleted_at)| json!({"id": id, "deleted_at": deleted_at})).collect()
 }
 
-fn parse_thresholds(value: &Value) -> Vec<i64> {
+pub fn parse_thresholds(value: &Value) -> Vec<i64> {
     let mut nums = Vec::new();
     match value {
         Value::String(text) => {
@@ -447,13 +447,13 @@ fn fallback_stamp(snap: &Value, primary: &str, fallback: &str) -> String {
     if primary.trim().is_empty() { text(snap, fallback) } else { primary }
 }
 
-fn newer_iso(left: Option<&str>, right: Option<&str>) -> String {
+pub fn newer_iso(left: Option<&str>, right: Option<&str>) -> String {
     let left = left.unwrap_or("");
     let right = right.unwrap_or("");
     if compare_iso(left, right) >= 0 { left.to_string() } else { right.to_string() }
 }
 
-fn compare_iso(left: &str, right: &str) -> i32 {
+pub fn compare_iso(left: &str, right: &str) -> i32 {
     match (parse_iso_ms(left), parse_iso_ms(right)) {
         (None, None) => 0,
         (None, Some(_)) => -1,

@@ -151,7 +151,10 @@ public static class AlertLogic
 {
     public readonly record struct Notice(string Title, string Body);
 
-    public static bool IsExhaustionRisk(UsageSnapshot snap)
+    public static bool IsExhaustionRisk(UsageSnapshot snap) =>
+        RustCore.Bool("is_exhaustion_risk", new { estimated_usable_days = snap.EstimatedUsableDays, days_remaining = snap.DaysRemaining });
+
+    internal static bool IsExhaustionRiskCore(UsageSnapshot snap)
     {
         if (snap.EstimatedUsableDays is null || snap.DaysRemaining is null) return false;
         if (snap.EstimatedUsableDays <= 0) return true;

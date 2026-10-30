@@ -24,6 +24,18 @@ public enum CursorAccountPaste {
     static let emailAtStart = regex(#"^("# + emailToken + #")(.*)$"#)
 
     public static func looksLikeToken(_ line: String?) -> Bool {
+        RustCore.bool("looks_like_token", ["line": line ?? ""])
+    }
+
+    public static func isSingleToken(_ text: String?) -> Bool {
+        RustCore.bool("is_single_token", ["text": text ?? ""])
+    }
+
+    public static func tokenValues(_ text: String?) -> [String] {
+        RustCore.strings("token_values", ["text": text ?? ""])
+    }
+
+    static func looksLikeTokenCore(_ line: String?) -> Bool {
         let text = (line ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty { return false }
         let lower = text.lowercased()
@@ -33,13 +45,13 @@ public enum CursorAccountPaste {
         return parts.count == 3 && parts.allSatisfy { !$0.isEmpty }
     }
 
-    public static func isSingleToken(_ text: String?) -> Bool {
-        let items = parse(text)
+    static func isSingleTokenCore(_ text: String?) -> Bool {
+        let items = parseCore(text)
         return items.count == 1 && items[0].kind == "token"
     }
 
-    public static func tokenValues(_ text: String?) -> [String] {
-        let items = parse(text)
+    static func tokenValuesCore(_ text: String?) -> [String] {
+        let items = parseCore(text)
         guard !items.isEmpty, items.allSatisfy({ $0.kind == "token" }) else { return [] }
         return items.map(\.token).filter { !$0.isEmpty }
     }

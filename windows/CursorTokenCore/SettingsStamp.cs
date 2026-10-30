@@ -24,6 +24,20 @@ public static class SettingsStamp
 
     public static DateTime? Parse(string? raw)
     {
+        var res = RustCore.Call("parse_settings_stamp", new { raw = raw ?? "" });
+        if (res.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+        return new DateTime(
+            res.GetProperty("year").GetInt32(),
+            res.GetProperty("month").GetInt32(),
+            res.GetProperty("day").GetInt32(),
+            res.GetProperty("hour").GetInt32(),
+            res.GetProperty("minute").GetInt32(),
+            res.GetProperty("second").GetInt32()
+        );
+    }
+
+    static DateTime? ParseCore(string? raw)
+    {
         var text = (raw ?? "").Trim();
         if (text.Length == 0) return null;
         foreach (var format in Formats)

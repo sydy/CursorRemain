@@ -742,6 +742,15 @@ public static class ConfigStore
 
     public static List<int> ParseThresholds(object? value)
     {
+        if (value is JsonElement { ValueKind: JsonValueKind.Undefined }) value = null;
+        var res = RustCore.Call("parse_thresholds", new { value });
+        if (res.ValueKind == JsonValueKind.Array)
+            return res.EnumerateArray().Select(x => x.GetInt32()).ToList();
+        return [50, 20, 5];
+    }
+
+    static List<int> ParseThresholdsCore(object? value)
+    {
         var nums = new List<int>();
         if (value is string s)
         {

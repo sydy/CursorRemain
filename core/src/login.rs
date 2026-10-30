@@ -275,7 +275,7 @@ fn email_shape(text: &str) -> bool {
         && !tld.chars().any(|ch| ch.is_whitespace() || ch == '@')
 }
 
-fn looks_like_token(line: &str) -> bool {
+pub fn looks_like_token(line: &str) -> bool {
     let text = line.trim();
     if text.is_empty() {
         return false;
@@ -286,6 +286,19 @@ fn looks_like_token(line: &str) -> bool {
     }
     let parts: Vec<&str> = text.split('.').collect();
     parts.len() == 3 && parts.iter().all(|part| !part.is_empty())
+}
+
+pub fn is_single_token(text: Option<&str>) -> bool {
+    let items = parse_account_paste(text);
+    items.len() == 1 && items[0].kind == "token"
+}
+
+pub fn token_values(text: Option<&str>) -> Vec<String> {
+    let items = parse_account_paste(text);
+    if items.is_empty() || items.iter().any(|i| i.kind != "token") {
+        return Vec::new();
+    }
+    items.into_iter().filter(|i| !i.token.is_empty()).map(|i| i.token).collect()
 }
 
 fn labeled_both(line: &str) -> Option<(String, String)> {

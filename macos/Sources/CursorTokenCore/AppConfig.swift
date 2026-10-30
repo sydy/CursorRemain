@@ -980,6 +980,13 @@ public enum ConfigStore {
     }
 
     public static func parseThresholds(_ value: Any?) -> [Int] {
+        let res = RustCore.call("parse_thresholds", ["value": value ?? NSNull()])
+        if let arr = res as? [Int] { return arr }
+        if let arr = res as? [NSNumber] { return arr.map(\.intValue) }
+        return AppConfig.default.alertThresholds
+    }
+
+    static func parseThresholdsCore(_ value: Any?) -> [Int] {
         var nums: [Int] = []
         if let s = value as? String {
             let parts = s.replacingOccurrences(of: "，", with: ",").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }

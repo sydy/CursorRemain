@@ -27,7 +27,16 @@ public static class CursorAccountPaste
         @"^(" + EmailToken + @")(.*)$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    public static bool LooksLikeToken(string? line)
+    public static bool LooksLikeToken(string? line) =>
+        RustCore.Bool("looks_like_token", new { line = line ?? "" });
+
+    public static bool IsSingleToken(string? text) =>
+        RustCore.Bool("is_single_token", new { text = text ?? "" });
+
+    public static List<string> TokenValues(string? text) =>
+        RustCore.Strings("token_values", new { text = text ?? "" }).ToList();
+
+    internal static bool LooksLikeTokenCore(string? line)
     {
         var text = (line ?? "").Trim();
         if (text.Length == 0) return false;
@@ -38,15 +47,15 @@ public static class CursorAccountPaste
         return parts.Length == 3 && parts.All(p => p.Length > 0);
     }
 
-    public static bool IsSingleToken(string? text)
+    internal static bool IsSingleTokenCore(string? text)
     {
-        var items = Parse(text);
+        var items = ParseCore(text);
         return items.Count == 1 && items[0].Kind == "token";
     }
 
-    public static List<string> TokenValues(string? text)
+    internal static List<string> TokenValuesCore(string? text)
     {
-        var items = Parse(text);
+        var items = ParseCore(text);
         if (items.Count == 0 || items.Any(i => i.Kind != "token")) return [];
         return items.Select(i => i.Token).Where(t => t.Length > 0).ToList();
     }
