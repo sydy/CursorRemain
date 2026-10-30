@@ -13,12 +13,6 @@ public static class AccountValidity
     public static string SanitizeKind(string? raw) =>
         RustCore.String("sanitize_account_kind", new { input = raw ?? "" });
 
-    internal static string SanitizeKindCore(string? raw)
-    {
-        var key = (raw ?? "").Trim().ToLowerInvariant().Replace('-', '_');
-        return key is "temporary" or "temp" or "short" ? Temporary : LongTerm;
-    }
-
     public static int ClampDays(object? raw) =>
         RustCore.Call("clamp_account_days", new { value = raw }).GetInt32();
     public static int ClampHours(object? raw) =>
@@ -31,16 +25,6 @@ public static class AccountValidity
     {
         var result = RustCore.Call("compute_account_end", new { start = startAt ?? "", days, hours });
         return result.ValueKind == JsonValueKind.String ? result.GetString() : null;
-    }
-
-    internal static string? ComputeEndIsoCore(string? startAt, int days, int hours)
-    {
-        var start = AccountSync.ParseIso(startAt);
-        if (start is null) return null;
-        var d = ClampDaysCore(days);
-        var h = ClampHoursCore(hours);
-        if (d == 0 && h == 0) return null;
-        return AccountSync.NowIso(start.Value.AddDays(d).AddHours(h));
     }
 
     public static string? AccountEndIso(Account? account)
@@ -70,17 +54,6 @@ public static class AccountValidity
         snap.ApiBillingCycleEnd = result.GetProperty("api_billing_cycle_end").ValueKind == JsonValueKind.String ? result.GetProperty("api_billing_cycle_end").GetString() : null;
     }
 
-    static void ApplyEndOverrideCore(UsageSnapshot snap, Account? account, DateTimeOffset? now = null)
-    {
-        var end = AccountEndIso(account);
-        if (string.IsNullOrEmpty(end)) return;
-        if (!snap.BillingCycleEndOverridden)
-            snap.ApiBillingCycleEnd = snap.BillingCycleEnd;
-        snap.BillingCycleEnd = end;
-        snap.DaysRemaining = UsageParser.DaysUntil(end, now ?? DateTimeOffset.UtcNow);
-        snap.BillingCycleEndOverridden = true;
-    }
-
     /// <summary>
     /// 写回账号的是 Cursor 账单周期，不是临时账号的展示到期日。
     /// 已被覆盖且接口没有结束时间时返回空字符串，用来清掉之前误存的到期日。
@@ -100,27 +73,4 @@ public static class AccountValidity
             b_days = (object)days,
             b_hours = (object)hours,
         });
-
-    internal static bool ValidityEqualsCore(Account a, string kind, string startAt, int days, int hours) =>
-        SanitizeKindCore(a.AccountKind) == SanitizeKindCore(kind)
-        && (a.TempStartAt ?? "").Trim() == (startAt ?? "").Trim()
-        && ClampDaysCore(a.TempValidDays) == ClampDaysCore(days)
-        && ClampHoursCore(a.TempValidHours) == ClampHoursCore(hours);
-
-    internal static int ClampDaysCore(object? raw) => ClampInt(raw, 0, MaxDays);
-    internal static int ClampHoursCore(object? raw) => ClampInt(raw, 0, MaxHours);
-
-    static int ClampInt(object? raw, int lo, int hi)
-    {
-        int n;
-        switch (raw)
-        {
-            case int i: n = i; break;
-            case long l: n = (int)l; break;
-            case double d: n = (int)d; break;
-            case string s when int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var p): n = p; break;
-            default: return 0;
-        }
-        return Math.Clamp(n, lo, hi);
-    }
 }

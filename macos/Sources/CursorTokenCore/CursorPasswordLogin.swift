@@ -38,138 +38,32 @@ public enum CursorPasswordLogin {
         RustCore.string("sanitize_email", ["input": raw ?? ""])
     }
 
-    static func sanitizeEmailCore(_ raw: String?) -> String {
-        let text = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased()
-        if !looksLikeEmail(text) { return "" }
-        let range = NSRange(text.startIndex..., in: text)
-        if emailRe.firstMatch(in: text, range: range) == nil { return "" }
-        return text
-    }
-
     public static func defaultLabel(_ email: String, existing: String = "") -> String {
         RustCore.string("default_account_label", ["email": email, "existing": existing])
-    }
-
-    static func defaultLabelCore(_ email: String, existing: String = "") -> String {
-        let current = existing.trimmingCharacters(in: .whitespaces)
-        if !current.isEmpty { return current }
-        return sanitizeEmailCore(email)
     }
 
     public static func tokenFromCookies(_ cookies: [(name: String, value: String)]) -> String? {
         RustCore.string("token_from_cookies", ["cookies": cookies.map { ["name": $0.name, "value": $0.value] }])
     }
 
-    static func tokenFromCookiesCore(_ cookies: [(name: String, value: String)]) -> String? {
-        for item in cookies {
-            if item.name.caseInsensitiveCompare(Token.cookieName) != .orderedSame { continue }
-            let raw = item.value.trimmingCharacters(in: .whitespaces)
-            if raw.isEmpty { return "" }
-            return (try? Token.normalize(raw)) ?? raw
-        }
-        return ""
-    }
-
     public static func autofillScript(email: String, password: String) -> String {
         RustCore.string("autofill_script", ["email": email, "password": password])
-    }
-
-    static func autofillScriptCore(email: String, password: String) -> String {
-        let payloadObj: [String: String] = [
-            "email": sanitizeEmailCore(email),
-            "password": password,
-        ]
-        let data = (try? JSONSerialization.data(withJSONObject: payloadObj, options: [])) ?? Data("{}".utf8)
-        let payload = String(data: data, encoding: .utf8) ?? "{}"
-        return
-            "(function(){" +
-            "const c=\(payload);" +
-            "function setNative(el,val){" +
-            "if(!el)return;" +
-            "const proto=el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;" +
-            "const desc=Object.getOwnPropertyDescriptor(proto,'value');" +
-            "if(desc&&desc.set)desc.set.call(el,val);else el.value=val;" +
-            "el.dispatchEvent(new Event('input',{bubbles:true}));" +
-            "el.dispatchEvent(new Event('change',{bubbles:true}));" +
-            "}" +
-            "if(document.querySelector('iframe[src*=\"challenges.cloudflare\"],iframe[src*=\"turnstile\"],input[autocomplete=\"one-time-code\"]'))" +
-            "return 'need-user';" +
-            "const emailEl=document.querySelector('input[type=\"email\"],input[name=\"email\"],input[autocomplete=\"username\"],input[autocomplete=\"email\"]');" +
-            "if(emailEl&&c.email)setNative(emailEl,c.email);" +
-            "const passEl=document.querySelector('input[type=\"password\"]');" +
-            "if(passEl&&c.password)setNative(passEl,c.password);" +
-            "const buttons=[...document.querySelectorAll('button,[type=submit]')];" +
-            "const go=buttons.find(b=>/continue|sign in|log in|登录|继续/i.test((b.innerText||b.value||'')));" +
-            "if(go&&!window.__cttClicked){window.__cttClicked=Date.now();go.click();return 'clicked';}" +
-            "return passEl&&c.password?'filled':'waiting';" +
-            "})();"
     }
 
     public static func codeChallenge(_ verifier: String) -> String {
         RustCore.string("code_challenge", ["verifier": verifier])
     }
 
-    static func codeChallengeCore(_ verifier: String) -> String {
-        let text = verifier.trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.isEmpty { return "" }
-        let digest = Data(SHA256.hash(data: Data(text.utf8)))
-        return digest.base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
-    }
-
     public static func loginDeepURL(uuid: String, verifier: String) -> String {
         RustCore.string("login_deep_url", ["uuid": uuid, "verifier": verifier])
-    }
-
-    static func loginDeepURLCore(uuid: String, verifier: String) -> String {
-        let loginId = uuid.trimmingCharacters(in: .whitespacesAndNewlines)
-        let challenge = codeChallengeCore(verifier)
-        if loginId.isEmpty || challenge.isEmpty { return "" }
-        return "\(loginDeepURLBase)?challenge=\(percentEncode(challenge))&uuid=\(percentEncode(loginId))&mode=login"
     }
 
     public static func tokenFromCallback(_ text: String?) -> String {
         RustCore.string("token_from_callback", ["input": text ?? ""])
     }
 
-    static func tokenFromCallbackCore(_ text: String?) -> String {
-        let raw = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if raw.isEmpty { return "" }
-        if !raw.contains("://"), !raw.lowercased().hasPrefix("cursor.com") {
-            if !looksLikeSessionToken(raw) { return "" }
-            return normalizedToken(raw)
-        }
-        let parts = raw.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
-        let main = String(parts.first ?? "")
-        let fragment = parts.count > 1 ? String(parts[1]) : ""
-        let query = main.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).dropFirst().first.map(String.init) ?? ""
-        var found = queryMap(query)
-        for (key, value) in queryMap(fragment) where found[key] == nil {
-            found[key] = value
-        }
-        for key in callbackKeys {
-            let value = found[key] ?? ""
-            if !value.isEmpty, looksLikeSessionToken(value) {
-                return normalizedToken(value)
-            }
-        }
-        return ""
-    }
-
     public static func tokenFromPoll(_ payload: [String: Any]) -> String {
         RustCore.string("token_from_poll", payload)
-    }
-
-    static func tokenFromPollCore(_ payload: [String: Any]) -> String {
-        let camel = payload["accessToken"] as? String ?? ""
-        let snake = payload["access_token"] as? String ?? ""
-        let raw = camel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallback = snake.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = raw.isEmpty ? fallback : raw
-        if token.isEmpty { return "" }
-        return normalizedToken(token)
     }
 
     public static func validProfileId(_ value: String?) -> String {
@@ -180,14 +74,6 @@ public enum CursorPasswordLogin {
 
     public static func profileKey(email: String, accountId: String = "") -> String {
         RustCore.string("profile_key", ["email": email, "account_id": accountId])
-    }
-
-    static func profileKeyCore(email: String, accountId: String = "") -> String {
-        let mail = sanitizeEmailCore(email)
-        if !mail.isEmpty { return "email:" + mail }
-        let ident = accountId.trimmingCharacters(in: .whitespacesAndNewlines)
-        if ident.isEmpty || ident.contains(where: { $0.isWhitespace || $0 == "/" || $0 == "\\" }) { return "" }
-        return "id:" + String(ident.prefix(120))
     }
 
     public static func canonicalProfileKey(_ key: String) -> String {
@@ -210,17 +96,6 @@ public enum CursorPasswordLogin {
         let result = RustCore.object("assign_profile", ["index": index, "key": key, "new_id": newId])
         let stored = (result["index"] as? [String: Any] ?? [:]).mapValues { "\($0)" }
         return (stored, result["profile_id"] as? String ?? "")
-    }
-
-    static func assignProfileCore(_ index: [String: String], key: String, newId: String) -> (index: [String: String], profileId: String) {
-        let fresh = validProfileId(newId)
-        var cleaned = cleanProfileIndex(index)
-        if fresh.isEmpty { return (cleaned, "") }
-        let name = canonicalProfileKey(key)
-        if name.isEmpty { return (cleaned, fresh) }
-        if let current = cleaned[name], !current.isEmpty { return (cleaned, current) }
-        cleaned[name] = fresh
-        return (cleaned, fresh)
     }
 
     public static func bindProfile(_ index: [String: String], key: String, profileId: String) -> [String: String] {

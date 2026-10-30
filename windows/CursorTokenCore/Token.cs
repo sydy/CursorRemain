@@ -19,143 +19,17 @@ public static class Token
         throw new CursorApiException(message, 401);
     }
 
-    static string NormalizeCore(string raw)
-    {
-        var value = raw.Trim().Trim('"', '\'');
-        if (value.Length == 0) return "";
-        foreach (var ch in Junk) value = value.Replace(ch.ToString(), "");
-        var m = Regex.Match(value, @"(?:^|[;\s])WorkosCursorSessionToken=([^;\s]+)", RegexOptions.IgnoreCase);
-        if (m.Success) value = m.Groups[1].Value.Trim();
-        else if (value.StartsWith("workoscursorsessiontoken=", StringComparison.OrdinalIgnoreCase))
-            value = value.Split('=', 2)[1].Trim();
-        value = string.Concat(value.Where(c => !char.IsWhiteSpace(c)));
-        if (value.Contains("%3A%3A") || value.Contains("%3a%3a")) { }
-        else if (value.Contains("::"))
-            value = ReplaceFirst(value, "::", "%3A%3A");
-        else if (LooksLikeJwt(value))
-        {
-            var uid = ExtractUserId(value);
-            if (uid.Length > 0) value = uid + "%3A%3A" + value;
-        }
-        if (value.Any(c => c > 255) || value.Contains('\uFFFD'))
-            throw new CursorApiException(
-                "读到的 Token 已损坏（常见于 Chrome Cookie 解密失败，不是复制漏了）。请再点一次「导入」，或改用 Firefox，或在开发者工具里完整复制 WorkosCursorSessionToken。",
-                401);
-        return value;
-    }
-
     public static List<string> Variants(string token) =>
         RustCore.Strings("token_variants", new { input = token ?? "" }).ToList();
-
-    static List<string> VariantsCore(string token)
-    {
-        var list = new List<string>();
-        void Add(string? v)
-        {
-            var t = (v ?? "").Trim();
-            if (t.Length > 0 && !list.Contains(t)) list.Add(t);
-        }
-        var raw = token.Trim();
-        try { Add(NormalizeCore(raw)); } catch { }
-        Add(raw);
-        var jwt = raw;
-        if (raw.Contains("%3A%3A"))
-        {
-            jwt = raw.Split(["%3A%3A"], 2, StringSplitOptions.None)[^1];
-            Add(ReplaceFirst(raw, "%3A%3A", "::"));
-        }
-        else if (raw.Contains("%3a%3a"))
-        {
-            jwt = raw.Split(["%3a%3a"], 2, StringSplitOptions.None)[^1];
-            Add(ReplaceFirst(raw, "%3a%3a", "::"));
-        }
-        else if (raw.Contains("::"))
-        {
-            jwt = raw.Split(["::"], 2, StringSplitOptions.None)[^1];
-            Add(ReplaceFirst(raw, "::", "%3A%3A"));
-        }
-        if (LooksLikeJwt(jwt))
-        {
-            Add(jwt);
-            var payload = JwtPayload(jwt);
-            if (payload is not null && payload.TryGetValue("sub", out var subObj) && subObj is not null)
-            {
-                var sub = subObj is JsonElement je
-                    ? (je.ValueKind == JsonValueKind.String ? je.GetString() ?? "" : je.ToString())
-                    : subObj.ToString() ?? "";
-                if (sub.Length > 0)
-                {
-                    var uid = sub.Split('|')[^1];
-                    Add($"{uid}%3A%3A{jwt}");
-                    Add($"{uid}::{jwt}");
-                    if (sub != uid)
-                    {
-                        Add($"{sub}%3A%3A{jwt}");
-                        Add($"{sub}::{jwt}");
-                    }
-                }
-            }
-        }
-        return list.Count > 4 ? list.Take(4).ToList() : list;
-    }
 
     public static string AccountId(string token) =>
         RustCore.String("account_id", new { input = token ?? "" });
 
-    static string AccountIdCore(string token)
-    {
-        string value;
-        try { value = NormalizeCore(token); }
-        catch { value = token.Trim(); }
-        if (value.Length == 0) return "";
-        var jwt = value;
-        var prefix = "";
-        foreach (var sep in new[] { "%3A%3A", "%3a%3a", "::" })
-        {
-            var i = value.IndexOf(sep, StringComparison.Ordinal);
-            if (i >= 0)
-            {
-                prefix = value[..i];
-                jwt = value[(i + sep.Length)..];
-                break;
-            }
-        }
-        if (LooksLikeJwt(jwt))
-        {
-            var uid = ExtractUserId(jwt);
-            if (uid.Length > 0) return SafeAccountIdCore(uid);
-        }
-        if (prefix.Trim().Length > 0) return SafeAccountIdCore(prefix.Split('|')[^1]);
-        if (LooksLikeJwt(value))
-        {
-            var uid = ExtractUserId(value);
-            if (uid.Length > 0) return SafeAccountIdCore(uid);
-        }
-        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
-        return "tok_" + digest[..16];
-    }
-
     public static string SafeAccountId(string value) =>
         RustCore.String("safe_account_id", new { input = value ?? "" });
 
-    static string SafeAccountIdCore(string value)
-    {
-        var cleaned = Regex.Replace(value ?? "", @"[^A-Za-z0-9._-]+", "_").Trim('.', '_', '-');
-        if (cleaned.Length == 0) cleaned = "account";
-        return cleaned.Length > 80 ? cleaned[..80] : cleaned;
-    }
-
     public static bool IsAuthErrorMessage(string? message) =>
         RustCore.Call("is_auth_error_message", new { message = message ?? "" }).GetBoolean();
-
-    static bool IsAuthErrorMessageCore(string? message)
-    {
-        if (string.IsNullOrEmpty(message)) return false;
-        var text = message.ToLowerInvariant();
-        string[] keys = ["token 已过期", "token 无效", "未配置 token", "未配置 session", "workoscursorsessiontoken", "unauthorized", "forbidden"];
-        if (keys.Any(text.Contains)) return true;
-        return (message.Contains("过期") || message.Contains("无效")) && (text.Contains("token") || message.Contains("Token"));
-    }
 
     public static bool LooksLikeJwt(string value)
     {
@@ -186,28 +60,9 @@ public static class Token
     public static string ExtractJwt(string token) =>
         RustCore.String("extract_jwt", new { input = token ?? "" });
 
-    static string ExtractJwtCore(string token)
-    {
-        var value = (token ?? "").Trim();
-        if (value.Length == 0) return "";
-        try { value = NormalizeCore(value); } catch { /* keep trimmed raw */ }
-        var jwt = value;
-        foreach (var sep in new[] { "%3A%3A", "%3a%3a", "::" })
-        {
-            var i = value.IndexOf(sep, StringComparison.Ordinal);
-            if (i >= 0)
-            {
-                jwt = value[(i + sep.Length)..];
-                break;
-            }
-        }
-        if (LooksLikeJwt(jwt)) return jwt;
-        return LooksLikeJwt(value) ? value : "";
-    }
-
     public static string JwtSubject(string token)
     {
-        var jwt = LooksLikeJwt(token) ? token : ExtractJwtCore(token);
+        var jwt = LooksLikeJwt(token) ? token : ExtractJwt(token);
         var payload = JwtPayload(jwt);
         if (payload is null || !payload.TryGetValue("sub", out var subObj) || subObj is null) return "";
         return subObj is JsonElement je
@@ -217,7 +72,7 @@ public static class Token
 
     public static string JwtClaim(string token, string name)
     {
-        var jwt = LooksLikeJwt(token) ? token : ExtractJwtCore(token);
+        var jwt = LooksLikeJwt(token) ? token : ExtractJwt(token);
         var payload = JwtPayload(jwt);
         if (payload is null || !payload.TryGetValue(name, out var obj) || obj is null) return "";
         return obj is JsonElement je
@@ -229,20 +84,8 @@ public static class Token
     public static string JwtType(string token) =>
         RustCore.String("jwt_type", new { input = token ?? "" });
 
-    static string JwtTypeCore(string token)
-    {
-        return JwtClaim(token, "type").Trim().ToLowerInvariant();
-    }
-
     public static bool CanWriteToCursor(string token) =>
         RustCore.Bool("can_write_to_cursor", new { input = token ?? "" });
-
-    static bool CanWriteToCursorCore(string token)
-    {
-        var jwt = ExtractJwtCore(token);
-        if (!LooksLikeJwt(jwt)) return false;
-        return JwtTypeCore(jwt) != "web";
-    }
 
     static string ReplaceFirst(string text, string old, string neu)
     {

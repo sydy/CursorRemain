@@ -235,21 +235,6 @@ public enum AccountSync {
         RustCore.string("newer_iso", ["left": left ?? "", "right": right ?? ""])
     }
 
-    static func compareIsoCore(_ left: String?, _ right: String?) -> Int {
-        let a = parseIso(left)
-        let b = parseIso(right)
-        if a == nil && b == nil { return 0 }
-        if a == nil { return -1 }
-        if b == nil { return 1 }
-        if a! < b! { return -1 }
-        if a! > b! { return 1 }
-        return 0
-    }
-
-    static func newerIsoCore(_ left: String?, _ right: String?) -> String {
-        compareIsoCore(left, right) >= 0 ? (left ?? "") : (right ?? "")
-    }
-
     public static func resolveSyncPath(_ path: String) -> String {
         var raw = path.trimmingCharacters(in: .whitespaces)
         if raw.isEmpty { return "" }
@@ -672,44 +657,6 @@ public enum AccountSync {
         return snap
     }
 
-    static func mergeSnapshotsCore(_ local: SyncSnapshot, _ remote: SyncSnapshot) -> SyncSnapshot {
-        var tombstones: [String: String] = [:]
-        for row in sanitizeDeleted(local.deleted) + sanitizeDeleted(remote.deleted) {
-            if let prev = tombstones[row.id], compareIso(row.deletedAt, prev) < 0 { continue }
-            tombstones[row.id] = row.deletedAt
-        }
-        var chosen: [String: SyncAccount] = [:]
-        for src in local.accounts + remote.accounts {
-            let acc = snapshotAccount(src)
-            if acc.id.isEmpty || acc.token.isEmpty { continue }
-            if let tomb = tombstones[acc.id], compareIso(tomb, acc.syncUpdatedAt) >= 0 { continue }
-            if let prev = chosen[acc.id] {
-                chosen[acc.id] = combineAccounts(prev, acc)
-            } else {
-                chosen[acc.id] = acc
-            }
-        }
-        for id in tombstones.keys where chosen[id] != nil { tombstones.removeValue(forKey: id) }
-        let localActiveAt = local.activeAccountUpdatedAt.isEmpty ? local.updatedAt : local.activeAccountUpdatedAt
-        let remoteActiveAt = remote.activeAccountUpdatedAt.isEmpty ? remote.updatedAt : remote.activeAccountUpdatedAt
-        var active = compareIso(remoteActiveAt, localActiveAt) > 0 ? remote.activeAccountId : local.activeAccountId
-        let activeAt = compareIso(remoteActiveAt, localActiveAt) > 0 ? remoteActiveAt : localActiveAt
-        let settings = mergeSettings(local.settings, remote.settings, localFallback: local.updatedAt, remoteFallback: remote.updatedAt)
-        if chosen[active] == nil {
-            active = chosen.keys.sorted().first ?? ""
-        }
-        return SyncSnapshot(
-            updatedAt: newerIso(local.updatedAt, remote.updatedAt),
-            deviceId: local.deviceId.isEmpty ? remote.deviceId : local.deviceId,
-            activeAccountId: active,
-            activeAccountUpdatedAt: activeAt,
-            accounts: chosen.keys.sorted().compactMap { chosen[$0] },
-            deleted: tombstones.keys.sorted().map { DeletedAccount(id: $0, deletedAt: tombstones[$0]!) },
-            settings: settings,
-            usage: mergeUsage(local.usage, remote.usage, keepIds: Set(chosen.keys))
-        )
-    }
-
     @discardableResult
     public static func applySnapshotToConfig(_ cfg: inout AppConfig, _ snap: SyncSnapshot) -> Bool {
         let before = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
@@ -952,16 +899,8 @@ public enum AccountSync {
         RustCore.string("format_trim_note", ["dropped": dropped])
     }
 
-    static func formatTrimNoteCore(_ dropped: Int) -> String {
-        dropped <= 0 ? "" : "用量明细因体积限制裁掉了 \(dropped) 条最旧记录"
-    }
-
     public static func isTrimNote(_ text: String) -> Bool {
         RustCore.bool("is_trim_note", ["text": text])
-    }
-
-    static func isTrimNoteCore(_ text: String) -> Bool {
-        text.contains("用量明细因体积限制")
     }
 
     public static func trimNote(_ original: SyncSnapshot, budget: Int = syncPlaintextBudget) -> String {
@@ -971,14 +910,6 @@ public enum AccountSync {
 
     public static func appendTrimNote(_ message: String, _ note: String) -> String {
         RustCore.string("append_trim_note", ["message": message, "note": note])
-    }
-
-    static func appendTrimNoteCore(_ message: String, _ note: String) -> String {
-        let text = message.trimmingCharacters(in: .whitespaces)
-        let extra = note.trimmingCharacters(in: .whitespaces)
-        if extra.isEmpty { return text }
-        if text.isEmpty { return extra }
-        return text + "；" + extra
     }
 
     public static func trimSnapshotForUpload(_ snap: SyncSnapshot, budget: Int = syncPlaintextBudget) -> SyncSnapshot {

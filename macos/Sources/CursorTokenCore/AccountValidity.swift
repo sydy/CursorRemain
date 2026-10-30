@@ -10,12 +10,6 @@ public enum AccountValidity {
         RustCore.string("sanitize_account_kind", ["input": raw ?? ""])
     }
 
-    static func sanitizeKindCore(_ raw: String?) -> String {
-        let key = (raw ?? "").trimmingCharacters(in: .whitespaces).lowercased().replacingOccurrences(of: "-", with: "_")
-        if key == "temporary" || key == "temp" || key == "short" { return temporary }
-        return longTerm
-    }
-
     public static func clampDays(_ raw: Any?) -> Int {
         RustCore.intValue("clamp_account_days", ["value": raw as Any])
     }
@@ -31,15 +25,6 @@ public enum AccountValidity {
     public static func computeEndIso(startAt: String?, days: Int, hours: Int) -> String? {
         let result = RustCore.call("compute_account_end", ["start": startAt ?? "", "days": days, "hours": hours])
         return result as? String
-    }
-
-    static func computeEndIsoCore(startAt: String?, days: Int, hours: Int) -> String? {
-        guard let start = AccountSync.parseIso(startAt) else { return nil }
-        let d = clampDaysCore(days)
-        let h = clampHoursCore(hours)
-        if d == 0 && h == 0 { return nil }
-        let end = start.addingTimeInterval(TimeInterval(d * 86_400 + h * 3_600))
-        return AccountSync.nowIso(end)
     }
 
     public static func accountEndIso(_ account: Account?) -> String? {
@@ -71,33 +56,10 @@ public enum AccountValidity {
         return formatter.string(from: now)
     }
 
-    static func applyEndOverrideCore(_ snap: inout UsageSnapshot, account: Account?, now: Date = Date()) {
-        guard let account, sanitizeKindCore(account.accountKind) == temporary, let end = computeEndIsoCore(startAt: account.tempStartAt, days: account.tempValidDays, hours: account.tempValidHours) else { return }
-        if !snap.billingCycleEndOverridden {
-            snap.apiBillingCycleEnd = snap.billingCycleEnd
-        }
-        snap.billingCycleEnd = end
-        snap.daysRemaining = UsageParser.daysUntil(end, now: now)
-        snap.billingCycleEndOverridden = true
-    }
-
     public static func storedCycleEnd(_ snap: UsageSnapshot) -> String? {
         if snap.billingCycleEndOverridden {
             return snap.apiBillingCycleEnd ?? ""
         }
         return snap.billingCycleEnd
-    }
-
-    static func clampDaysCore(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxDays) }
-    static func clampHoursCore(_ raw: Any?) -> Int { clampInt(raw, lo: 0, hi: maxHours) }
-
-    static func clampInt(_ raw: Any?, lo: Int, hi: Int) -> Int {
-        let n: Int
-        if let i = raw as? Int { n = i }
-        else if let d = raw as? Double { n = Int(d) }
-        else if let s = raw as? String, let v = Int(s) { n = v }
-        else if let n0 = raw as? NSNumber { n = n0.intValue }
-        else { return 0 }
-        return min(hi, max(lo, n))
     }
 }

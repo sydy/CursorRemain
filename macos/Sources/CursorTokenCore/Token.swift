@@ -11,162 +11,20 @@ public enum Token {
         throw CursorAPIError(result["error"] as? String ?? "Token 无效", statusCode: 401)
     }
 
-    static func normalizeCore(_ raw: String) throws -> String {
-        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        value = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-        if value.isEmpty { return "" }
-        for ch in junk {
-            value.removeAll { $0 == ch }
-        }
-
-        let cookieRe = try? NSRegularExpression(
-            pattern: #"(?:^|[;\s])WorkosCursorSessionToken=([^;\s]+)"#,
-            options: .caseInsensitive
-        )
-        if let cookieRe,
-           let match = cookieRe.firstMatch(in: value, range: NSRange(value.startIndex..., in: value)),
-           match.numberOfRanges > 1,
-           let r = Range(match.range(at: 1), in: value)
-        {
-            value = String(value[r]).trimmingCharacters(in: .whitespaces)
-        } else if value.lowercased().hasPrefix("workoscursorsessiontoken=") {
-            value = String(value.split(separator: "=", maxSplits: 1).dropFirst().first ?? "")
-                .trimmingCharacters(in: .whitespaces)
-        }
-
-        value = value.filter { !$0.isWhitespace }
-
-        if value.contains("%3A%3A") || value.contains("%3a%3a") {
-            // already encoded
-        } else if value.contains("::") {
-            if let r = value.range(of: "::") {
-                value.replaceSubrange(r, with: "%3A%3A")
-            }
-        } else if looksLikeJWT(value) {
-            let userId = extractUserId(fromJWT: value)
-            if !userId.isEmpty {
-                value = "\(userId)%3A%3A\(value)"
-            }
-        }
-
-        if value.unicodeScalars.contains(where: { $0.value > 255 }) || value.contains("\u{FFFD}") {
-            throw CursorAPIError(
-                "读到的 Token 已损坏（常见于 Chrome Cookie 解密失败，不是复制漏了）。"
-                    + "请再点一次「导入」，钥匙串弹窗选「始终允许」；"
-                    + "或改用 Safari / Firefox，或在开发者工具里完整复制 WorkosCursorSessionToken。",
-                statusCode: 401
-            )
-        }
-        return value
-    }
-
     public static func variants(_ token: String) -> [String] {
         RustCore.strings("token_variants", ["input": token])
-    }
-
-    static func variantsCore(_ token: String) -> [String] {
-        var list: [String] = []
-        func add(_ value: String?) {
-            let text = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty, !list.contains(text) { list.append(text) }
-        }
-        let raw = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        do { add(try normalizeCore(raw)) } catch { /* skip */ }
-        add(raw)
-        var jwt = raw
-        if raw.contains("%3A%3A") {
-            jwt = raw.components(separatedBy: "%3A%3A").last ?? raw
-            add(raw.replacingOccurrences(of: "%3A%3A", with: "::", options: [], range: raw.range(of: "%3A%3A")))
-        } else if raw.contains("%3a%3a") {
-            jwt = raw.components(separatedBy: "%3a%3a").last ?? raw
-            add(raw.replacingOccurrences(of: "%3a%3a", with: "::", options: [], range: raw.range(of: "%3a%3a")))
-        } else if raw.contains("::") {
-            jwt = raw.components(separatedBy: "::").last ?? raw
-            add(raw.replacingOccurrences(of: "::", with: "%3A%3A", options: [], range: raw.range(of: "::")))
-        }
-        if looksLikeJWT(jwt) {
-            add(jwt)
-            if let payload = jwtPayload(jwt) {
-                let sub = payload["sub"] as? String ?? ""
-                if !sub.isEmpty {
-                    let userId = sub.split(separator: "|").last.map(String.init) ?? sub
-                    add("\(userId)%3A%3A\(jwt)")
-                    add("\(userId)::\(jwt)")
-                    if sub != userId {
-                        add("\(sub)%3A%3A\(jwt)")
-                        add("\(sub)::\(jwt)")
-                    }
-                }
-            }
-        }
-        if list.count > 4 { return Array(list.prefix(4)) }
-        return list
     }
 
     public static func accountId(from token: String) -> String {
         RustCore.string("account_id", ["input": token])
     }
 
-    static func accountIdCore(from token: String) -> String {
-        let value: String
-        do { value = try normalizeCore(token) } catch {
-            value = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        if value.isEmpty { return "" }
-
-        var jwt = value
-        var prefix = ""
-        for sep in ["%3A%3A", "%3a%3a", "::"] {
-            if let r = value.range(of: sep) {
-                prefix = String(value[..<r.lowerBound])
-                jwt = String(value[r.upperBound...])
-                break
-            }
-        }
-        if looksLikeJWT(jwt) {
-            let uid = extractUserId(fromJWT: jwt)
-            if !uid.isEmpty { return safeAccountIdCore(uid) }
-        }
-        let trimmedPrefix = prefix.trimmingCharacters(in: .whitespaces)
-        if !trimmedPrefix.isEmpty {
-            let last = trimmedPrefix.split(separator: "|").last.map(String.init) ?? trimmedPrefix
-            return safeAccountIdCore(last)
-        }
-        if looksLikeJWT(value) {
-            let uid = extractUserId(fromJWT: value)
-            if !uid.isEmpty { return safeAccountIdCore(uid) }
-        }
-        let digest = SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
-        return "tok_" + digest.prefix(16)
-    }
-
     public static func safeAccountId(_ value: String) -> String {
         RustCore.string("safe_account_id", ["input": value])
     }
 
-    static func safeAccountIdCore(_ value: String) -> String {
-        let pattern = try! NSRegularExpression(pattern: "[^A-Za-z0-9._-]+")
-        let range = NSRange(value.startIndex..., in: value)
-        var cleaned = pattern.stringByReplacingMatches(in: value, range: range, withTemplate: "_")
-        cleaned = cleaned.trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
-        if cleaned.isEmpty { cleaned = "account" }
-        return String(cleaned.prefix(80))
-    }
-
     public static func isAuthErrorMessage(_ message: String?) -> Bool {
         RustCore.bool("is_auth_error_message", ["message": message ?? ""])
-    }
-
-    static func isAuthErrorMessageCore(_ message: String?) -> Bool {
-        guard let message, !message.isEmpty else { return false }
-        let text = message.lowercased()
-        let keys = [
-            "token 已过期", "token 无效", "未配置 token", "未配置 session",
-            "workoscursorsessiontoken", "unauthorized", "forbidden",
-        ]
-        if keys.contains(where: { text.contains($0) }) { return true }
-        return (message.contains("过期") || message.contains("无效"))
-            && (text.contains("token") || message.contains("Token"))
     }
 
     public static func looksLikeJWT(_ value: String) -> Bool {
@@ -197,29 +55,14 @@ public enum Token {
         RustCore.string("extract_jwt", ["input": token])
     }
 
-    static func extractJWTCore(_ token: String) -> String {
-        var value = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.isEmpty { return "" }
-        do { value = try normalizeCore(value) } catch { /* keep trimmed raw */ }
-        var jwt = value
-        for sep in ["%3A%3A", "%3a%3a", "::"] {
-            if let r = value.range(of: sep) {
-                jwt = String(value[r.upperBound...])
-                break
-            }
-        }
-        if looksLikeJWT(jwt) { return jwt }
-        return looksLikeJWT(value) ? value : ""
-    }
-
     public static func jwtSubject(_ token: String) -> String {
-        let jwt = looksLikeJWT(token) ? token : extractJWTCore(token)
+        let jwt = looksLikeJWT(token) ? token : extractJWT(token)
         guard let payload = jwtPayload(jwt) else { return "" }
         return payload["sub"] as? String ?? ""
     }
 
     public static func jwtClaim(_ token: String, _ name: String) -> String {
-        let jwt = looksLikeJWT(token) ? token : extractJWTCore(token)
+        let jwt = looksLikeJWT(token) ? token : extractJWT(token)
         guard let payload = jwtPayload(jwt) else { return "" }
         if let text = payload[name] as? String { return text }
         if let num = payload[name] as? NSNumber { return num.stringValue }
@@ -231,17 +74,7 @@ public enum Token {
         RustCore.string("jwt_type", ["input": token])
     }
 
-    static func jwtTypeCore(_ token: String) -> String {
-        jwtClaim(token, "type").trimmingCharacters(in: .whitespaces).lowercased()
-    }
-
     public static func canWriteToCursor(_ token: String) -> Bool {
         RustCore.bool("can_write_to_cursor", ["input": token])
-    }
-
-    static func canWriteToCursorCore(_ token: String) -> Bool {
-        let jwt = extractJWTCore(token)
-        guard looksLikeJWT(jwt) else { return false }
-        return jwtTypeCore(jwt) != "web"
     }
 }

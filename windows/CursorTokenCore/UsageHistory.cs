@@ -131,18 +131,6 @@ public static class UsageHistory
         return result.ValueKind == JsonValueKind.Number ? result.GetDouble() : null;
     }
 
-    static double? DailyAvgBurnCore(IReadOnlyList<HistoryPoint> points)
-    {
-        if (points.Count < 2) return null;
-        var first = points[0];
-        var last = points[^1];
-        var elapsed = (last.Ts - first.Ts) / 86400.0;
-        if (elapsed < 0.04) return null;
-        var delta = first.Remaining - last.Remaining;
-        if (delta <= 0) return 0;
-        return Numbers.Round2(delta / elapsed);
-    }
-
     static double? Num(JsonElement r, string key) =>
         r.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;
 }
@@ -153,13 +141,6 @@ public static class AlertLogic
 
     public static bool IsExhaustionRisk(UsageSnapshot snap) =>
         RustCore.Bool("is_exhaustion_risk", new { estimated_usable_days = snap.EstimatedUsableDays, days_remaining = snap.DaysRemaining });
-
-    internal static bool IsExhaustionRiskCore(UsageSnapshot snap)
-    {
-        if (snap.EstimatedUsableDays is null || snap.DaysRemaining is null) return false;
-        if (snap.EstimatedUsableDays <= 0) return true;
-        return snap.EstimatedUsableDays < snap.DaysRemaining;
-    }
 
     public static List<Notice> Evaluate(AppConfig config, Account account, UsageSnapshot snapshot)
     {

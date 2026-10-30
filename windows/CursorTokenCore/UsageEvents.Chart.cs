@@ -8,120 +8,34 @@ public static partial class UsageEvents
     public static string ChartModelLabel(string? name) =>
         RustCore.String("chart_model_label", new { input = name ?? "" });
 
-    static string ChartModelLabelCore(string? name)
-    {
-        var text = (name ?? "").Trim();
-        return text.StartsWith("cursor-", StringComparison.Ordinal) ? text[7..] : text;
-    }
-
     public static UsageChartSeries BuildChart(
         IEnumerable<UsageEvent> events,
         bool hourly,
         IEnumerable<string>? hiddenModels = null,
         int hourlyWindowHours = HourlyChartWindowHours)
     {
-        if (hourlyWindowHours == HourlyChartWindowHours)
+        var result = RustCore.Call("build_usage_chart", new
         {
-            var result = RustCore.Call("build_usage_chart", new
-            {
-                events = events.Select(EventJson).ToList(),
-                hourly,
-                hidden_models = (hiddenModels ?? []).ToList(),
-            });
-            return new UsageChartSeries
-            {
-                Hourly = result.GetProperty("hourly").GetBoolean(),
-                Caption = result.GetProperty("caption").GetString() ?? "",
-                Models = result.GetProperty("models").EnumerateArray().Select(x => x.GetString() ?? "").ToList(),
-                Buckets = result.GetProperty("buckets").EnumerateArray().Select(row => new ChartBucket(
-                    row.GetProperty("key").GetString() ?? "",
-                    row.GetProperty("label").GetString() ?? "",
-                    row.GetProperty("tokens").GetInt64(),
-                    row.GetProperty("cents").GetDouble(),
-                    row.GetProperty("count").GetInt32(),
-                    row.GetProperty("slices").EnumerateArray().Select(slice => new ChartSlice(
-                        slice.GetProperty("model").GetString() ?? "",
-                        slice.GetProperty("tokens").GetInt64(),
-                        slice.GetProperty("cents").GetDouble(),
-                        slice.GetProperty("count").GetInt32())).ToList())).ToList(),
-            };
-        }
-        return BuildChartCore(events, hourly, hiddenModels, hourlyWindowHours);
-    }
-
-    static UsageChartSeries BuildChartCore(
-        IEnumerable<UsageEvent> events,
-        bool hourly,
-        IEnumerable<string>? hiddenModels = null,
-        int hourlyWindowHours = HourlyChartWindowHours)
-    {
-        var selected = events as IList<UsageEvent> ?? events.ToList();
-        var models = ChartModels(selected);
-        var hidden = hiddenModels is null ? new HashSet<string>(StringComparer.Ordinal) : new HashSet<string>(hiddenModels, StringComparer.Ordinal);
-        var visible = models.Where(n => !hidden.Contains(n)).ToList();
-        var visibleSet = visible.ToHashSet(StringComparer.Ordinal);
-        if (selected.Count == 0)
-            return new UsageChartSeries { Hourly = hourly, Caption = ChartCaption(hourly, Array.Empty<string>()), Models = models, Buckets = [] };
-
-        List<string> keys;
-        Func<long, string> keyOf;
-        if (hourly)
-        {
-            var lastMs = FloorHourMs(selected.Max(ev => ev.TimestampMs));
-            var firstMs = FloorHourMs(selected.Min(ev => ev.TimestampMs));
-            var window = Math.Max(1, hourlyWindowHours);
-            var span = (lastMs - firstMs) / MsHour + 1;
-            if (span > window) firstMs = lastMs - (window - 1) * MsHour;
-            var count = (int)((lastMs - firstMs) / MsHour + 1);
-            keys = Enumerable.Range(0, count).Select(i => EventHourCore(firstMs + i * MsHour)).ToList();
-            keyOf = EventHourCore;
-        }
-        else
-        {
-            var lastMs = FloorDayMs(selected.Max(ev => ev.TimestampMs));
-            var firstMs = FloorDayMs(selected.Min(ev => ev.TimestampMs));
-            keys = [];
-            for (var day = ToDisplay(firstMs).Date; day <= ToDisplay(lastMs).Date; day = day.AddDays(1))
-                keys.Add(day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-            keyOf = EventDateCore;
-        }
-
-        var cells = new Dictionary<(string key, string model), (long tokens, double cents, int count)>();
-        foreach (var ev in selected)
-        {
-            var key = keyOf(ev.TimestampMs);
-            if (string.CompareOrdinal(key, keys[0]) < 0 || string.CompareOrdinal(key, keys[^1]) > 0) continue;
-            var name = string.IsNullOrEmpty(ev.Model) ? "—" : ev.Model;
-            if (!visibleSet.Contains(name)) continue;
-            cells.TryGetValue((key, name), out var cell);
-            cells[(key, name)] = (cell.tokens + ev.Tokens, cell.cents + CostCents(ev), cell.count + 1);
-        }
-
-        var multiDay = hourly && keys[0][..10] != keys[^1][..10];
-        var buckets = new List<ChartBucket>(keys.Count);
-        foreach (var key in keys)
-        {
-            var slices = new List<ChartSlice>();
-            long tokens = 0;
-            var cents = 0.0;
-            var count = 0;
-            foreach (var name in visible)
-            {
-                if (!cells.TryGetValue((key, name), out var cell)) continue;
-                if (cell.tokens <= 0 && cell.cents <= 0 && cell.count <= 0) continue;
-                slices.Add(new ChartSlice(name, cell.tokens, cell.cents, cell.count));
-                tokens += cell.tokens;
-                cents += cell.cents;
-                count += cell.count;
-            }
-            buckets.Add(new ChartBucket(key, BucketLabel(key, hourly, multiDay), tokens, cents, count, slices));
-        }
+            events = events.Select(EventJson).ToList(),
+            hourly,
+            hidden_models = (hiddenModels ?? []).ToList(),
+        });
         return new UsageChartSeries
         {
-            Hourly = hourly,
-            Caption = ChartCaption(hourly, keys),
-            Models = models,
-            Buckets = buckets,
+            Hourly = result.GetProperty("hourly").GetBoolean(),
+            Caption = result.GetProperty("caption").GetString() ?? "",
+            Models = result.GetProperty("models").EnumerateArray().Select(x => x.GetString() ?? "").ToList(),
+            Buckets = result.GetProperty("buckets").EnumerateArray().Select(row => new ChartBucket(
+                row.GetProperty("key").GetString() ?? "",
+                row.GetProperty("label").GetString() ?? "",
+                row.GetProperty("tokens").GetInt64(),
+                row.GetProperty("cents").GetDouble(),
+                row.GetProperty("count").GetInt32(),
+                row.GetProperty("slices").EnumerateArray().Select(slice => new ChartSlice(
+                    slice.GetProperty("model").GetString() ?? "",
+                    slice.GetProperty("tokens").GetInt64(),
+                    slice.GetProperty("cents").GetDouble(),
+                    slice.GetProperty("count").GetInt32())).ToList())).ToList(),
         };
     }
 

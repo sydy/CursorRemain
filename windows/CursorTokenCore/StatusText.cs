@@ -49,35 +49,8 @@ public static class StatusText
     public static string StatusPillText(double? remaining, bool error = false) =>
         RustCore.String("status_pill_text", new { remaining, error });
 
-    internal static string StatusPillTextCore(double? remaining, bool error = false)
-    {
-        if (error) return "异常";
-        if (remaining is null) return "等待刷新";
-        if (remaining <= 0) return "已耗尽";
-        if (remaining < 20) return "额度紧张";
-        if (remaining < 50) return "略偏低";
-        return "状态良好";
-    }
-
     public static string FormatPlanCaption(string? membership, string? accountLabel = null) =>
         RustCore.String("format_plan_caption", new { membership = membership ?? "", label = accountLabel ?? "" });
-
-    internal static string FormatPlanCaptionCore(string? membership, string? accountLabel = null)
-    {
-        var raw = (membership ?? "").Trim();
-        string name;
-        if (raw.Length == 0) name = "—";
-        else
-        {
-            name = UsageParser.FormatMembershipType(raw);
-            if (!name.Contains("套餐")) name += " 套餐";
-        }
-        var label = (accountLabel ?? "").Trim();
-        var known = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { name, raw, UsageParser.FormatMembershipType(raw) };
-        if (label.Length > 0 && !known.Contains(label))
-            return name == "—" ? label : $"{label} · {name}";
-        return name;
-    }
 
     public static string FormatEstimateCaption(UsageSnapshot usage)
     {
@@ -144,104 +117,14 @@ public static class StatusText
         return result.EnumerateArray().Select(row => (row.GetProperty("key").GetString() ?? "", row.GetProperty("value").GetString() ?? "")).ToList();
     }
 
-    internal static List<(string, string)> BuildStatusLinesCore(UsageSnapshot? usage, string? error, string? updatedAt = null, string? accountLabel = null)
-    {
-        if (error is not null) return [("状态", error)];
-        if (usage is null) return [("状态", "等待刷新…")];
-        var rows = new List<(string, string)>();
-        if (usage.IsUnlimited) rows.Add(("剩余", "不限量"));
-        else if (usage.ShowsAmount)
-            rows.Add(("剩余", $"{usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}%（{UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)}）"));
-        else
-            rows.Add(("剩余", $"{usage.RemainingPercent.ToString("0.0", CultureInfo.InvariantCulture)}%（已用 {usage.UsedPercent.ToString("0.0", CultureInfo.InvariantCulture)}%）"));
-        var label = (accountLabel ?? "").Trim();
-        var memb = string.IsNullOrEmpty(usage.MembershipType) ? "" : UsageParser.FormatMembershipType(usage.MembershipType);
-        if (label.Length > 0 && !label.Equals(memb, StringComparison.OrdinalIgnoreCase)) rows.Add(("账号", label));
-        var plan = string.IsNullOrEmpty(memb) ? "—" : memb;
-        if (usage.IsUnlimited) plan += " · 不限量";
-        rows.Add(("计划", plan));
-        if (usage.IsXSubscription && usage.PrepaidRemainingCents is { } prepaidCents)
-            rows.Add(("预付余额", UsageParser.FormatUsdCents(prepaidCents)));
-        if (usage.IsXSubscription)
-        {
-            if (usage.UsageResetAt is { } reset)
-            {
-                var resetText = FormatResetDate(reset);
-                var left = FormatCycleRemaining(reset, usage.DaysRemaining);
-                rows.Add(("重置", string.IsNullOrEmpty(left) ? resetText : $"{resetText}（{left}）"));
-                rows.Add(("预计可用", FormatEstimatedDays(usage)));
-            }
-            else if (usage.EstimatedUsableDays is not null) rows.Add(("预计可用", FormatEstimatedDays(usage)));
-            rows.Add(("更新", FormatUpdateClock(updatedAt)));
-            return rows;
-        }
-        if (usage.ShowsAmount) rows.Add(("金额", UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents)));
-        if (usage.PooledUsedCents is { } pu && usage.PooledLimitCents is { } pl && pl > 0 && (usage.UsedCents != pu || usage.LimitCents != pl))
-            rows.Add(("团队额度", UsageParser.FormatSpendRange(pu, pl)));
-        if (usage.OnDemandUsedCents is { } ou && usage.OnDemandLimitCents is { } ol && ol > 0 && (usage.UsedCents != ou || usage.LimitCents != ol))
-            rows.Add(("按需用量", UsageParser.FormatSpendRange(ou, ol)));
-        if (usage.TotalTokens is > 0) rows.Add(("消耗 Token", UsageParser.FormatTokenCount(usage.TotalTokens)));
-        if (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null)
-        {
-            var auto = usage.AutoPercentUsed is null ? "—" : usage.AutoPercentUsed.Value.ToString("0.0", CultureInfo.InvariantCulture) + "%";
-            var api = usage.ApiPercentUsed is null ? "—" : usage.ApiPercentUsed.Value.ToString("0.0", CultureInfo.InvariantCulture) + "%";
-            rows.Add(("明细", $"First-party {auto} · API {api}"));
-        }
-        if (usage.ShowsGrokBot && usage.GrokBotPercentUsed is { } grokUsed)
-        {
-            var grok = $"剩余 {usage.GrokBotRemainingPercent?.ToString("0.0", CultureInfo.InvariantCulture)}%（本周已用 {grokUsed.ToString("0.0", CultureInfo.InvariantCulture)}%）";
-            if (usage.GrokBotResetAt is { } grokReset)
-            {
-                var resetText = FormatResetDate(grokReset);
-                var remaining = FormatCycleRemaining(grokReset, usage.GrokBotDaysRemaining);
-                grok += string.IsNullOrEmpty(remaining) ? $" · {resetText} 重置" : $" · {resetText}（{remaining}）";
-            }
-            rows.Add(("Grok Bot", grok));
-        }
-        if (usage.BillingCycleEnd is { } end)
-        {
-            var endText = FormatResetDate(end, usage.BillingCycleEndOverridden);
-            var remaining = FormatCycleRemaining(end, usage.DaysRemaining);
-            var endLabel = CycleEndLabel(usage);
-            rows.Add((endLabel, string.IsNullOrEmpty(remaining) ? endText : $"{endText}（{remaining}）"));
-            rows.Add(("预计可用", FormatEstimatedDays(usage)));
-        }
-        else if (usage.EstimatedUsableDays is not null) rows.Add(("预计可用", FormatEstimatedDays(usage)));
-        rows.Add(("更新", FormatUpdateClock(updatedAt)));
-        return rows;
-    }
-
     public static string ShortError(string? text, int maxLen = 40) =>
         RustCore.String("short_error", new { text = text ?? "", max_len = maxLen });
-
-    static string ShortErrorCore(string? text, int maxLen = 40)
-    {
-        var value = (text ?? "同步失败").Trim();
-        if (value.Length == 0) value = "同步失败";
-        return value.Length <= maxLen ? value : value[..(maxLen - 1)] + "…";
-    }
 
     public static string FormatCompareSync(int ok, IReadOnlyList<string> failures, string stamp) =>
         RustCore.String("format_compare_sync", new { ok, failures, stamp });
 
-    static string FormatCompareSyncCore(int ok, IReadOnlyList<string> failures, string stamp)
-    {
-        if (failures.Count == 0)
-            return $"已同步 {ok} 个账号  ·  {stamp}";
-        var shown = failures.Take(3).ToList();
-        var detail = string.Join("；", shown);
-        if (failures.Count > 3) detail += $" 等{failures.Count}个";
-        return $"已同步 {ok} 个账号，{failures.Count} 个失败（{detail}）  ·  {stamp}";
-    }
-
     public static string FormatReportPerMillionKpi(double totalCny, long totalTokens) =>
         RustCore.String("format_report_per_million_kpi", new { total_cny = totalCny, total_tokens = totalTokens });
-
-    static string FormatReportPerMillionKpiCore(double totalCny, long totalTokens)
-    {
-        var per = UsageEvents.UnitCny(totalCny, totalTokens > 0 ? totalTokens / 1_000_000.0 : 0);
-        return per is null ? "" : "≈" + UsageEvents.FormatCny(per);
-    }
 
     public static string FormatReportSpendKpi(
         double totalCny,
@@ -251,26 +134,6 @@ public static class StatusText
         bool usesActual,
         double windowPlanCny = 0) =>
         RustCore.String("format_report_spend_kpi", new { total_cny = totalCny, plan_cny = planCny, on_demand_cny = onDemandCny, usd_cny_rate = usdCnyRate, uses_actual = usesActual, window_plan_cny = windowPlanCny });
-
-    static string FormatReportSpendKpiCore(
-        double totalCny,
-        double planCny,
-        double onDemandCny,
-        double usdCnyRate,
-        bool usesActual,
-        double windowPlanCny = 0)
-    {
-        if (planCny <= 0 && onDemandCny <= 0 && totalCny <= 0) return "";
-        var rate = usdCnyRate.ToString("0.00", CultureInfo.InvariantCulture);
-        if (usesActual)
-        {
-            var text = $"    已分摊 {UsageEvents.FormatCny(totalCny)}（月成本 {UsageEvents.FormatCny(planCny)}";
-            if (windowPlanCny > 0 && Math.Abs(windowPlanCny - planCny) > 0.005)
-                text += $"，本窗口折算 {UsageEvents.FormatCny(windowPlanCny)}";
-            return text + $"，按需已计入）· 汇率 {rate}";
-        }
-        return $"    已分摊 {UsageEvents.FormatCny(totalCny)}（月费 {UsageEvents.FormatCny(planCny)} + 按需 {UsageEvents.FormatCny(onDemandCny)}）· 汇率 {rate}";
-    }
 
     public const string XReportNotice = "这个套餐只提供每周用量，没有逐条请求明细。";
 
@@ -307,34 +170,8 @@ public static class StatusText
         bool hasToken = true) =>
         RustCore.String("format_report_sync_result", new { count, fetched, stamp, truncated, total_available = totalAvailable, note, has_token = hasToken });
 
-    static string FormatReportSyncResultCore(
-        int count,
-        int fetched,
-        string stamp,
-        bool truncated = false,
-        int totalAvailable = 0,
-        string note = "",
-        bool hasToken = true)
-    {
-        if (!hasToken) return "未配置 Token，请先在设置里导入账号";
-        if (note == UsageEvents.NoteTeamPersonal)
-            return "未能拉取个人明细（团队账号）。请先刷新用量，或把范围切到「全员」。";
-        var extra = truncated ? $"（服务端约 {totalAvailable} 条，已截到最近 {count} 条）" : "";
-        if (fetched > 0) return $"已同步 {count} 条（新增 {fetched}）{extra}  ·  {stamp}";
-        if (count > 0) return $"已是最新  ·  {count} 条{extra}  ·  {stamp}";
-        return $"还没有本周期明细。点「同步」拉取，或先去设置添加账号。  ·  {stamp}";
-    }
-
     public static string FormatFlyoutError(string? error) =>
         RustCore.String("format_flyout_error", new { error = error ?? "" });
-
-    static string FormatFlyoutErrorCore(string? error)
-    {
-        var text = (error ?? "").Trim();
-        if (text.Length == 0) return "等待刷新…";
-        if (!Token.IsAuthErrorMessage(text)) return text;
-        return text.Contains("未配置") ? "未配置 Token，点下方「粘贴 Token」导入" : "登录已过期，点下方「粘贴 Token」更新";
-    }
 
     public const string CompareHint =
         "账号一行，First-party / API / Grok Bot 各占一行。日均持有 = 折合月费÷30。填了实际成本时，实付按该成本在窗口内折算分摊，按需不再按官网标价另加。绿色数字只比较已填成本的账号，取最低 ¥/百万 Token。";
@@ -342,167 +179,52 @@ public static class StatusText
     public static string FormatCompareHint(bool mixedWindows) =>
         RustCore.String("format_compare_hint", new { mixed = mixedWindows });
 
-    static string FormatCompareHintCore(bool mixedWindows)
-    {
-        if (!mixedWindows) return CompareHint;
-        return CompareHint + " 当前表里计费窗口不一致，绿色仅供参考。";
-    }
-
     public static string FormatReportSyncProgress(int page) =>
         RustCore.String("format_report_sync_progress", new { page });
-
-    static string FormatReportSyncProgressCore(int page) =>
-        page <= 1 ? "正在同步本周期明细…" : $"正在同步本周期明细…第 {page} 页";
 
     public static string FormatReportFilterEmpty(int total) =>
         RustCore.String("format_report_filter_empty", new { total });
 
-    static string FormatReportFilterEmptyCore(int total) =>
-        total <= 0 ? "" : $"当前筛选无结果（本地共 {total} 条，可清空筛选）";
-
     public static string FormatCompareSyncProgress(int index, int total, string? name, int page = 0) =>
         RustCore.String("format_compare_sync_progress", new { index, total, name = name ?? "", page });
-
-    static string FormatCompareSyncProgressCore(int index, int total, string? name, int page = 0)
-    {
-        var label = string.IsNullOrWhiteSpace(name) ? "账号" : name.Trim();
-        var text = $"正在同步 {label}（{Math.Max(1, index)}/{Math.Max(1, total)}）…";
-        return page > 1 ? text + $"第 {page} 页" : text;
-    }
 
     public static string FormatCloudSyncNotify(bool ok, string? message) =>
         RustCore.String("format_cloud_sync_notify", new { ok, message = message ?? "" });
 
-    static string FormatCloudSyncNotifyCore(bool ok, string? message)
-    {
-        if (ok) return "";
-        var text = (message ?? "").Trim();
-        if (text.Length == 0 || AccountSync.IsTrimNote(text)) return "";
-        return text;
-    }
-
     public static string ExportFileSlug(string? label) =>
         RustCore.String("export_file_slug", new { label = label ?? "" });
-
-    static string ExportFileSlugCore(string? label)
-    {
-        var text = (label ?? "").Trim();
-        if (text.Length == 0) return "";
-        var chars = text.Select(ch =>
-            char.IsLetterOrDigit(ch) || (ch >= '\u4e00' && ch <= '\u9fff') || ch is '-' or '_'
-                ? ch
-                : '-').ToArray();
-        return new string(chars).Trim('-') is { Length: > 0 } slug
-            ? slug.Length > 24 ? slug[..24] : slug
-            : "";
-    }
 
     public static string FormatExportFilename(string prefix, string? label = null, string? day = null) =>
         RustCore.String("format_export_filename", new { prefix, label = label ?? "", day = string.IsNullOrWhiteSpace(day) ? DateTimeOffset.Now.ToString("yyyyMMdd") : day.Trim() });
 
-    static string FormatExportFilenameCore(string prefix, string? label = null, string? day = null)
-    {
-        var stamp = string.IsNullOrWhiteSpace(day) ? DateTimeOffset.Now.ToString("yyyyMMdd") : day.Trim();
-        var slug = ExportFileSlug(label);
-        return string.IsNullOrEmpty(slug) ? $"{prefix}-{stamp}.csv" : $"{prefix}-{slug}-{stamp}.csv";
-    }
-
     public static string FormatCompareAccountName(string? name, bool isActive) =>
         RustCore.String("format_compare_account_name", new { name = name ?? "", active = isActive });
 
-    static string FormatCompareAccountNameCore(string? name, bool isActive)
-    {
-        var text = string.IsNullOrWhiteSpace(name) ? "未命名账号" : name.Trim();
-        return isActive ? text + "  · 当前" : text;
-    }
-
     public static string FormatTokenSaveResult(int ok, int fail) =>
         RustCore.String("format_token_save_result", new { ok, fail });
-
-    static string FormatTokenSaveResultCore(int ok, int fail)
-    {
-        if (ok <= 0 && fail <= 0) return "";
-        if (fail <= 0) return ok > 1 ? $"已保存 {ok} 个账号" : "";
-        return $"成功 {ok} / 失败 {fail}";
-    }
 
     public static string FormatExportEmpty() => "当前没有可导出的明细";
 
     public static string FormatAccountMenuTitle(string? label, double? remaining) =>
         RustCore.String("format_account_menu_title", new { label = label ?? "", remaining });
 
-    static string FormatAccountMenuTitleCore(string? label, double? remaining)
-    {
-        var name = string.IsNullOrWhiteSpace(label) ? "未命名账号" : label.Trim();
-        return remaining is { } pct ? $"{name}  {pct:0}%" : name;
-    }
-
     public static string FormatReportCacheStatus(int count, string? accountLabel = null) =>
         RustCore.String("format_report_cache_status", new { count, label = accountLabel ?? "" });
-
-    static string FormatReportCacheStatusCore(int count, string? accountLabel = null)
-    {
-        var prefix = string.IsNullOrWhiteSpace(accountLabel) ? "" : "当前：" + accountLabel.Trim() + " · ";
-        return count > 0
-            ? prefix + $"本地 {count} 条，正在刷新…"
-            : prefix + "本地还没有明细，正在同步…";
-    }
 
     public static string FormatReportSyncError(string? error) =>
         RustCore.String("format_report_sync_error", new { error = error ?? "" });
 
-    static string FormatReportSyncErrorCore(string? error)
-    {
-        var text = (error ?? "").Trim();
-        if (text.Length == 0) return "同步失败";
-        if (Token.IsAuthErrorMessage(text))
-            return text.Contains("未配置") ? "未配置 Token，请先在设置里导入账号" : "登录已过期，请到设置重新粘贴 Token";
-        return "同步失败：" + ShortError(text, 80);
-    }
-
     public static string FormatCloudDecryptNote(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed) =>
         RustCore.String("format_cloud_decrypt_note", new { decrypt_error = decryptError, sync_secret_failed = syncSecretFailed, cloud_access_failed = cloudAccessFailed });
-
-    static string FormatCloudDecryptNoteCore(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed)
-    {
-        if (syncSecretFailed || cloudAccessFailed)
-            return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。";
-        if (decryptError)
-            return "本机有账号 Token 解不开。请重新粘贴 Token。";
-        return "";
-    }
 
     public static string FlyoutSettingsTitle(string? error) =>
         RustCore.String("flyout_settings_title", new { error = error ?? "" });
 
-    static string FlyoutSettingsTitleCore(string? error) =>
-        Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";
-
     public static string FormatAccountPlan(Account account) =>
         RustCore.String("format_account_plan", new { membership = account.MembershipType ?? "" });
 
-    static string FormatAccountPlanCore(Account account)
-    {
-        var plan = (account.MembershipType ?? "").Trim();
-        return plan.Length == 0 ? "—" : plan;
-    }
-
     public static string FormatAccountCheckStatus(Account account) =>
         RustCore.String("format_account_check_status", new { decrypt_failed = account.TokenDecryptFailed, error = account.LastError ?? "", remaining = account.LastRemaining, has_token = !string.IsNullOrWhiteSpace(account.Token) });
-
-    static string FormatAccountCheckStatusCore(Account account)
-    {
-        if (account.TokenDecryptFailed) return "无法解密";
-        var err = (account.LastError ?? "").Trim();
-        if (err.Length > 0)
-        {
-            if (Token.IsAuthErrorMessage(err)) return "已失效";
-            if (IsUnreachableStatus(err)) return "无法连接";
-            return err.Length > 16 ? err[..16] + "…" : err;
-        }
-        if (account.LastRemaining is { } remaining) return $"剩余 {remaining:0}%";
-        return string.IsNullOrWhiteSpace(account.Token) ? "未配置" : "未检查";
-    }
 
     public static string FormatAccountCheckTime(Account account)
     {
@@ -550,9 +272,6 @@ public static class StatusText
 
     public static string FormatAccountKind(Account account) =>
         RustCore.String("format_account_kind", new { kind = account.AccountKind ?? "" });
-
-    static string FormatAccountKindCore(Account account) =>
-        AccountValidity.IsTemporary(account) ? "临时" : "长期";
 
     public static string FormatSyncStatus(string lastAt, string lastError)
     {

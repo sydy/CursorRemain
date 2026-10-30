@@ -304,11 +304,6 @@ public struct AppConfig: Equatable, Sendable {
         RustCore.string("normalize_appearance", ["input": raw])
     }
 
-    static func normalizeColorModeCore(_ raw: String) -> String {
-        let mode = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return colorModes.contains(mode) ? mode : "system"
-    }
-
     public static let `default` = AppConfig(
         sessionToken: "",
         accounts: [],
@@ -803,7 +798,7 @@ public enum ConfigStore {
         }
         let mode = ((raw["tray_display_mode"] as? String) ?? "ring").trimmingCharacters(in: .whitespaces).lowercased()
         cfg.trayDisplayMode = AppConfig.displayModes.contains(mode) ? mode : "ring"
-        cfg.colorMode = AppConfig.normalizeColorModeCore((raw["color_mode"] as? String) ?? "system")
+        cfg.colorMode = AppConfig.normalizeColorMode((raw["color_mode"] as? String) ?? "system")
         if let v = doubleValue(raw["monthly_plan_usd"]) { cfg.monthlyPlanUsd = UsageEvents.clampMonthlyPlanUsd(v) }
         if let v = doubleValue(raw["actual_cny"]) { cfg.actualCny = UsageEvents.clampActualCny(v) }
         if let v = doubleValue(raw["usd_cny_rate"]) {
@@ -986,20 +981,6 @@ public enum ConfigStore {
         return AppConfig.default.alertThresholds
     }
 
-    static func parseThresholdsCore(_ value: Any?) -> [Int] {
-        var nums: [Int] = []
-        if let s = value as? String {
-            let parts = s.replacingOccurrences(of: "，", with: ",").split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
-            nums = parts.compactMap { Int(Double($0) ?? -1) }
-        } else if let arr = value as? [Any] {
-            nums = arr.compactMap { intValue($0) }
-        } else {
-            nums = AppConfig.default.alertThresholds
-        }
-        let cleaned = Set(nums.filter { (1...100).contains($0) }).sorted(by: >)
-        return cleaned.isEmpty ? AppConfig.default.alertThresholds : cleaned
-    }
-
     static func parseIntList(_ value: Any?) -> [Int] {
         guard let arr = value as? [Any] else { return [] }
         return Set(arr.compactMap { intValue($0) }.filter { (1...100).contains($0) }).sorted()
@@ -1088,7 +1069,7 @@ public enum ConfigStore {
             "update_installed_sha": cfg.updateInstalledSha,
             "update_installed_asset_id": cfg.updateInstalledAssetId,
             "tray_display_mode": cfg.trayDisplayMode,
-            "color_mode": AppConfig.normalizeColorModeCore(cfg.colorMode),
+            "color_mode": AppConfig.normalizeColorMode(cfg.colorMode),
             "monthly_plan_usd": cfg.monthlyPlanUsd,
             "actual_cny": cfg.actualCny,
             "usd_cny_rate": cfg.usdCnyRate,

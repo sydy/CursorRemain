@@ -31,126 +31,23 @@ public static class CursorPasswordLogin
     public static string SanitizeEmail(string? raw) =>
         RustCore.String("sanitize_email", new { input = raw ?? "" });
 
-    internal static string SanitizeEmailCore(string? raw)
-    {
-        var text = (raw ?? "").Trim().ToLowerInvariant();
-        if (!LooksLikeEmail(text) || !EmailRe.IsMatch(text)) return "";
-        return text;
-    }
-
     public static string DefaultLabel(string email, string? existingLabel = null) =>
         RustCore.String("default_account_label", new { email, existing = existingLabel ?? "" });
-
-    internal static string DefaultLabelCore(string email, string? existingLabel = null)
-    {
-        var current = (existingLabel ?? "").Trim();
-        if (current.Length > 0) return current;
-        return SanitizeEmailCore(email);
-    }
 
     public static string? TokenFromCookies(IEnumerable<(string Name, string Value)> cookies) =>
         RustCore.String("token_from_cookies", new { cookies = cookies.Select(c => new { name = c.Name, value = c.Value }).ToList() });
 
-    internal static string? TokenFromCookiesCore(IEnumerable<(string Name, string Value)> cookies)
-    {
-        foreach (var (name, value) in cookies)
-        {
-            if (!name.Equals(Token.CookieName, StringComparison.OrdinalIgnoreCase)) continue;
-            var raw = (value ?? "").Trim();
-            if (raw.Length == 0) return "";
-            try { return Token.Normalize(raw); }
-            catch { return raw; }
-        }
-        return "";
-    }
-
     public static string AutofillScript(string email, string password) =>
         RustCore.String("autofill_script", new { email, password });
-
-    internal static string AutofillScriptCore(string email, string password)
-    {
-        var payload = JsonSerializer.Serialize(
-            new Dictionary<string, string>
-            {
-                ["email"] = SanitizeEmailCore(email),
-                ["password"] = password ?? "",
-            },
-            new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
-        return
-            "(function(){" +
-            $"const c={payload};" +
-            "function setNative(el,val){" +
-            "if(!el)return;" +
-            "const proto=el.tagName==='TEXTAREA'?window.HTMLTextAreaElement.prototype:window.HTMLInputElement.prototype;" +
-            "const desc=Object.getOwnPropertyDescriptor(proto,'value');" +
-            "if(desc&&desc.set)desc.set.call(el,val);else el.value=val;" +
-            "el.dispatchEvent(new Event('input',{bubbles:true}));" +
-            "el.dispatchEvent(new Event('change',{bubbles:true}));" +
-            "}" +
-            "if(document.querySelector('iframe[src*=\"challenges.cloudflare\"],iframe[src*=\"turnstile\"],input[autocomplete=\"one-time-code\"]'))" +
-            "return 'need-user';" +
-            "const emailEl=document.querySelector('input[type=\"email\"],input[name=\"email\"],input[autocomplete=\"username\"],input[autocomplete=\"email\"]');" +
-            "if(emailEl&&c.email)setNative(emailEl,c.email);" +
-            "const passEl=document.querySelector('input[type=\"password\"]');" +
-            "if(passEl&&c.password)setNative(passEl,c.password);" +
-            "const buttons=[...document.querySelectorAll('button,[type=submit]')];" +
-            "const go=buttons.find(b=>/continue|sign in|log in|登录|继续/i.test((b.innerText||b.value||'')));" +
-            "if(go&&!window.__cttClicked){window.__cttClicked=Date.now();go.click();return 'clicked';}" +
-            "return passEl&&c.password?'filled':'waiting';" +
-            "})();";
-    }
 
     public static string CodeChallenge(string? verifier) =>
         RustCore.String("code_challenge", new { verifier = verifier ?? "" });
 
-    internal static string CodeChallengeCore(string? verifier)
-    {
-        var text = (verifier ?? "").Trim();
-        if (text.Length == 0) return "";
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return Convert.ToBase64String(digest).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
-
     public static string LoginDeepUrl(string? uuid, string? verifier) =>
         RustCore.String("login_deep_url", new { uuid = uuid ?? "", verifier = verifier ?? "" });
 
-    internal static string LoginDeepUrlCore(string? uuid, string? verifier)
-    {
-        var loginId = (uuid ?? "").Trim();
-        var challenge = CodeChallengeCore(verifier);
-        if (loginId.Length == 0 || challenge.Length == 0) return "";
-        return $"{LoginDeepUrlBase}?challenge={PercentEncode(challenge)}&uuid={PercentEncode(loginId)}&mode=login";
-    }
-
     public static string TokenFromCallback(string? text) =>
         RustCore.String("token_from_callback", new { input = text ?? "" });
-
-    internal static string TokenFromCallbackCore(string? text)
-    {
-        var raw = (text ?? "").Trim();
-        if (raw.Length == 0) return "";
-        if (!raw.Contains("://", StringComparison.Ordinal) && !raw.StartsWith("cursor.com", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!LooksLikeSessionToken(raw)) return "";
-            return NormalizedToken(raw);
-        }
-        var hash = raw.IndexOf('#');
-        var main = hash >= 0 ? raw[..hash] : raw;
-        var fragment = hash >= 0 ? raw[(hash + 1)..] : "";
-        var queryAt = main.IndexOf('?');
-        var query = queryAt >= 0 ? main[(queryAt + 1)..] : "";
-        var found = QueryMap(query);
-        foreach (var (key, value) in QueryMap(fragment))
-        {
-            if (!found.ContainsKey(key)) found[key] = value;
-        }
-        foreach (var key in CallbackKeys)
-        {
-            if (!found.TryGetValue(key, out var value) || value.Length == 0 || !LooksLikeSessionToken(value)) continue;
-            return NormalizedToken(value);
-        }
-        return "";
-    }
 
     public static string ValidProfileId(string? value)
     {
@@ -161,20 +58,11 @@ public static class CursorPasswordLogin
     public static string ProfileKey(string? email, string? accountId = null) =>
         RustCore.String("profile_key", new { email = email ?? "", account_id = accountId ?? "" });
 
-    internal static string ProfileKeyCore(string? email, string? accountId = null)
-    {
-        var mail = SanitizeEmailCore(email);
-        if (mail.Length > 0) return "email:" + mail;
-        var ident = (accountId ?? "").Trim();
-        if (ident.Length == 0 || ident.Any(ch => char.IsWhiteSpace(ch) || ch is '/' or '\\')) return "";
-        return "id:" + (ident.Length > 120 ? ident[..120] : ident);
-    }
-
     public static string CanonicalProfileKey(string? key)
     {
         var text = key ?? "";
-        if (text.StartsWith("email:", StringComparison.Ordinal)) return ProfileKeyCore(text[6..]);
-        if (text.StartsWith("id:", StringComparison.Ordinal)) return ProfileKeyCore("", text[3..]);
+        if (text.StartsWith("email:", StringComparison.Ordinal)) return ProfileKey(text[6..]);
+        if (text.StartsWith("id:", StringComparison.Ordinal)) return ProfileKey("", text[3..]);
         return "";
     }
 
@@ -204,19 +92,6 @@ public static class CursorPasswordLogin
         return (stored, result.GetProperty("profile_id").GetString() ?? "");
     }
 
-    internal static (Dictionary<string, string> Index, string ProfileId) AssignProfileCore(
-        IEnumerable<KeyValuePair<string, string>>? index, string? key, string? newId)
-    {
-        var fresh = ValidProfileId(newId);
-        var cleaned = CleanProfileIndex(index);
-        if (fresh.Length == 0) return (cleaned, "");
-        var name = CanonicalProfileKey(key);
-        if (name.Length == 0) return (cleaned, fresh);
-        if (cleaned.TryGetValue(name, out var current) && current.Length > 0) return (cleaned, current);
-        cleaned[name] = fresh;
-        return (cleaned, fresh);
-    }
-
     public static Dictionary<string, string> BindProfile(
         IEnumerable<KeyValuePair<string, string>>? index, string? key, string? profileId)
     {
@@ -230,14 +105,6 @@ public static class CursorPasswordLogin
 
     public static string TokenFromPoll(JsonElement payload) =>
         RustCore.String("token_from_poll", payload);
-
-    internal static string TokenFromPollCore(JsonElement payload)
-    {
-        var access = ReadString(payload, "accessToken");
-        if (access.Length == 0) access = ReadString(payload, "access_token");
-        if (access.Length == 0) return "";
-        return NormalizedToken(access);
-    }
 
     public static async Task<LoginPollResult> PollSession(string? uuid, string? verifier, CancellationToken ct = default)
     {

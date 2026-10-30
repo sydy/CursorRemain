@@ -119,10 +119,6 @@ public enum AppUpdate {
         RustCore.bool("should_fallback_from_api", ["status_code": statusCode])
     }
 
-    static func shouldFallbackFromApiCore(_ statusCode: Int) -> Bool {
-        statusCode == 401 || statusCode == 403 || statusCode == 404 || statusCode == 429 || statusCode >= 500
-    }
-
     public static var platformAssetName: String {
         #if os(Windows)
         windowsAssetName
@@ -135,16 +131,8 @@ public enum AppUpdate {
         RustCore.bool("is_windows_light_asset_name", ["name": name ?? ""])
     }
 
-    static func isWindowsLightAssetNameCore(_ name: String?) -> Bool {
-        (name ?? "").caseInsensitiveCompare(windowsLightAssetName) == .orderedSame
-    }
-
     public static func preferredWindowsAssetName(preferLight: Bool) -> String {
         RustCore.string("preferred_windows_asset_name", ["prefer_light": preferLight])
-    }
-
-    static func preferredWindowsAssetNameCore(preferLight: Bool) -> String {
-        preferLight ? windowsLightAssetName : windowsAssetName
     }
 
     public static func maxBytesForAsset(_ name: String?) -> Int64 {
@@ -155,66 +143,33 @@ public enum AppUpdate {
         RustCore.string("normalize_sha", ["input": raw ?? ""])
     }
 
-    static func normalizeShaCore(_ raw: String?) -> String {
-        var s = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if s.hasPrefix("sha-") { s = String(s.dropFirst(4)) }
-        guard (7...40).contains(s.count) else { return "" }
-        return s.unicodeScalars.allSatisfy { CharacterSet(charactersIn: "0123456789abcdef").contains($0) } ? s : ""
-    }
-
     public static func extractSha(_ text: String?) -> String {
         RustCore.string("extract_sha", ["text": text ?? ""])
-    }
-
-    static func extractShaCore(_ text: String?) -> String {
-        let raw = text ?? ""
-        if let match = firstMatch(raw, pattern: #"(?i)\b([0-9a-f]{40})\b"#) {
-            return normalizeShaCore(match)
-        }
-        if let match = firstMatch(raw, pattern: #"(?i)(?:commit/|`)([0-9a-f]{7,40})(?:`|\b)"#) {
-            return normalizeShaCore(match)
-        }
-        return ""
     }
 
     public static func sameSha(_ left: String?, _ right: String?) -> Bool {
         RustCore.bool("same_sha", ["left": left ?? "", "right": right ?? ""])
     }
 
-    static func sameShaCore(_ left: String?, _ right: String?) -> Bool {
-        let a = normalizeShaCore(left)
-        let b = normalizeShaCore(right)
-        if a.isEmpty || b.isEmpty { return false }
-        let minLen = min(a.count, b.count)
-        if minLen < 7 { return a == b }
-        return a.hasPrefix(b) || b.hasPrefix(a)
-    }
-
     /// The rolling release notes can move to a new commit while the macOS zip is still
     /// the previous build. Quitting in that case leaves no process running, because the
     /// helper refuses to relaunch when the bundle hash does not match the notes.
     public static func stagedBundleMatchesRelease(expectedSha: String, stagedSha: String) -> Bool {
-        let expected = normalizeShaCore(expectedSha)
+        let expected = normalizeSha(expectedSha)
         if expected.isEmpty { return true }
-        return sameShaCore(stagedSha, expected)
+        return sameSha(stagedSha, expected)
     }
 
     public static func gitCommitFromInfoPlist(_ data: Data) -> String {
         guard let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
         else { return "" }
-        let commit = normalizeShaCore(stringValue(obj["GitCommit"]))
+        let commit = normalizeSha(stringValue(obj["GitCommit"]))
         if !commit.isEmpty { return commit }
-        return normalizeShaCore(stringValue(obj["SourceRevision"]))
+        return normalizeSha(stringValue(obj["SourceRevision"]))
     }
 
     public static func shaFromInformationalVersion(_ informational: String?) -> String {
         RustCore.string("sha_from_informational_version", ["input": informational ?? ""])
-    }
-
-    static func shaFromInformationalVersionCore(_ informational: String?) -> String {
-        let info = informational ?? ""
-        guard let plus = info.lastIndex(of: "+") else { return "" }
-        return normalizeShaCore(String(info[info.index(after: plus)...]))
     }
 
     public static func versionFromInformational(_ informational: String?) -> String {
@@ -223,17 +178,11 @@ public enum AppUpdate {
         if let plus = info.firstIndex(of: "+") {
             info = String(info[..<plus])
         }
-        return normalizeProductVersionCore(info)
+        return normalizeProductVersion(info)
     }
 
     public static func normalizeProductVersion(_ raw: String?) -> String {
         RustCore.string("normalize_product_version", ["input": raw ?? ""])
-    }
-
-    static func normalizeProductVersionCore(_ raw: String?) -> String {
-        var value = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.first == "v" || value.first == "V" { value.removeFirst() }
-        return firstMatch(value, pattern: #"^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"#) ?? ""
     }
 
     public static func extractProductVersion(_ text: String?) -> String {
@@ -241,37 +190,19 @@ public enum AppUpdate {
         if let match = firstMatch(raw, pattern: #"(?i)\bv?(\d+\.\d+\.\d+)\b"#) {
             return match
         }
-        return normalizeProductVersionCore(raw)
+        return normalizeProductVersion(raw)
     }
 
     public static func productVersionFromRelease(_ tag: String?, body: String? = nil) -> String {
         RustCore.string("product_version_from_release", ["tag": tag ?? "", "body": body ?? ""])
     }
 
-    static func productVersionFromReleaseCore(_ tag: String?, body: String? = nil) -> String {
-        let fromTag = normalizeProductVersionCore(tag)
-        if !fromTag.isEmpty { return fromTag }
-        let raw = body ?? ""
-        if let match = firstMatch(raw, pattern: #"(?i)(?:\*\*)?版本(?:\*\*)?\s*[:：]\s*`?v?(\d+\.\d+\.\d+)"#) {
-            return match
-        }
-        return extractProductVersion(raw)
-    }
-
     public static func compareProductVersions(_ left: String?, _ right: String?) -> Int {
         RustCore.intValue("compare_product_versions", ["left": left ?? "", "right": right ?? ""])
     }
 
-    static func compareProductVersionsCore(_ left: String?, _ right: String?) -> Int {
-        guard let a = parseProductVersion(left), let b = parseProductVersion(right) else { return 0 }
-        if a[0] != b[0] { return a[0] < b[0] ? -1 : 1 }
-        if a[1] != b[1] { return a[1] < b[1] ? -1 : 1 }
-        if a[2] != b[2] { return a[2] < b[2] ? -1 : 1 }
-        return 0
-    }
-
     public static func parseProductVersion(_ raw: String?) -> [Int]? {
-        let version = normalizeProductVersionCore(raw)
+        let version = normalizeProductVersion(raw)
         if version.isEmpty { return nil }
         let core = version.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? version
         let bits = core.split(separator: ".")
@@ -285,7 +216,7 @@ public enum AppUpdate {
     }
 
     public static func formatReleaseLabel(version: String?, sha: String?) -> String {
-        let ver = normalizeProductVersionCore(version)
+        let ver = normalizeProductVersion(version)
         let short = shortSha(sha)
         if !ver.isEmpty && !short.isEmpty && short != latestTag {
             return "\(ver) (\(short))"
@@ -297,8 +228,8 @@ public enum AppUpdate {
     public static func chooseRelease(official: AppRelease?, rolling: AppRelease?, currentVersion: String? = nil) -> AppRelease? {
         if official == nil { return rolling }
         if rolling == nil { return official }
-        let current = normalizeProductVersionCore(currentVersion ?? productVersion)
-        var officialVer = normalizeProductVersionCore(official?.version)
+        let current = normalizeProductVersion(currentVersion ?? productVersion)
+        var officialVer = normalizeProductVersion(official?.version)
         if officialVer.isEmpty {
             officialVer = productVersionFromRelease(official?.tag, body: official?.body)
         }
@@ -311,7 +242,7 @@ public enum AppUpdate {
     public static var currentCommitSha: String {
         for key in ["GitCommit", "SourceRevision"] {
             if let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String {
-                let sha = normalizeShaCore(raw)
+                let sha = normalizeSha(raw)
                 if !sha.isEmpty { return sha }
             }
         }
@@ -319,7 +250,7 @@ public enum AppUpdate {
     }
 
     public static func displayVersion(_ sha: String? = nil) -> String {
-        var value = normalizeShaCore(sha ?? currentCommitSha)
+        var value = normalizeSha(sha ?? currentCommitSha)
         if value.count > 7 { value = String(value.prefix(7)) }
         return value.isEmpty ? productVersion : "\(productVersion) (\(value))"
     }
@@ -328,45 +259,12 @@ public enum AppUpdate {
         RustCore.bool("is_allowed_download_url", ["url": raw ?? ""])
     }
 
-    static func isAllowedDownloadURLCore(_ raw: String?) -> Bool {
-        guard let raw, let url = URL(string: raw), let host = url.host?.lowercased() else { return false }
-        guard url.scheme?.lowercased() == "https" else { return false }
-        return host == "github.com"
-            || host.hasSuffix(".github.com")
-            || host == "githubusercontent.com"
-            || host.hasSuffix(".githubusercontent.com")
-    }
-
     public static func looksPackagedWindows(_ processPath: String?) -> Bool {
         RustCore.bool("looks_packaged_windows", ["path": processPath ?? ""])
     }
 
-    static func looksPackagedWindowsCore(_ processPath: String?) -> Bool {
-        let path = (processPath ?? "").trimmingCharacters(in: .whitespaces)
-        if path.isEmpty { return false }
-        let normalized = path.replacingOccurrences(of: "/", with: "\\")
-        let name = normalized.split(separator: "\\").last.map(String.init) ?? normalized
-        guard isOurWindowsExe(name) else { return false }
-        let lower = normalized.lowercased()
-        if lower.contains("\\bin\\") { return false }
-        if lower.contains("\\obj\\") { return false }
-        if lower.contains("\\.build\\") { return false }
-        return true
-    }
-
     public static func looksPackagedMacos(_ bundleOrExePath: String?) -> Bool {
         RustCore.bool("looks_packaged_macos", ["path": bundleOrExePath ?? ""])
-    }
-
-    static func looksPackagedMacosCore(_ bundleOrExePath: String?) -> Bool {
-        let path = (bundleOrExePath ?? "").trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "\\", with: "/")
-        if path.isEmpty { return false }
-        let lower = path.lowercased()
-        if lower.contains("/.build/") || lower.contains("/deriveddata/") { return false }
-        if lower.hasSuffix(".app") || lower.contains(".app/contents/") {
-            return isOurMacApp((appBundlePath(path) as NSString).lastPathComponent)
-        }
-        return false
     }
 
     public static func appBundlePath(_ path: String) -> String {
@@ -406,8 +304,8 @@ public enum AppUpdate {
                 ? "https://github.com/\(repoOwner)/\(repoName)/releases/tag/\(tag)"
                 : latestReleasePageURL.absoluteString
         }
-        var sha = extractShaCore(body)
-        if sha.isEmpty { sha = normalizeShaCore(stringValue(raw["target_commitish"])) }
+        var sha = extractSha(body)
+        if sha.isEmpty { sha = normalizeSha(stringValue(raw["target_commitish"])) }
         var assets: [AppReleaseAsset] = []
         if let rows = raw["assets"] as? [[String: Any]] {
             for item in rows {
@@ -442,9 +340,9 @@ public enum AppUpdate {
     }
 
     public static func parseReleasePage(_ html: String) throws -> AppRelease {
-        var sha = extractShaCore(html)
+        var sha = extractSha(html)
         if sha.isEmpty, let match = firstMatch(html, pattern: #"(?i)/commit/([0-9a-f]{7,40})"#) {
-            sha = normalizeShaCore(match)
+            sha = normalizeSha(match)
         }
         if sha.isEmpty { throw CursorAPIError("发布页里找不到提交哈希") }
         return AppRelease(
@@ -471,9 +369,9 @@ public enum AppUpdate {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return "" }
         if let nested = obj["object"] as? [String: Any] {
-            return normalizeShaCore(stringValue(nested["sha"]))
+            return normalizeSha(stringValue(nested["sha"]))
         }
-        return normalizeShaCore(stringValue(obj["sha"]))
+        return normalizeSha(stringValue(obj["sha"]))
     }
 
     public static func findAsset(_ release: AppRelease, name: String) -> AppReleaseAsset? {
@@ -533,11 +431,11 @@ public enum AppUpdate {
         if asset.size > maxBytesForAsset(asset.name) {
             return UpdateDecision(message: "安装包过大，已取消更新")
         }
-        var remoteVersion = normalizeProductVersionCore(release.version)
+        var remoteVersion = normalizeProductVersion(release.version)
         if remoteVersion.isEmpty {
             remoteVersion = productVersionFromRelease(release.tag, body: release.body)
         }
-        let localVersion = normalizeProductVersionCore(currentVersion ?? productVersion)
+        let localVersion = normalizeProductVersion(currentVersion ?? productVersion)
         if !remoteVersion.isEmpty, !localVersion.isEmpty {
             let cmp = compareProductVersions(remoteVersion, localVersion)
             if cmp < 0 {
@@ -547,22 +445,22 @@ public enum AppUpdate {
                 return available(release, asset)
             }
         }
-        var localSha = normalizeShaCore(currentSha)
-        if localSha.isEmpty { localSha = normalizeShaCore(installedSha) }
-        let remoteSha = normalizeShaCore(release.commitSha)
-        if !remoteSha.isEmpty, sameShaCore(localSha, remoteSha) {
+        var localSha = normalizeSha(currentSha)
+        if localSha.isEmpty { localSha = normalizeSha(installedSha) }
+        let remoteSha = normalizeSha(release.commitSha)
+        if !remoteSha.isEmpty, sameSha(localSha, remoteSha) {
             return UpdateDecision(upToDate: true, message: "已是最新版本", release: release, asset: asset)
         }
         if remoteSha.isEmpty, installedAssetId > 0, installedAssetId == asset.id {
             return UpdateDecision(upToDate: true, message: "已是最新版本", release: release, asset: asset)
         }
-        if !remoteSha.isEmpty, !localSha.isEmpty, !sameShaCore(localSha, remoteSha) {
+        if !remoteSha.isEmpty, !localSha.isEmpty, !sameSha(localSha, remoteSha) {
             return available(release, asset)
         }
         if localSha.isEmpty {
             return available(release, asset)
         }
-        if !remoteSha.isEmpty, !sameShaCore(localSha, remoteSha) {
+        if !remoteSha.isEmpty, !sameSha(localSha, remoteSha) {
             return available(release, asset)
         }
         return UpdateDecision(upToDate: true, message: "已是最新版本", release: release, asset: asset)
@@ -580,7 +478,7 @@ public enum AppUpdate {
     /// Write a pending stamp only after the replace helper actually started.
     /// The installed SHA is recorded later, when the new process confirms its bundle hash.
     public static func rememberedInstallAfterHelper(sha: String, assetId: Int64, helperStarted: Bool) -> RememberedInstall? {
-        helperStarted ? RememberedInstall(sha: normalizeShaCore(sha), assetId: assetId) : nil
+        helperStarted ? RememberedInstall(sha: normalizeSha(sha), assetId: assetId) : nil
     }
 
     public static let pendingInstallFileName = "update-pending.json"
@@ -590,7 +488,7 @@ public enum AppUpdate {
     }
 
     public static func writePendingInstall(directory: URL, sha: String, assetId: Int64) {
-        let obj: [String: Any] = ["sha": normalizeShaCore(sha), "asset_id": assetId]
+        let obj: [String: Any] = ["sha": normalizeSha(sha), "asset_id": assetId]
         guard let data = try? JSONSerialization.data(withJSONObject: obj, options: []) else { return }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try? data.write(to: pendingInstallPath(directory: directory), options: .atomic)
@@ -600,7 +498,7 @@ public enum AppUpdate {
         guard let data = try? Data(contentsOf: pendingInstallPath(directory: directory)),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
-        let sha = normalizeShaCore(stringValue(obj["sha"]))
+        let sha = normalizeSha(stringValue(obj["sha"]))
         if sha.isEmpty { return nil }
         return RememberedInstall(sha: sha, assetId: int64Value(obj["asset_id"]))
     }
@@ -611,20 +509,13 @@ public enum AppUpdate {
 
     public static func confirmPendingInstall(currentSha: String, pending: RememberedInstall?) -> RememberedInstall? {
         guard let pending else { return nil }
-        let current = normalizeShaCore(currentSha)
+        let current = normalizeSha(currentSha)
         if current.isEmpty { return nil }
-        return sameShaCore(current, pending.sha) ? pending : nil
+        return sameSha(current, pending.sha) ? pending : nil
     }
 
     public static func pendingInstallFailed(currentSha: String, pending: RememberedInstall?) -> Bool {
         RustCore.bool("pending_install_failed", ["current_sha": currentSha, "pending": pending.map { ["sha": $0.sha, "asset_id": $0.assetId] } as Any])
-    }
-
-    static func pendingInstallFailedCore(currentSha: String, pending: RememberedInstall?) -> Bool {
-        guard let pending else { return false }
-        let current = normalizeShaCore(currentSha)
-        if current.isEmpty { return false }
-        return !sameShaCore(current, pending.sha)
     }
 
     public static func shellQuote(_ value: String) -> String {
@@ -643,7 +534,7 @@ public enum AppUpdate {
     }
 
     public static func shortSha(_ sha: String?) -> String {
-        var value = normalizeShaCore(sha)
+        var value = normalizeSha(sha)
         if value.isEmpty { return latestTag }
         if value.count > 7 { value = String(value.prefix(7)) }
         return value

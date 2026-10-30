@@ -162,17 +162,6 @@ public enum UsageHistory {
         RustCore.doubleValue("daily_avg_burn", ["points": points.map { ["ts": $0.ts, "remaining": $0.remaining] }])
     }
 
-    static func dailyAvgBurnCore(points: [HistoryPoint]) -> Double? {
-        guard points.count >= 2 else { return nil }
-        let first = points[0]
-        let last = points[points.count - 1]
-        let elapsed = (last.ts - first.ts) / 86_400.0
-        if elapsed < 0.04 { return nil }
-        let delta = first.remaining - last.remaining
-        if delta <= 0 { return 0 }
-        return round2(delta / elapsed)
-    }
-
     static func iterRaw(_ path: URL) -> [[String: Any]] {
         guard let text = try? String(contentsOf: path, encoding: .utf8) else { return [] }
         var rows: [[String: Any]] = []
@@ -200,12 +189,6 @@ public enum AlertLogic {
             "estimated_usable_days": snapshot.estimatedUsableDays as Any,
             "days_remaining": snapshot.daysRemaining as Any,
         ])
-    }
-
-    static func isExhaustionRiskCore(_ snapshot: UsageSnapshot) -> Bool {
-        guard let est = snapshot.estimatedUsableDays, let resetLeft = snapshot.daysRemaining else { return false }
-        if est <= 0 { return true }
-        return est < Double(resetLeft)
     }
 
     public struct Notice: Equatable {

@@ -234,28 +234,11 @@ public static partial class UsageEvents
     public static string KindLabel(string? kind) =>
         RustCore.String("kind_label", new { kind = kind ?? "" });
 
-    internal static string KindLabelCore(string? kind) => (kind ?? "").Trim().ToLowerInvariant() switch
-    {
-        KindIncluded => "套餐内",
-        KindFree => "免费",
-        KindOnDemand => "按需",
-        _ => "其他",
-    };
-
     public static string ClassifyCategory(string? model) =>
         RustCore.String("classify_category", new { model = model ?? "" });
 
-    internal static string ClassifyCategoryCore(string? model) => UsageParser.UsageCategoryCore(model);
-
     public static string CategoryLabel(string? category) =>
         RustCore.String("category_label", new { category = category ?? "" });
-
-    internal static string CategoryLabelCore(string? category) => (category ?? "").Trim().ToLowerInvariant() switch
-    {
-        CategoryFirstParty => "First-party",
-        CategoryGrokBot => "Grok Bot",
-        _ => "API",
-    };
 
     public static double ClampActualCny(double amount)
     {
@@ -273,17 +256,6 @@ public static partial class UsageEvents
 
     public static string ClassifyKind(string? kind, string? usageBasedCosts = null, bool isChargeable = false) =>
         RustCore.String("classify_kind", new { kind = kind ?? "", costs = usageBasedCosts ?? "", chargeable = isChargeable });
-
-    internal static string ClassifyKindCore(string? kind, string? usageBasedCosts = null, bool isChargeable = false)
-    {
-        var blob = $"{kind} {usageBasedCosts}".Trim().ToLowerInvariant();
-        if (blob.Contains("free")) return KindFree;
-        if (blob.Contains("included")) return KindIncluded;
-        if (blob.Contains("usage_based") || blob.Contains("usage-based") || blob.Contains("ondemand")
-            || blob.Contains("on_demand") || blob.Contains("on-demand"))
-            return KindOnDemand;
-        return isChargeable ? KindOnDemand : KindIncluded;
-    }
 
     public static double CostCents(UsageEvent ev)
     {
@@ -310,15 +282,6 @@ public static partial class UsageEvents
         ["is_chargeable"] = ev.IsChargeable,
     };
 
-    internal static string FormatCostCore(UsageEvent ev)
-    {
-        var cents = CostCents(ev);
-        if (ev.Kind == KindFree) return "免费";
-        if (ev.Kind == KindIncluded)
-            return cents > 0 ? UsageParser.FormatUsdCentsCore(cents) + " 套餐内" : "套餐内";
-        return cents > 0 ? UsageParser.FormatUsdCentsCore(cents) : "—";
-    }
-
     public static double ClampUsdCnyRate(double rate)
     {
         if (double.IsNaN(rate) || double.IsInfinity(rate)) return DefaultUsdCnyRate;
@@ -334,26 +297,10 @@ public static partial class UsageEvents
     public static double DefaultMonthlyPlanUsd(string? membership) =>
         RustCore.Call("default_monthly_plan_usd", new { membership = membership ?? "" }).GetDouble();
 
-    internal static double DefaultMonthlyPlanUsdCore(string? membership)
-    {
-        var key = (membership ?? "").Trim().ToLowerInvariant().Replace(" ", "");
-        if (key.EndsWith("套餐", StringComparison.Ordinal)) key = key[..^2];
-        return key switch
-        {
-            "pro" => 20,
-            "pro+" or "pro_plus" or "proplus" => 60,
-            "plus" => 8,
-            "premium" => 30,
-            "super" => 100,
-            "ultra" => 200,
-            _ => 0,
-        };
-    }
-
     public static double ResolveMonthlyPlanUsd(double monthlyPlanUsd, string? membership = null)
     {
         var stored = ClampMonthlyPlanUsd(monthlyPlanUsd);
-        return stored > 0 ? stored : DefaultMonthlyPlanUsdCore(membership);
+        return stored > 0 ? stored : DefaultMonthlyPlanUsd(membership);
     }
 
     public static bool IsPlanCovered(string? kind)
@@ -372,15 +319,7 @@ public static partial class UsageEvents
     public static string SanitizeChannel(string? raw) =>
         RustCore.String("sanitize_channel", new { input = raw ?? "" });
 
-    internal static string SanitizeChannelCore(string? raw)
-    {
-        var key = (raw ?? "").Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "");
-        if (key is "self_pay" or "self" or "selfpay" or "自费") return ChannelSelfPay;
-        if (key is "third_party" or "third" or "thirdparty" or "第三方") return ChannelThirdParty;
-        return "";
-    }
-
-    public static string ChannelLabel(string? channel) => SanitizeChannelCore(channel) switch
+    public static string ChannelLabel(string? channel) => SanitizeChannel(channel) switch
     {
         ChannelSelfPay => "自费",
         ChannelThirdParty => "第三方",
@@ -420,34 +359,14 @@ public static partial class UsageEvents
         window_source = row.WindowSource,
     };
 
-    static double? CompareBestPerMillionCore(IEnumerable<AccountCompareRow> rows)
-    {
-        var values = rows.Where(CompareBestEligible).Select(r => r.CnyPerMillion!.Value).ToList();
-        return values.Count == 0 ? null : values.Min();
-    }
-
     public static bool CompareWindowsMixed(IEnumerable<AccountCompareRow> rows) =>
         RustCore.Bool("compare_windows_mixed", new { rows = rows.Select(CompareMetricJson) });
-
-    static bool CompareWindowsMixedCore(IEnumerable<AccountCompareRow> rows) =>
-        rows.Where(CompareBestEligible).Select(r => r.WindowSource).Distinct().Count() > 1;
 
     public static string CompareRowNote(AccountCompareRow row, bool hasToken = true, string lastError = "") =>
         RustCore.String("compare_row_note", new { plan_cny = row.PlanCny, window_plan_cny = row.WindowPlanCny, has_token = hasToken, last_error = lastError ?? "" });
 
-    static string CompareRowNoteCore(AccountCompareRow row, bool hasToken = true, string lastError = "")
-    {
-        var error = (lastError ?? "").Trim();
-        if (error.Contains("解密")) return "Token 解不开";
-        if (!hasToken) return "未配置 Token";
-        if (error.Length > 0 && (error.Contains("过期") || error.Contains("无效") || error.Contains("未配置")))
-            return error.Contains("未配置") ? "未配置 Token" : "登录已过期";
-        if (!CompareRowHasCost(row)) return "未填成本";
-        return "";
-    }
-
     public static string FormatCnyUnit(double? amount, string suffix) =>
-        amount is null ? "—" : FormatCnyCore(amount) + suffix;
+        amount is null ? "—" : FormatCny(amount) + suffix;
 
     public static (long startMs, long endMs, string source) ResolveCompareWindow(
         string accountKind = "",
@@ -539,7 +458,7 @@ public static partial class UsageEvents
             totalCny += amount;
             totalTokens += ev.Tokens;
             if (ev.Kind == KindOnDemand) onDemandCny += amount;
-            var bucket = ClassifyCategoryCore(ev.Model);
+            var bucket = ClassifyCategory(ev.Model);
             var row = cats.GetValueOrDefault(bucket);
             cats[bucket] = (row.count + 1, row.tokens + ev.Tokens, row.cny + amount);
         }
@@ -552,7 +471,7 @@ public static partial class UsageEvents
         {
             AccountId = item.AccountId,
             Label = string.IsNullOrWhiteSpace(item.Label) ? item.AccountId : item.Label,
-            Channel = SanitizeChannelCore(item.Channel),
+            Channel = SanitizeChannel(item.Channel),
             MembershipType = item.MembershipType,
             WindowSource = source,
             WindowStartMs = startMs,
@@ -634,86 +553,21 @@ public static partial class UsageEvents
         return new AccountCompareReport { Rows = rows, Groups = groups, HoldingDays = 30 };
     }
 
-    static AccountCompareReport BuildAccountCompareReportCore(IEnumerable<AccountCompareInput> items, long? nowMs = null)
-    {
-        var rows = items.Select(item => BuildAccountCompareRow(item, nowMs)).ToList();
-        var grouped = ChannelOrder.ToDictionary(k => k, _ => new List<AccountCompareRow>(), StringComparer.Ordinal);
-        foreach (var row in rows)
-        {
-            if (!grouped.TryGetValue(row.Channel, out var bucket))
-            {
-                bucket = [];
-                grouped[row.Channel] = bucket;
-            }
-            bucket.Add(row);
-        }
-        var groups = new List<AccountCompareGroup>();
-        foreach (var channel in ChannelOrder)
-        {
-            if (!grouped.TryGetValue(channel, out var bucket) || bucket.Count == 0) continue;
-            groups.Add(SumCompareGroup(channel, bucket));
-        }
-        return new AccountCompareReport { Rows = rows, Groups = groups, HoldingDays = HoldingDays };
-    }
-
-    static AccountCompareGroup SumCompareGroup(string channel, List<AccountCompareRow> rows)
-    {
-        static AccountCompareCategory Add(string name, IEnumerable<AccountCompareCategory> parts) =>
-            new()
-            {
-                Category = name,
-                Count = parts.Sum(p => p.Count),
-                Tokens = parts.Sum(p => p.Tokens),
-                Cny = parts.Sum(p => p.Cny),
-            };
-        return new AccountCompareGroup
-        {
-            Channel = channel,
-            Rows = rows,
-            DailyHoldingCny = rows.Sum(r => r.DailyHoldingCny),
-            TotalCny = rows.Sum(r => r.TotalCny),
-            EventCount = rows.Sum(r => r.EventCount),
-            TotalTokens = rows.Sum(r => r.TotalTokens),
-            FirstParty = Add(CategoryFirstParty, rows.Select(r => r.FirstParty)),
-            Api = Add(CategoryApi, rows.Select(r => r.Api)),
-            GrokBot = Add(CategoryGrokBot, rows.Select(r => r.GrokBot)),
-        };
-    }
-
     public static string FormatCny(double? yuan) =>
         RustCore.String("format_cny", new { cny = yuan });
-
-    internal static string FormatCnyCore(double? yuan)
-    {
-        if (yuan is null) return "—";
-        var n = Math.Max(0, yuan.Value);
-        return "¥" + n.ToString("0.00", CultureInfo.InvariantCulture);
-    }
 
     public static string FormatEventCny(UsageEvent ev, double? amount = null)
     {
         if (ev.Kind == KindFree) return "—";
-        return FormatCnyCore(amount ?? ev.AllocatedCny);
+        return FormatCny(amount ?? ev.AllocatedCny);
     }
 
     public static string FormatDiscount(double cny, double cents, double rate, string? kind = "") =>
         RustCore.String("format_discount", new { cny, cents, rate, kind = kind ?? "" });
 
-    internal static string FormatDiscountCore(double cny, double cents, double rate, string? kind = "")
-    {
-        if ((kind ?? "").Trim().ToLowerInvariant() == KindFree) return "—";
-        if (double.IsNaN(cny) || double.IsNaN(cents) || double.IsNaN(rate)
-            || double.IsInfinity(cny) || double.IsInfinity(cents) || double.IsInfinity(rate))
-            return "—";
-        var list = cents / 100.0 * rate;
-        if (list <= 1e-9 || cny <= 0) return "—";
-        var zhe = Math.Clamp(cny / list * 10.0, 0, 99.99);
-        return zhe.ToString("0.00", CultureInfo.InvariantCulture) + "折";
-    }
-
     public static string FormatEventDiscount(UsageEvent ev, double? amount, double rate)
     {
-        return FormatDiscountCore(amount ?? ev.AllocatedCny, CostCents(ev), rate, ev.Kind);
+        return FormatDiscount(amount ?? ev.AllocatedCny, CostCents(ev), rate, ev.Kind);
     }
 
     public static double AllocateEventCny(UsageEvent ev, double includedCostSum, int includedCount, double planCny, double rate, bool usesActual = false)
@@ -772,20 +626,8 @@ public static partial class UsageEvents
     public static string FormatTime(long timestampMs) =>
         RustCore.String("format_event_time", new { timestamp_ms = timestampMs });
 
-    internal static string FormatTimeCore(long timestampMs)
-    {
-        var dt = ToDisplay(timestampMs);
-        return dt.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
-    }
-
     public static string EventDate(long timestampMs) =>
         RustCore.String("event_date", new { timestamp_ms = timestampMs });
-
-    internal static string EventDateCore(long timestampMs)
-    {
-        var dt = ToDisplay(timestampMs);
-        return dt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-    }
 
     public static string SanitizeReportDate(string? raw)
     {
@@ -800,15 +642,6 @@ public static partial class UsageEvents
     {
         var result = RustCore.Call("normalize_report_range", new { start = start ?? "", end = end ?? "" });
         return (result.GetProperty("start").GetString() ?? "", result.GetProperty("end").GetString() ?? "", result.GetProperty("swapped").GetBoolean());
-    }
-
-    internal static (string Start, string End, bool Swapped) NormalizeReportRangeCore(string? start, string? end)
-    {
-        var s = SanitizeReportDate(start);
-        var e = SanitizeReportDate(end);
-        if (s.Length == 0 || e.Length == 0 || string.CompareOrdinal(s, e) <= 0)
-            return (s, e, false);
-        return (e, s, true);
     }
 
     public static long? ReportDateStartMs(string? raw)
@@ -839,12 +672,6 @@ public static partial class UsageEvents
 
     public static string EventHour(long timestampMs) =>
         RustCore.String("event_hour", new { timestamp_ms = timestampMs });
-
-    internal static string EventHourCore(long timestampMs)
-    {
-        var dt = ToDisplay(FloorHourMs(timestampMs));
-        return dt.ToString("yyyy-MM-dd HH:00", CultureInfo.InvariantCulture);
-    }
 
     public static (List<UsageEvent> events, int totalCount) ParsePage(JsonBag payload)
     {
@@ -877,21 +704,6 @@ public static partial class UsageEvents
         IsChargeable = row.TryGetProperty("is_chargeable", out var charge) && charge.ValueKind == JsonValueKind.True,
     };
 
-    internal static (List<UsageEvent> events, int totalCount) ParsePageCore(JsonBag payload)
-    {
-        var rows = payload["usageEventsDisplay"].Array;
-        if (!rows.Any()) rows = payload["usageEvents"].Array;
-        var events = rows.Select(ParseEvent).Where(e => e is not null).Cast<UsageEvent>().ToList();
-        var total = payload["totalUsageEventsCount"].AsInt();
-        if (total is null)
-        {
-            var paging = payload["pagination"].IsObject ? payload["pagination"] : JsonBag.Null;
-            total = paging["numEvents"].AsInt() ?? paging["totalNumEvents"].AsInt() ?? paging["total"].AsInt();
-        }
-        if (total is null || total < events.Count) total = events.Count;
-        return (events, total.Value);
-    }
-
     public static UsageEvent? ParseEvent(JsonBag item)
     {
         if (!item.IsObject) return null;
@@ -902,7 +714,7 @@ public static partial class UsageEvents
         var kindRaw = item["kind"].AsString() ?? item["type"].AsString() ?? "";
         var costsRaw = item["usageBasedCosts"].AsString() ?? item["cost"].AsString() ?? "";
         var isChargeable = item["isChargeable"].AsBool();
-        var kind = ClassifyKindCore(kindRaw, costsRaw, isChargeable);
+        var kind = ClassifyKind(kindRaw, costsRaw, isChargeable);
         var input = Math.Max(0, tokenUsage["inputTokens"].AsInt() ?? item["inputTokens"].AsInt() ?? 0);
         var output = Math.Max(0, tokenUsage["outputTokens"].AsInt() ?? item["outputTokens"].AsInt() ?? 0);
         var cacheWrite = Math.Max(0, tokenUsage["cacheWriteTokens"].AsInt() ?? item["cacheWriteTokens"].AsInt() ?? 0);
@@ -997,24 +809,11 @@ public static partial class UsageEvents
         return result.EnumerateArray().Select(EventFromRust).ToList();
     }
 
-    internal static List<UsageEvent> MergeCore(IEnumerable<UsageEvent> existing, IEnumerable<UsageEvent> incoming)
-    {
-        var byId = new Dictionary<string, UsageEvent>(StringComparer.Ordinal);
-        foreach (var ev in existing)
-            if (ev.Id.Length > 0) byId[ev.Id] = ev;
-        foreach (var ev in incoming)
-            if (ev.Id.Length > 0) byId[ev.Id] = ev;
-        return byId.Values.OrderByDescending(e => e.TimestampMs).ToList();
-    }
-
     public static List<UsageEvent> Prune(IEnumerable<UsageEvent> events, long minTimestampMs)
     {
         var result = RustCore.Call("prune_usage_events", new { events = events.Select(EventJson).ToList(), min_timestamp_ms = minTimestampMs });
         return result.EnumerateArray().Select(EventFromRust).ToList();
     }
-
-    internal static List<UsageEvent> PruneCore(IEnumerable<UsageEvent> events, long minTimestampMs) =>
-        events.Where(e => e.TimestampMs >= minTimestampMs).OrderByDescending(e => e.TimestampMs).ToList();
 
     public static List<UsageEvent> Load(string accountId, bool teamScope, string? directory = null)
     {
@@ -1031,7 +830,7 @@ public static partial class UsageEvents
             }
             catch { }
         }
-        return MergeCore(events, []);
+        return Merge(events, []);
     }
 
     public static void Save(IEnumerable<UsageEvent> events, string accountId, bool teamScope, string? directory = null)
@@ -1066,29 +865,6 @@ public static partial class UsageEvents
         });
         long? stop = result.GetProperty("stop_at_ms").ValueKind == JsonValueKind.Number ? result.GetProperty("stop_at_ms").GetInt64() : null;
         return new UsageEventsWindow(result.GetProperty("start_ms").GetInt64(), result.GetProperty("end_ms").GetInt64(), stop);
-    }
-
-    internal static UsageEventsWindow ResolveSyncWindowCore(
-        string? billingCycleStart,
-        string? billingCycleEnd,
-        bool endOverridden,
-        string? apiBillingCycleEnd,
-        long nowMs,
-        long watermarkMs)
-    {
-        var cycleStart = UsageParser.IsoToMs(billingCycleStart) ?? nowMs - 30L * 86400 * 1000;
-        var endIso = endOverridden ? apiBillingCycleEnd : billingCycleEnd;
-        var cycleEnd = UsageParser.IsoToMs(endIso) ?? nowMs;
-        if (cycleEnd > nowMs) cycleEnd = nowMs;
-        var startMs = cycleStart;
-        long? stopAt = null;
-        if (watermarkMs > 0)
-        {
-            startMs = Math.Max(cycleStart, watermarkMs - 60_000);
-            stopAt = watermarkMs;
-        }
-        if (cycleEnd < startMs) cycleEnd = nowMs;
-        return new UsageEventsWindow(startMs, cycleEnd, stopAt);
     }
 
     public static async Task<UsageEventsSyncResult> SyncAsync(
@@ -1138,14 +914,14 @@ public static partial class UsageEvents
             }
         }
         var fetched = await client.FetchUsageEvents(token, startMs, cycleEnd, team, teamScope ? null : userId, stopAt, onPage: onPage, ct: ct);
-        var merged = MergeCore(existing, fetched.events);
+        var merged = Merge(existing, fetched.events);
         if (!teamScope && userId is > 0)
         {
             var uidText = userId.Value.ToString(CultureInfo.InvariantCulture);
             merged = merged.Where(e => e.OwningUser.Length == 0 || e.OwningUser == uidText).ToList();
         }
         var minTs = Math.Min(cycleStart, nowMs - 120L * 86400 * 1000);
-        var pruned = PruneCore(merged, minTs);
+        var pruned = Prune(merged, minTs);
         Save(pruned, accountId, teamScope, directory);
         return new UsageEventsSyncResult(pruned, fetched.events.Count, fetched.totalCount, fetched.truncated);
     }

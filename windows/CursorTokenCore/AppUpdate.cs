@@ -91,23 +91,14 @@ public static class AppUpdate
     public static bool ShouldFallbackFromApi(int statusCode) =>
         RustCore.Bool("should_fallback_from_api", new { status_code = statusCode });
 
-    static bool ShouldFallbackFromApiCore(int statusCode) =>
-        statusCode is 401 or 403 or 404 or 429 or >= 500;
-
     public static string PlatformAssetName =>
         OperatingSystem.IsWindows() ? WindowsAssetName : MacosAssetName;
 
     public static bool IsWindowsLightAssetName(string? name) =>
         RustCore.Bool("is_windows_light_asset_name", new { name = name ?? "" });
 
-    static bool IsWindowsLightAssetNameCore(string? name) =>
-        (name ?? "").Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase);
-
     public static string PreferredWindowsAssetName(bool preferLight) =>
         RustCore.String("preferred_windows_asset_name", new { prefer_light = preferLight });
-
-    static string PreferredWindowsAssetNameCore(bool preferLight) =>
-        preferLight ? WindowsLightAssetName : WindowsAssetName;
 
     public static long MaxBytesForAsset(string? name) =>
         IsWindowsLightAssetName(name) ? MaxLightZipBytes : MaxZipBytes;
@@ -194,53 +185,14 @@ public static class AppUpdate
     public static string NormalizeSha(string? raw) =>
         RustCore.String("normalize_sha", new { input = raw ?? "" });
 
-    internal static string NormalizeShaCore(string? raw)
-    {
-        var s = (raw ?? "").Trim().ToLowerInvariant();
-        if (s.StartsWith("sha-", StringComparison.Ordinal)) s = s[4..];
-        if (s.Length is < 7 or > 40) return "";
-        foreach (var c in s)
-        {
-            var hex = c is (>= '0' and <= '9') or (>= 'a' and <= 'f');
-            if (!hex) return "";
-        }
-        return s;
-    }
-
     public static string ExtractSha(string? text) =>
         RustCore.String("extract_sha", new { text = text ?? "" });
-
-    internal static string ExtractShaCore(string? text)
-    {
-        var raw = text ?? "";
-        var full = Regex.Match(raw, @"(?i)\b([0-9a-f]{40})\b");
-        if (full.Success) return NormalizeShaCore(full.Groups[1].Value);
-        var shortSha = Regex.Match(raw, @"(?i)(?:commit/|`)([0-9a-f]{7,40})(?:`|\b)");
-        return shortSha.Success ? NormalizeShaCore(shortSha.Groups[1].Value) : "";
-    }
 
     public static bool SameSha(string? left, string? right) =>
         RustCore.Bool("same_sha", new { left = left ?? "", right = right ?? "" });
 
-    internal static bool SameShaCore(string? left, string? right)
-    {
-        var a = NormalizeShaCore(left);
-        var b = NormalizeShaCore(right);
-        if (a.Length == 0 || b.Length == 0) return false;
-        var min = Math.Min(a.Length, b.Length);
-        if (min < 7) return a == b;
-        return a.StartsWith(b, StringComparison.Ordinal) || b.StartsWith(a, StringComparison.Ordinal);
-    }
-
     public static string ShaFromInformationalVersion(string? informational) =>
         RustCore.String("sha_from_informational_version", new { input = informational ?? "" });
-
-    internal static string ShaFromInformationalVersionCore(string? informational)
-    {
-        var info = informational ?? "";
-        var plus = info.LastIndexOf('+');
-        return plus >= 0 ? NormalizeShaCore(info[(plus + 1)..]) : "";
-    }
 
     public static string VersionFromInformational(string? informational)
     {
@@ -248,54 +200,25 @@ public static class AppUpdate
         if (info.Length == 0) return "";
         var plus = info.IndexOf('+');
         if (plus >= 0) info = info[..plus];
-        return NormalizeProductVersionCore(info);
+        return NormalizeProductVersion(info);
     }
 
     public static string NormalizeProductVersion(string? raw) =>
         RustCore.String("normalize_product_version", new { input = raw ?? "" });
-
-    internal static string NormalizeProductVersionCore(string? raw)
-    {
-        var value = (raw ?? "").Trim();
-        if (value.StartsWith('v') || value.StartsWith('V')) value = value[1..];
-        var match = Regex.Match(value, @"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?");
-        return match.Success ? match.Value : "";
-    }
 
     public static string ExtractProductVersion(string? text)
     {
         var raw = text ?? "";
         var tagged = Regex.Match(raw, @"(?i)\bv?(\d+\.\d+\.\d+)\b");
         if (tagged.Success) return tagged.Groups[1].Value;
-        return NormalizeProductVersionCore(raw);
+        return NormalizeProductVersion(raw);
     }
 
     public static string ProductVersionFromRelease(string? tag, string? body = null) =>
         RustCore.String("product_version_from_release", new { tag = tag ?? "", body = body ?? "" });
 
-    internal static string ProductVersionFromReleaseCore(string? tag, string? body = null)
-    {
-        var fromTag = NormalizeProductVersionCore(tag);
-        if (fromTag.Length > 0) return fromTag;
-        var raw = body ?? "";
-        var labeled = Regex.Match(raw, @"(?i)(?:\*\*)?版本(?:\*\*)?\s*[:：]\s*`?v?(\d+\.\d+\.\d+)");
-        if (labeled.Success) return labeled.Groups[1].Value;
-        return ExtractProductVersion(raw);
-    }
-
     public static int CompareProductVersions(string? left, string? right) =>
         RustCore.Call("compare_product_versions", new { left = left ?? "", right = right ?? "" }).GetInt32();
-
-    internal static int CompareProductVersionsCore(string? left, string? right)
-    {
-        if (!TryParseProductVersion(left, out var a) || !TryParseProductVersion(right, out var b))
-            return 0;
-        var cmp = a[0].CompareTo(b[0]);
-        if (cmp != 0) return cmp;
-        cmp = a[1].CompareTo(b[1]);
-        if (cmp != 0) return cmp;
-        return a[2].CompareTo(b[2]);
-    }
 
     public static bool TryParseProductVersion(string? raw, out int[] parts)
     {
@@ -358,51 +281,11 @@ public static class AppUpdate
     public static bool IsAllowedDownloadUrl(string? url) =>
         RustCore.Bool("is_allowed_download_url", new { url = url ?? "" });
 
-    internal static bool IsAllowedDownloadUrlCore(string? url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
-        var host = uri.Host.Trim().ToLowerInvariant();
-        return host == "github.com"
-            || host.EndsWith(".github.com", StringComparison.Ordinal)
-            || host == "githubusercontent.com"
-            || host.EndsWith(".githubusercontent.com", StringComparison.Ordinal);
-    }
-
     public static bool LooksPackagedWindows(string? processPath) =>
         RustCore.Bool("looks_packaged_windows", new { path = processPath ?? "" });
 
-    internal static bool LooksPackagedWindowsCore(string? processPath)
-    {
-        var path = (processPath ?? "").Trim();
-        if (path.Length == 0) return false;
-        var normalized = path.Replace('/', '\\');
-        var slash = normalized.LastIndexOf('\\');
-        var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
-        if (!IsOurWindowsExe(name)) return false;
-        var lower = normalized.ToLowerInvariant();
-        if (lower.Contains("\\bin\\", StringComparison.Ordinal)) return false;
-        if (lower.Contains("\\obj\\", StringComparison.Ordinal)) return false;
-        if (lower.Contains("\\.build\\", StringComparison.Ordinal)) return false;
-        return true;
-    }
-
     public static bool LooksPackagedMacos(string? bundleOrExePath) =>
         RustCore.Bool("looks_packaged_macos", new { path = bundleOrExePath ?? "" });
-
-    internal static bool LooksPackagedMacosCore(string? bundleOrExePath)
-    {
-        var path = (bundleOrExePath ?? "").Trim().Replace('\\', '/');
-        if (path.Length == 0) return false;
-        var lower = path.ToLowerInvariant();
-        if (lower.Contains("/.build/") || lower.Contains("/deriveddata/")) return false;
-        if (lower.EndsWith(".app", StringComparison.Ordinal) || lower.Contains(".app/contents/", StringComparison.Ordinal))
-        {
-            var app = AppBundlePath(path);
-            return IsOurMacApp(Path.GetFileName(app));
-        }
-        return false;
-    }
 
     public static string AppBundlePath(string path)
     {
@@ -678,14 +561,6 @@ public static class AppUpdate
 
     public static bool PendingInstallFailed(string currentSha, RememberedInstall? pending) =>
         RustCore.Bool("pending_install_failed", new { current_sha = currentSha ?? "", pending = pending is { } item ? new { sha = item.Sha, asset_id = item.AssetId } : null });
-
-    static bool PendingInstallFailedCore(string currentSha, RememberedInstall? pending)
-    {
-        if (pending is null) return false;
-        var current = NormalizeSha(currentSha);
-        if (current.Length == 0) return false;
-        return !SameSha(current, pending.Value.Sha);
-    }
 
     static UpdateDecision Available(AppRelease release, AppReleaseAsset asset) =>
         new()

@@ -134,19 +134,6 @@ public static class AccountSync
     public static string NewerIso(string? left, string? right) =>
         RustCore.String("newer_iso", new { left = left ?? "", right = right ?? "" });
 
-    internal static int CompareIsoCore(string? left, string? right)
-    {
-        var a = ParseIso(left);
-        var b = ParseIso(right);
-        if (a is null && b is null) return 0;
-        if (a is null) return -1;
-        if (b is null) return 1;
-        return a.Value.CompareTo(b.Value);
-    }
-
-    internal static string NewerIsoCore(string? left, string? right) =>
-        CompareIsoCore(left, right) >= 0 ? left ?? "" : right ?? "";
-
     public static string ResolveSyncPath(string path)
     {
         var raw = (path ?? "").Trim();
@@ -602,56 +589,6 @@ public static class AccountSync
         return snap;
     }
 
-    static SyncSnapshot MergeSnapshotsCore(SyncSnapshot local, SyncSnapshot remote)
-    {
-        var tombstones = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var row in SanitizeDeleted(local.Deleted).Concat(SanitizeDeleted(remote.Deleted)))
-        {
-            if (!tombstones.TryGetValue(row.Id, out var prev) || CompareIso(row.DeletedAt, prev) >= 0)
-                tombstones[row.Id] = row.DeletedAt;
-        }
-
-        var chosen = new Dictionary<string, SyncAccount>(StringComparer.Ordinal);
-        foreach (var src in local.Accounts.Concat(remote.Accounts))
-        {
-            var acc = SnapshotAccount(src);
-            if (acc.Id.Length == 0 || acc.Token.Length == 0) continue;
-            if (tombstones.TryGetValue(acc.Id, out var tomb) && CompareIso(tomb, acc.SyncUpdatedAt) >= 0)
-                continue;
-            if (!chosen.TryGetValue(acc.Id, out var prev))
-            {
-                chosen[acc.Id] = acc;
-                continue;
-            }
-            chosen[acc.Id] = CombineAccounts(prev, acc);
-        }
-
-        foreach (var id in tombstones.Keys.ToList())
-            if (chosen.ContainsKey(id)) tombstones.Remove(id);
-
-        var localActiveAt = string.IsNullOrWhiteSpace(local.ActiveAccountUpdatedAt) ? local.UpdatedAt : local.ActiveAccountUpdatedAt;
-        var remoteActiveAt = string.IsNullOrWhiteSpace(remote.ActiveAccountUpdatedAt) ? remote.UpdatedAt : remote.ActiveAccountUpdatedAt;
-        var active = CompareIso(remoteActiveAt, localActiveAt) > 0 ? remote.ActiveAccountId : local.ActiveAccountId;
-        var activeAt = CompareIso(remoteActiveAt, localActiveAt) > 0 ? remoteActiveAt : localActiveAt;
-        var settings = MergeSettings(local.Settings, remote.Settings, local.UpdatedAt, remote.UpdatedAt);
-        if (!chosen.ContainsKey(active ?? ""))
-            active = chosen.Keys.OrderBy(x => x, StringComparer.Ordinal).FirstOrDefault() ?? "";
-
-        return new SyncSnapshot
-        {
-            Version = 1,
-            UpdatedAt = NewerIso(local.UpdatedAt, remote.UpdatedAt),
-            DeviceId = string.IsNullOrEmpty(local.DeviceId) ? remote.DeviceId : local.DeviceId,
-            ActiveAccountId = active ?? "",
-            ActiveAccountUpdatedAt = activeAt ?? "",
-            Accounts = chosen.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => kv.Value).ToList(),
-            Deleted = tombstones.OrderBy(kv => kv.Key, StringComparer.Ordinal)
-                .Select(kv => new DeletedAccount { Id = kv.Key, DeletedAt = kv.Value }).ToList(),
-            Settings = settings,
-            Usage = MergeUsage(local.Usage, remote.Usage, chosen.Keys.ToHashSet(StringComparer.Ordinal)),
-        };
-    }
-
     public static bool ApplySnapshotToConfig(AppConfig cfg, SyncSnapshot snap)
     {
         string Before() => string.Join("|", cfg.Accounts.Select(a =>
@@ -917,17 +854,8 @@ public static class AccountSync
     public static string FormatTrimNote(int dropped) =>
         RustCore.String("format_trim_note", new { dropped });
 
-    static string FormatTrimNoteCore(int dropped)
-    {
-        if (dropped <= 0) return "";
-        return $"用量明细因体积限制裁掉了 {dropped} 条最旧记录";
-    }
-
     public static bool IsTrimNote(string? text) =>
         RustCore.Call("is_trim_note", new { text = text ?? "" }).GetBoolean();
-
-    static bool IsTrimNoteCore(string? text) =>
-        !string.IsNullOrWhiteSpace(text) && text.Contains("用量明细因体积限制", StringComparison.Ordinal);
 
     public static string TrimNote(SyncSnapshot original, int budget = SyncPlaintextBudget)
     {
@@ -937,15 +865,6 @@ public static class AccountSync
 
     public static string AppendTrimNote(string message, string? note) =>
         RustCore.String("append_trim_note", new { message = message ?? "", note = note ?? "" });
-
-    static string AppendTrimNoteCore(string message, string? note)
-    {
-        var text = (message ?? "").Trim();
-        var extra = (note ?? "").Trim();
-        if (extra.Length == 0) return text;
-        if (text.Length == 0) return extra;
-        return text + "；" + extra;
-    }
 
     public static SyncSnapshot TrimSnapshotForUpload(SyncSnapshot snap, int budget = SyncPlaintextBudget)
     {
