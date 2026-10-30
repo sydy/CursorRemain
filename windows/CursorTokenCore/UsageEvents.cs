@@ -408,14 +408,34 @@ public static partial class UsageEvents
 
     public static double? CompareBestPerMillion(IEnumerable<AccountCompareRow> rows)
     {
+        var result = RustCore.Call("compare_best_per_million", new { rows = rows.Select(CompareMetricJson) });
+        return result.ValueKind == JsonValueKind.Number ? result.GetDouble() : null;
+    }
+
+    static object CompareMetricJson(AccountCompareRow row) => new
+    {
+        plan_cny = row.PlanCny,
+        window_plan_cny = row.WindowPlanCny,
+        cny_per_million = row.CnyPerMillion,
+        window_source = row.WindowSource,
+    };
+
+    static double? CompareBestPerMillionCore(IEnumerable<AccountCompareRow> rows)
+    {
         var values = rows.Where(CompareBestEligible).Select(r => r.CnyPerMillion!.Value).ToList();
         return values.Count == 0 ? null : values.Min();
     }
 
     public static bool CompareWindowsMixed(IEnumerable<AccountCompareRow> rows) =>
+        RustCore.Bool("compare_windows_mixed", new { rows = rows.Select(CompareMetricJson) });
+
+    static bool CompareWindowsMixedCore(IEnumerable<AccountCompareRow> rows) =>
         rows.Where(CompareBestEligible).Select(r => r.WindowSource).Distinct().Count() > 1;
 
-    public static string CompareRowNote(AccountCompareRow row, bool hasToken = true, string lastError = "")
+    public static string CompareRowNote(AccountCompareRow row, bool hasToken = true, string lastError = "") =>
+        RustCore.String("compare_row_note", new { plan_cny = row.PlanCny, window_plan_cny = row.WindowPlanCny, has_token = hasToken, last_error = lastError ?? "" });
+
+    static string CompareRowNoteCore(AccountCompareRow row, bool hasToken = true, string lastError = "")
     {
         var error = (lastError ?? "").Trim();
         if (error.Contains("解密")) return "Token 解不开";

@@ -908,7 +908,10 @@ public static class AccountSync
         return n;
     }
 
-    public static string FormatTrimNote(int dropped)
+    public static string FormatTrimNote(int dropped) =>
+        RustCore.String("format_trim_note", new { dropped });
+
+    static string FormatTrimNoteCore(int dropped)
     {
         if (dropped <= 0) return "";
         return $"用量明细因体积限制裁掉了 {dropped} 条最旧记录";
@@ -926,7 +929,10 @@ public static class AccountSync
         return FormatTrimNote(Math.Max(0, UsageRecordCount(original) - UsageRecordCount(trimmed)));
     }
 
-    public static string AppendTrimNote(string message, string? note)
+    public static string AppendTrimNote(string message, string? note) =>
+        RustCore.String("append_trim_note", new { message = message ?? "", note = note ?? "" });
+
+    static string AppendTrimNoteCore(string message, string? note)
     {
         var text = (message ?? "").Trim();
         var extra = (note ?? "").Trim();

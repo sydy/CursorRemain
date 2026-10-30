@@ -202,6 +202,32 @@ pub fn window_label(source: &str) -> &'static str {
     match source { "cycle" => "本周期", "validity" => "有效期", _ => "近30天" }
 }
 
+pub fn compare_row_note(plan_cny: f64, window_plan_cny: f64, has_token: bool, last_error: &str) -> &'static str {
+    let error = last_error.trim();
+    if error.contains("解密") { return "Token 解不开"; }
+    if !has_token { return "未配置 Token"; }
+    if !error.is_empty() && (error.contains("过期") || error.contains("无效") || error.contains("未配置")) {
+        return if error.contains("未配置") { "未配置 Token" } else { "登录已过期" };
+    }
+    if plan_cny <= 0.0 && window_plan_cny <= 0.0 { "未填成本" } else { "" }
+}
+
+pub fn compare_best_per_million(rows: &[Value]) -> Option<f64> {
+    rows.iter().filter(|row| compare_best_eligible(row)).filter_map(|row| row["cny_per_million"].as_f64()).reduce(f64::min)
+}
+
+pub fn compare_windows_mixed(rows: &[Value]) -> bool {
+    let mut sources = std::collections::BTreeSet::new();
+    for row in rows.iter().filter(|row| compare_best_eligible(row)) {
+        sources.insert(row["window_source"].as_str().unwrap_or("").to_string());
+    }
+    sources.len() > 1
+}
+
+fn compare_best_eligible(row: &Value) -> bool {
+    row["cny_per_million"].as_f64().is_some() && (row["plan_cny"].as_f64().unwrap_or(0.0) > 0.0 || row["window_plan_cny"].as_f64().unwrap_or(0.0) > 0.0)
+}
+
 pub fn channel_label(channel: Option<&str>) -> &'static str {
     match sanitize_channel(channel) { "self_pay" => "自费", "third_party" => "第三方", _ => "未标" }
 }

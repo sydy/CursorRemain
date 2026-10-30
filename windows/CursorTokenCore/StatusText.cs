@@ -473,6 +473,9 @@ public static class StatusText
     }
 
     public static string FlyoutSettingsTitle(string? error) =>
+        RustCore.String("flyout_settings_title", new { error = error ?? "" });
+
+    static string FlyoutSettingsTitleCore(string? error) =>
         Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";
 
     public static string FormatAccountPlan(Account account) =>

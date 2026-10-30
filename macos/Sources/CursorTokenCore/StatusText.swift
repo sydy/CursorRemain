@@ -606,6 +606,10 @@ public enum StatusText {
     }
 
     public static func flyoutSettingsTitle(_ errorMessage: String?) -> String {
+        RustCore.string("flyout_settings_title", ["error": errorMessage ?? ""])
+    }
+
+    static func flyoutSettingsTitleCore(_ errorMessage: String?) -> String {
         Token.isAuthErrorMessage(errorMessage) ? "粘贴 Token" : "设置"
     }
 

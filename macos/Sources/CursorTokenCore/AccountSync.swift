@@ -941,6 +941,10 @@ public enum AccountSync {
     }
 
     public static func formatTrimNote(_ dropped: Int) -> String {
+        RustCore.string("format_trim_note", ["dropped": dropped])
+    }
+
+    static func formatTrimNoteCore(_ dropped: Int) -> String {
         dropped <= 0 ? "" : "用量明细因体积限制裁掉了 \(dropped) 条最旧记录"
     }
 
@@ -958,6 +962,10 @@ public enum AccountSync {
     }
 
     public static func appendTrimNote(_ message: String, _ note: String) -> String {
+        RustCore.string("append_trim_note", ["message": message, "note": note])
+    }
+
+    static func appendTrimNoteCore(_ message: String, _ note: String) -> String {
         let text = message.trimmingCharacters(in: .whitespaces)
         let extra = note.trimmingCharacters(in: .whitespaces)
         if extra.isEmpty { return text }

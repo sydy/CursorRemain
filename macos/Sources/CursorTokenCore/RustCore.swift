@@ -40,6 +40,14 @@ enum RustCore {
         return 0
     }
 
+    static func doubleValue(_ op: String, _ input: Any) -> Double? {
+        let value = call(op, input)
+        if value is NSNull || value == nil { return nil }
+        if let number = value as? Double { return number }
+        if let number = value as? NSNumber { return number.doubleValue }
+        return nil
+    }
+
     static func bool(_ op: String, _ input: Any) -> Bool {
         call(op, input) as? Bool ?? false
     }

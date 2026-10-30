@@ -186,6 +186,20 @@ pub fn format_account_kind(kind: &str) -> &'static str {
     if matches!(key.as_str(), "temporary" | "temp" | "short") { "临时" } else { "长期" }
 }
 
+pub fn format_trim_note(dropped: i64) -> String {
+    if dropped <= 0 { String::new() } else { format!("用量明细因体积限制裁掉了 {dropped} 条最旧记录") }
+}
+
+pub fn append_trim_note(message: &str, note: &str) -> String {
+    let text = message.trim();
+    let extra = note.trim();
+    if extra.is_empty() { text.to_string() } else if text.is_empty() { extra.to_string() } else { format!("{text}；{extra}") }
+}
+
+pub fn flyout_settings_title(error: &str) -> &'static str {
+    if is_auth_error_message(error) { "粘贴 Token" } else { "设置" }
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };

@@ -615,15 +615,31 @@ public enum UsageEvents {
     }
 
     public static func compareBestPerMillion(_ rows: [AccountCompareRow]) -> Double? {
+        RustCore.doubleValue("compare_best_per_million", ["rows": rows.map(compareMetricJSON)])
+    }
+
+    static func compareMetricJSON(_ row: AccountCompareRow) -> [String: Any] {
+        ["plan_cny": row.planCny, "window_plan_cny": row.windowPlanCny, "cny_per_million": row.cnyPerMillion as Any, "window_source": row.windowSource]
+    }
+
+    static func compareBestPerMillionCore(_ rows: [AccountCompareRow]) -> Double? {
         let values = rows.filter(compareBestEligible).compactMap(\.cnyPerMillion)
         return values.min()
     }
 
     public static func compareWindowsMixed(_ rows: [AccountCompareRow]) -> Bool {
+        RustCore.bool("compare_windows_mixed", ["rows": rows.map(compareMetricJSON)])
+    }
+
+    static func compareWindowsMixedCore(_ rows: [AccountCompareRow]) -> Bool {
         Set(rows.filter(compareBestEligible).map(\.windowSource)).count > 1
     }
 
     public static func compareRowNote(_ row: AccountCompareRow, hasToken: Bool = true, lastError: String = "") -> String {
+        RustCore.string("compare_row_note", ["plan_cny": row.planCny, "window_plan_cny": row.windowPlanCny, "has_token": hasToken, "last_error": lastError])
+    }
+
+    static func compareRowNoteCore(_ row: AccountCompareRow, hasToken: Bool = true, lastError: String = "") -> String {
         let error = lastError.trimmingCharacters(in: .whitespaces)
         if error.contains("解密") { return "Token 解不开" }
         if !hasToken { return "未配置 Token" }
