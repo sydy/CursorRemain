@@ -53,6 +53,18 @@ public static class CursorAccountPaste
 
     public static List<AccountPasteItem> Parse(string? text)
     {
+        return RustCore.Call("parse_account_paste", new { text = text ?? "" }).EnumerateArray().Select(row => new AccountPasteItem
+        {
+            Kind = row.GetProperty("kind").GetString() ?? "",
+            Token = row.GetProperty("token").GetString() ?? "",
+            Email = row.GetProperty("email").GetString() ?? "",
+            Password = row.GetProperty("password").GetString() ?? "",
+            Message = row.GetProperty("message").GetString() ?? "",
+        }).ToList();
+    }
+
+    static List<AccountPasteItem> ParseCore(string? text)
+    {
         var raw = (text ?? "").Replace("\r\n", "\n").Replace('\r', '\n');
         var items = new List<AccountPasteItem>();
         var pendingEmail = "";

@@ -45,6 +45,13 @@ public enum CursorAccountPaste {
     }
 
     public static func parse(_ text: String?) -> [AccountPasteItem] {
+        let rows = RustCore.call("parse_account_paste", ["text": text ?? ""]) as? [[String: Any]] ?? []
+        return rows.map { row in
+            AccountPasteItem(kind: row["kind"] as? String ?? "", token: row["token"] as? String ?? "", email: row["email"] as? String ?? "", password: row["password"] as? String ?? "", message: row["message"] as? String ?? "")
+        }
+    }
+
+    static func parseCore(_ text: String?) -> [AccountPasteItem] {
         let raw = (text ?? "").replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         var items: [AccountPasteItem] = []
         var pendingEmail = ""
