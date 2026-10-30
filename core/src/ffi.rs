@@ -79,6 +79,7 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "format_account_kind" => json!(status::format_account_kind(text(input, "kind"))),
         "format_trim_note" => json!(status::format_trim_note(input["dropped"].as_i64().unwrap_or(0))),
         "append_trim_note" => json!(status::append_trim_note(text(input, "message"), text(input, "note"))),
+        "daily_avg_burn" => json!(status::daily_avg_burn(input["points"].as_array().map(Vec::as_slice).unwrap_or(&[]))),
         "flyout_settings_title" => json!(status::flyout_settings_title(text(input, "error"))),
         "compare_row_note" => json!(events::compare_row_note(input["plan_cny"].as_f64().unwrap_or(0.0), input["window_plan_cny"].as_f64().unwrap_or(0.0), input["has_token"].as_bool().unwrap_or(true), text(input, "last_error"))),
         "compare_best_per_million" => json!(events::compare_best_per_million(input["rows"].as_array().map(Vec::as_slice).unwrap_or(&[]))),

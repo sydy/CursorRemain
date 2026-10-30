@@ -159,6 +159,10 @@ public enum UsageHistory {
     }
 
     public static func dailyAvgBurn(points: [HistoryPoint]) -> Double? {
+        RustCore.doubleValue("daily_avg_burn", ["points": points.map { ["ts": $0.ts, "remaining": $0.remaining] }])
+    }
+
+    static func dailyAvgBurnCore(points: [HistoryPoint]) -> Double? {
         guard points.count >= 2 else { return nil }
         let first = points[0]
         let last = points[points.count - 1]

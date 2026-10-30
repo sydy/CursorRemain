@@ -127,6 +127,12 @@ public static class UsageHistory
 
     public static double? DailyAvgBurn(IReadOnlyList<HistoryPoint> points)
     {
+        var result = RustCore.Call("daily_avg_burn", new { points = points.Select(p => new { ts = p.Ts, remaining = p.Remaining }) });
+        return result.ValueKind == JsonValueKind.Number ? result.GetDouble() : null;
+    }
+
+    static double? DailyAvgBurnCore(IReadOnlyList<HistoryPoint> points)
+    {
         if (points.Count < 2) return null;
         var first = points[0];
         var last = points[^1];

@@ -200,6 +200,16 @@ pub fn flyout_settings_title(error: &str) -> &'static str {
     if is_auth_error_message(error) { "粘贴 Token" } else { "设置" }
 }
 
+pub fn daily_avg_burn(points: &[Value]) -> Option<f64> {
+    if points.len() < 2 { return None; }
+    let first = points.first()?;
+    let last = points.last()?;
+    let elapsed = (last["ts"].as_f64()? - first["ts"].as_f64()?) / 86_400.0;
+    if elapsed < 0.04 { return None; }
+    let delta = first["remaining"].as_f64()? - last["remaining"].as_f64()?;
+    Some(if delta <= 0.0 { 0.0 } else { crate::numbers::round2(delta / elapsed) })
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };
