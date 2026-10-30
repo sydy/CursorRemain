@@ -89,15 +89,24 @@ public static class AppUpdate
     }
 
     public static bool ShouldFallbackFromApi(int statusCode) =>
+        RustCore.Bool("should_fallback_from_api", new { status_code = statusCode });
+
+    static bool ShouldFallbackFromApiCore(int statusCode) =>
         statusCode is 401 or 403 or 404 or 429 or >= 500;
 
     public static string PlatformAssetName =>
         OperatingSystem.IsWindows() ? WindowsAssetName : MacosAssetName;
 
     public static bool IsWindowsLightAssetName(string? name) =>
+        RustCore.Bool("is_windows_light_asset_name", new { name = name ?? "" });
+
+    static bool IsWindowsLightAssetNameCore(string? name) =>
         (name ?? "").Equals(WindowsLightAssetName, StringComparison.OrdinalIgnoreCase);
 
     public static string PreferredWindowsAssetName(bool preferLight) =>
+        RustCore.String("preferred_windows_asset_name", new { prefer_light = preferLight });
+
+    static string PreferredWindowsAssetNameCore(bool preferLight) =>
         preferLight ? WindowsLightAssetName : WindowsAssetName;
 
     public static long MaxBytesForAsset(string? name) =>
@@ -667,7 +676,10 @@ public static class AppUpdate
         return SameSha(current, pending.Value.Sha) ? pending : null;
     }
 
-    public static bool PendingInstallFailed(string currentSha, RememberedInstall? pending)
+    public static bool PendingInstallFailed(string currentSha, RememberedInstall? pending) =>
+        RustCore.Bool("pending_install_failed", new { current_sha = currentSha ?? "", pending = pending is { } item ? new { sha = item.Sha, asset_id = item.AssetId } : null });
+
+    static bool PendingInstallFailedCore(string currentSha, RememberedInstall? pending)
     {
         if (pending is null) return false;
         var current = NormalizeSha(currentSha);

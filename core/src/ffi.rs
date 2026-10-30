@@ -152,6 +152,7 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "is_allowed_download_url" => json!(update::is_allowed_download_url(input["url"].as_str())),
         "looks_packaged_windows" => json!(update::looks_packaged_windows(input["path"].as_str())),
         "looks_packaged_macos" => json!(update::looks_packaged_macos(input["path"].as_str())),
+        "is_windows_light_asset_name" => json!(update::is_windows_light_asset_name(input["name"].as_str())),
         "parse_release" => match input.get("json").filter(|value| !value.is_null()) {
             Some(raw) => match update::parse_release(raw) {
                 Ok(release) => update::release_to_json(&release),

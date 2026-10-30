@@ -116,6 +116,10 @@ public enum AppUpdate {
     }
 
     public static func shouldFallbackFromApi(_ statusCode: Int) -> Bool {
+        RustCore.bool("should_fallback_from_api", ["status_code": statusCode])
+    }
+
+    static func shouldFallbackFromApiCore(_ statusCode: Int) -> Bool {
         statusCode == 401 || statusCode == 403 || statusCode == 404 || statusCode == 429 || statusCode >= 500
     }
 
@@ -128,10 +132,18 @@ public enum AppUpdate {
     }
 
     public static func isWindowsLightAssetName(_ name: String?) -> Bool {
+        RustCore.bool("is_windows_light_asset_name", ["name": name ?? ""])
+    }
+
+    static func isWindowsLightAssetNameCore(_ name: String?) -> Bool {
         (name ?? "").caseInsensitiveCompare(windowsLightAssetName) == .orderedSame
     }
 
     public static func preferredWindowsAssetName(preferLight: Bool) -> String {
+        RustCore.string("preferred_windows_asset_name", ["prefer_light": preferLight])
+    }
+
+    static func preferredWindowsAssetNameCore(preferLight: Bool) -> String {
         preferLight ? windowsLightAssetName : windowsAssetName
     }
 
@@ -605,6 +617,10 @@ public enum AppUpdate {
     }
 
     public static func pendingInstallFailed(currentSha: String, pending: RememberedInstall?) -> Bool {
+        RustCore.bool("pending_install_failed", ["current_sha": currentSha, "pending": pending.map { ["sha": $0.sha, "asset_id": $0.assetId] } as Any])
+    }
+
+    static func pendingInstallFailedCore(currentSha: String, pending: RememberedInstall?) -> Bool {
         guard let pending else { return false }
         let current = normalizeShaCore(currentSha)
         if current.isEmpty { return false }
