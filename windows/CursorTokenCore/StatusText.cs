@@ -370,7 +370,10 @@ public static class StatusText
         return page > 1 ? text + $"第 {page} 页" : text;
     }
 
-    public static string FormatCloudSyncNotify(bool ok, string? message)
+    public static string FormatCloudSyncNotify(bool ok, string? message) =>
+        RustCore.String("format_cloud_sync_notify", new { ok, message = message ?? "" });
+
+    static string FormatCloudSyncNotifyCore(bool ok, string? message)
     {
         if (ok) return "";
         var text = (message ?? "").Trim();
@@ -434,7 +437,10 @@ public static class StatusText
         return remaining is { } pct ? $"{name}  {pct:0}%" : name;
     }
 
-    public static string FormatReportCacheStatus(int count, string? accountLabel = null)
+    public static string FormatReportCacheStatus(int count, string? accountLabel = null) =>
+        RustCore.String("format_report_cache_status", new { count, label = accountLabel ?? "" });
+
+    static string FormatReportCacheStatusCore(int count, string? accountLabel = null)
     {
         var prefix = string.IsNullOrWhiteSpace(accountLabel) ? "" : "当前：" + accountLabel.Trim() + " · ";
         return count > 0
@@ -442,7 +448,10 @@ public static class StatusText
             : prefix + "本地还没有明细，正在同步…";
     }
 
-    public static string FormatReportSyncError(string? error)
+    public static string FormatReportSyncError(string? error) =>
+        RustCore.String("format_report_sync_error", new { error = error ?? "" });
+
+    static string FormatReportSyncErrorCore(string? error)
     {
         var text = (error ?? "").Trim();
         if (text.Length == 0) return "同步失败";
@@ -451,7 +460,10 @@ public static class StatusText
         return "同步失败：" + ShortError(text, 80);
     }
 
-    public static string FormatCloudDecryptNote(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed)
+    public static string FormatCloudDecryptNote(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed) =>
+        RustCore.String("format_cloud_decrypt_note", new { decrypt_error = decryptError, sync_secret_failed = syncSecretFailed, cloud_access_failed = cloudAccessFailed });
+
+    static string FormatCloudDecryptNoteCore(bool decryptError, bool syncSecretFailed, bool cloudAccessFailed)
     {
         if (syncSecretFailed || cloudAccessFailed)
             return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。";
@@ -463,13 +475,19 @@ public static class StatusText
     public static string FlyoutSettingsTitle(string? error) =>
         Token.IsAuthErrorMessage(error) ? "粘贴 Token" : "设置";
 
-    public static string FormatAccountPlan(Account account)
+    public static string FormatAccountPlan(Account account) =>
+        RustCore.String("format_account_plan", new { membership = account.MembershipType ?? "" });
+
+    static string FormatAccountPlanCore(Account account)
     {
         var plan = (account.MembershipType ?? "").Trim();
         return plan.Length == 0 ? "—" : plan;
     }
 
-    public static string FormatAccountCheckStatus(Account account)
+    public static string FormatAccountCheckStatus(Account account) =>
+        RustCore.String("format_account_check_status", new { decrypt_failed = account.TokenDecryptFailed, error = account.LastError ?? "", remaining = account.LastRemaining, has_token = !string.IsNullOrWhiteSpace(account.Token) });
+
+    static string FormatAccountCheckStatusCore(Account account)
     {
         if (account.TokenDecryptFailed) return "无法解密";
         var err = (account.LastError ?? "").Trim();
@@ -528,6 +546,9 @@ public static class StatusText
     }
 
     public static string FormatAccountKind(Account account) =>
+        RustCore.String("format_account_kind", new { kind = account.AccountKind ?? "" });
+
+    static string FormatAccountKindCore(Account account) =>
         AccountValidity.IsTemporary(account) ? "临时" : "长期";
 
     public static string FormatSyncStatus(string lastAt, string lastError)

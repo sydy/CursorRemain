@@ -915,6 +915,9 @@ public static class AccountSync
     }
 
     public static bool IsTrimNote(string? text) =>
+        RustCore.Call("is_trim_note", new { text = text ?? "" }).GetBoolean();
+
+    static bool IsTrimNoteCore(string? text) =>
         !string.IsNullOrWhiteSpace(text) && text.Contains("用量明细因体积限制", StringComparison.Ordinal);
 
     public static string TrimNote(SyncSnapshot original, int budget = SyncPlaintextBudget)

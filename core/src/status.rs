@@ -129,6 +129,63 @@ pub fn format_account_menu_title(label: &str, remaining: Option<f64>) -> String 
     match remaining { Some(pct) => format!("{name}  {:.0}%", pct), None => name.to_string() }
 }
 
+pub fn is_trim_note(text: &str) -> bool { !text.trim().is_empty() && text.contains("用量明细因体积限制") }
+
+pub fn format_cloud_sync_notify(ok: bool, message: &str) -> String {
+    let text = message.trim();
+    if ok || text.is_empty() || is_trim_note(text) { String::new() } else { text.to_string() }
+}
+
+pub fn format_report_cache_status(count: i64, label: &str) -> String {
+    let prefix = if label.trim().is_empty() { String::new() } else { format!("当前：{} · ", label.trim()) };
+    if count > 0 { format!("{prefix}本地 {count} 条，正在刷新…") } else { format!("{prefix}本地还没有明细，正在同步…") }
+}
+
+pub fn format_report_sync_error(error: &str) -> String {
+    let text = error.trim();
+    if text.is_empty() { return "同步失败".to_string(); }
+    if is_auth_error_message(text) {
+        return if text.contains("未配置") { "未配置 Token，请先在设置里导入账号".to_string() } else { "登录已过期，请到设置重新粘贴 Token".to_string() };
+    }
+    format!("同步失败：{}", short_error(Some(text), 80))
+}
+
+pub fn format_cloud_decrypt_note(decrypt_error: bool, sync_secret_failed: bool, cloud_access_failed: bool) -> &'static str {
+    if sync_secret_failed || cloud_access_failed { "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。" }
+    else if decrypt_error { "本机有账号 Token 解不开。请重新粘贴 Token。" }
+    else { "" }
+}
+
+pub fn format_account_plan(membership: &str) -> String {
+    let plan = membership.trim();
+    if plan.is_empty() { "—".to_string() } else { plan.to_string() }
+}
+
+pub fn format_account_check_status(decrypt_failed: bool, error: &str, remaining: Option<f64>, has_token: bool) -> String {
+    if decrypt_failed { return "无法解密".to_string(); }
+    let err = error.trim();
+    if !err.is_empty() {
+        if is_auth_error_message(err) { return "已失效".to_string(); }
+        if is_unreachable_status(err) { return "无法连接".to_string(); }
+        return short_error(Some(err), 16);
+    }
+    if let Some(remaining) = remaining { return format!("剩余 {remaining:.0}%"); }
+    if has_token { "未检查".to_string() } else { "未配置".to_string() }
+}
+
+fn is_unreachable_status(error: &str) -> bool {
+    let text = error.to_lowercase();
+    text.contains("网络错误") || text.contains("刷新失败") || text.contains("无法连接")
+        || text.contains("timed out") || text.contains("timeout") || text.contains("超时")
+        || text.contains("offline") || text.contains("not connected") || text.contains("网络连接")
+        || text.starts_with("http 429") || text.starts_with("http 408") || text.starts_with("http 5")
+}
+
+pub fn format_account_kind(kind: &str) -> &'static str {
+    let key = kind.trim().to_ascii_lowercase().replace(['-', ' '], "_");
+    if matches!(key.as_str(), "temporary" | "temp" | "short") { "临时" } else { "长期" }
+}
+
 pub fn status_pill_text(remaining: Option<f64>, error: bool) -> &'static str {
     if error { return "异常"; }
     let Some(remaining) = remaining else { return "等待刷新" };

@@ -945,6 +945,10 @@ public enum AccountSync {
     }
 
     public static func isTrimNote(_ text: String) -> Bool {
+        RustCore.bool("is_trim_note", ["text": text])
+    }
+
+    static func isTrimNoteCore(_ text: String) -> Bool {
         text.contains("用量明细因体积限制")
     }
 

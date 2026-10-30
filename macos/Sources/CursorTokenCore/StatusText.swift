@@ -484,6 +484,10 @@ public enum StatusText {
     }
 
     public static func formatCloudSyncNotify(ok: Bool, message: String) -> String {
+        RustCore.string("format_cloud_sync_notify", ["ok": ok, "message": message])
+    }
+
+    static func formatCloudSyncNotifyCore(ok: Bool, message: String) -> String {
         if ok { return "" }
         let text = message.trimmingCharacters(in: .whitespaces)
         if text.isEmpty || AccountSync.isTrimNote(text) { return "" }
@@ -565,12 +569,20 @@ public enum StatusText {
     }
 
     public static func formatReportCacheStatus(count: Int, accountLabel: String? = nil) -> String {
+        RustCore.string("format_report_cache_status", ["count": count, "label": accountLabel ?? ""])
+    }
+
+    static func formatReportCacheStatusCore(count: Int, accountLabel: String? = nil) -> String {
         let trimmed = (accountLabel ?? "").trimmingCharacters(in: .whitespaces)
         let prefix = trimmed.isEmpty ? "" : "当前：\(trimmed) · "
         return count > 0 ? "\(prefix)本地 \(count) 条，正在刷新…" : "\(prefix)本地还没有明细，正在同步…"
     }
 
     public static func formatReportSyncError(_ error: String?) -> String {
+        RustCore.string("format_report_sync_error", ["error": error ?? ""])
+    }
+
+    static func formatReportSyncErrorCore(_ error: String?) -> String {
         let text = (error ?? "").trimmingCharacters(in: .whitespaces)
         if text.isEmpty { return "同步失败" }
         if Token.isAuthErrorMessage(text) {
@@ -580,6 +592,10 @@ public enum StatusText {
     }
 
     public static func formatCloudDecryptNote(decryptError: Bool, syncSecretFailed: Bool, cloudAccessFailed: Bool) -> String {
+        RustCore.string("format_cloud_decrypt_note", ["decrypt_error": decryptError, "sync_secret_failed": syncSecretFailed, "cloud_access_failed": cloudAccessFailed])
+    }
+
+    static func formatCloudDecryptNoteCore(decryptError: Bool, syncSecretFailed: Bool, cloudAccessFailed: Bool) -> String {
         if syncSecretFailed || cloudAccessFailed {
             return "本机解不开云同步密钥。请退出后用当前密码重新登录，或导入备份。"
         }
@@ -594,11 +610,19 @@ public enum StatusText {
     }
 
     public static func formatAccountPlan(_ account: Account) -> String {
+        RustCore.string("format_account_plan", ["membership": account.membershipType])
+    }
+
+    static func formatAccountPlanCore(_ account: Account) -> String {
         let plan = account.membershipType.trimmingCharacters(in: .whitespaces)
         return plan.isEmpty ? "—" : plan
     }
 
     public static func formatAccountCheckStatus(_ account: Account) -> String {
+        RustCore.string("format_account_check_status", ["decrypt_failed": account.tokenDecryptFailed, "error": account.lastError, "remaining": account.lastRemaining as Any, "has_token": !account.token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty])
+    }
+
+    static func formatAccountCheckStatusCore(_ account: Account) -> String {
         if account.tokenDecryptFailed { return "无法解密" }
         let err = account.lastError.trimmingCharacters(in: .whitespaces)
         if !err.isEmpty {
@@ -657,6 +681,10 @@ public enum StatusText {
     }
 
     public static func formatAccountKind(_ account: Account) -> String {
+        RustCore.string("format_account_kind", ["kind": account.accountKind])
+    }
+
+    static func formatAccountKindCore(_ account: Account) -> String {
         AccountValidity.isTemporary(account) ? "临时" : "长期"
     }
 
