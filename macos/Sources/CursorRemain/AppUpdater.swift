@@ -15,7 +15,8 @@ enum AppUpdater {
     static func run(
         store: AppStore,
         manual: Bool,
-        confirmApply: ((String) -> Bool)? = nil
+        confirmApply: ((String) -> Bool)? = nil,
+        onProgress: ((String) -> Void)? = nil
     ) async -> String {
         if busy { return "正在检查更新…" }
         let cfg = store.config
@@ -48,7 +49,8 @@ enum AppUpdater {
             if manual, let confirmApply, !confirmApply(decision.message) {
                 return "已取消更新"
             }
-            let staged = try await downloadAndStage(asset)
+            let staged = try await downloadAndStage(asset, onProgress: onProgress)
+            onProgress?("正在解压并准备安装…")
             let stagedSha = stagedGitCommit(staged)
             if !AppUpdate.stagedBundleMatchesRelease(expectedSha: release.commitSha, stagedSha: stagedSha) {
                 let fail = "下载的安装包与发布版本不一致，已取消更新"
@@ -141,7 +143,7 @@ enum AppUpdater {
         return release
     }
 
-    private static func downloadAndStage(_ asset: AppReleaseAsset) async throws -> URL {
+    private static func downloadAndStage(_ asset: AppReleaseAsset, onProgress: ((String) -> Void)? = nil) async throws -> URL {
         guard AppUpdate.isAllowedDownloadURL(asset.url), let url = URL(string: asset.url) else {
             throw CursorAPIError("更新地址无效")
         }
@@ -152,19 +154,72 @@ enum AppUpdater {
         var req = URLRequest(url: url)
         req.setValue(AppUpdate.userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
-        let (temp, resp) = try await URLSession.shared.download(for: req)
+
+        let (asyncBytes, resp) = try await URLSession.shared.bytes(for: req)
         if let http = resp as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw CursorAPIError("下载失败 HTTP \(http.statusCode)")
         }
         if let final = resp.url, !AppUpdate.isAllowedDownloadURL(final.absoluteString) {
             throw CursorAPIError("更新地址无效")
         }
-        let size = (try? FileManager.default.attributesOfItem(atPath: temp.path)[.size] as? NSNumber)?.int64Value ?? 0
-        if size > AppUpdate.maxZipBytes { throw CursorAPIError("安装包过大，已取消更新") }
-        if FileManager.default.fileExists(atPath: zip.path) {
-            try FileManager.default.removeItem(at: zip)
+        let expectedLength = resp.expectedContentLength > 0 ? resp.expectedContentLength : nil
+        if let exp = expectedLength, exp > AppUpdate.maxZipBytes {
+            throw CursorAPIError("安装包过大，已取消更新")
         }
-        try FileManager.default.moveItem(at: temp, to: zip)
+
+        if FileManager.default.fileExists(atPath: zip.path) {
+            try? FileManager.default.removeItem(at: zip)
+        }
+        FileManager.default.createFile(atPath: zip.path, contents: nil)
+        guard let fileHandle = try? FileHandle(forWritingTo: zip) else {
+            throw CursorAPIError("无法创建下载文件")
+        }
+        defer { try? fileHandle.close() }
+
+        if let exp = expectedLength {
+            let totalMb = Double(exp) / (1024.0 * 1024.0)
+            onProgress?(String(format: "正在下载安装包 (0%% - 0.0 MB / %.1f MB)…", totalMb))
+        } else {
+            onProgress?("正在下载安装包…")
+        }
+
+        var downloaded: Int64 = 0
+        var lastReportTime = Date()
+        var lastReportBytes: Int64 = 0
+        var chunk = Data()
+        chunk.reserveCapacity(65536)
+
+        for try await byte in asyncBytes {
+            chunk.append(byte)
+            downloaded += 1
+            if downloaded > AppUpdate.maxZipBytes {
+                throw CursorAPIError("安装包过大，已取消更新")
+            }
+
+            if chunk.count >= 65536 {
+                try fileHandle.write(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+
+                let now = Date()
+                if onProgress != nil && (now.timeIntervalSince(lastReportTime) > 0.15 || (downloaded - lastReportBytes) > 1024 * 1024) {
+                    lastReportTime = now
+                    lastReportBytes = downloaded
+                    let downloadedMb = Double(downloaded) / (1024.0 * 1024.0)
+                    if let exp = expectedLength {
+                        let totalMb = Double(exp) / (1024.0 * 1024.0)
+                        let pct = min(100, max(0, Int(downloaded * 100 / exp)))
+                        onProgress?(String(format: "正在下载安装包 (%d%% - %.1f MB / %.1f MB)…", pct, downloadedMb, totalMb))
+                    } else {
+                        onProgress?(String(format: "正在下载安装包 (%.1f MB)…", downloadedMb))
+                    }
+                }
+            }
+        }
+        if !chunk.isEmpty {
+            try fileHandle.write(contentsOf: chunk)
+        }
+
+        onProgress?("下载完成，正在解压校验…")
         let extract = root.appendingPathComponent("extract", isDirectory: true)
         try FileManager.default.createDirectory(at: extract, withIntermediateDirectories: true)
         try run("/usr/bin/ditto", ["-x", "-k", zip.path, extract.path])

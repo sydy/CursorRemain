@@ -30,6 +30,7 @@ static class AppUpdater
         bool manual,
         Func<string, bool>? confirmApply,
         Action? restart,
+        Action<string>? onProgress = null,
         CancellationToken ct = default)
     {
         if (_busy) return "正在检查更新…";
@@ -68,7 +69,7 @@ static class AppUpdater
             string applied;
             try
             {
-                applied = await DownloadAndStage(asset, ct);
+                applied = await DownloadAndStage(asset, onProgress, ct);
             }
             catch (Exception ex) when (
                 preferLight
@@ -79,9 +80,10 @@ static class AppUpdater
                 var fallback = AppUpdate.FindPreferredAsset(release, AppUpdate.WindowsAssetName);
                 if (fallback is null || string.Equals(fallback.Url, asset.Url, StringComparison.OrdinalIgnoreCase))
                     throw;
-                applied = await DownloadAndStage(fallback, ct);
+                applied = await DownloadAndStage(fallback, onProgress, ct);
                 asset = fallback;
             }
+            onProgress?.Invoke("正在解压并准备安装…");
             if (!LaunchHelper(applied))
             {
                 var fail = "已下载更新，但无法启动安装脚本";
@@ -236,7 +238,7 @@ static class AppUpdater
     static string ShortError(Exception ex) =>
         ex is OperationCanceledException or TaskCanceledException ? "连接超时" : ex.Message;
 
-    static async Task<string> DownloadAndStage(AppReleaseAsset asset, CancellationToken ct)
+    static async Task<string> DownloadAndStage(AppReleaseAsset asset, Action<string>? onProgress, CancellationToken ct)
     {
         if (!AppUpdate.IsAllowedDownloadUrl(asset.Url))
             throw new InvalidOperationException("更新地址无效");
@@ -261,6 +263,12 @@ static class AppUpdater
             await using var output = File.Create(zip);
             var buffer = new byte[81920];
             long total = 0;
+            var sw = Stopwatch.StartNew();
+            long lastReportBytes = 0;
+            onProgress?.Invoke(length.HasValue && length.Value > 0
+                ? $"正在下载安装包 (0% - 0.0 MB / {length.Value / (1024.0 * 1024.0):F1} MB)…"
+                : "正在下载安装包…");
+
             while (true)
             {
                 var n = await input.ReadAsync(buffer, ct);
@@ -269,8 +277,26 @@ static class AppUpdater
                 if (total > AppUpdate.MaxZipBytes)
                     throw new InvalidOperationException("安装包过大，已取消更新");
                 await output.WriteAsync(buffer.AsMemory(0, n), ct);
+
+                if (onProgress is not null && (sw.ElapsedMilliseconds > 150 || (total - lastReportBytes) > 1024 * 1024))
+                {
+                    sw.Restart();
+                    lastReportBytes = total;
+                    var downloadedMb = total / (1024.0 * 1024.0);
+                    if (length.HasValue && length.Value > 0)
+                    {
+                        var totalMb = length.Value / (1024.0 * 1024.0);
+                        var pct = Math.Clamp((int)(total * 100 / length.Value), 0, 100);
+                        onProgress($"正在下载安装包 ({pct}% - {downloadedMb:F1} MB / {totalMb:F1} MB)…");
+                    }
+                    else
+                    {
+                        onProgress($"正在下载安装包 ({downloadedMb:F1} MB)…");
+                    }
+                }
             }
         }
+        onProgress?.Invoke("下载完成，正在解压校验…");
         var extract = Path.Combine(root, "extract");
         AppUpdate.ExtractZipSafe(zip, extract);
         return AppUpdate.FindExtractedWindowsExe(extract)

@@ -586,7 +586,11 @@ sealed partial class TrayContext : ApplicationContext
                 manual,
                 manual ? ConfirmUpdate : null,
                 Exit,
-                _cts.Token);
+                onProgress: progress =>
+                {
+                    OnUi(() => _settings?.SetUpdateStatus(progress));
+                },
+                ct: _cts.Token);
             try { _config = ConfigStore.Load(); }
             catch (Exception ex) { CrashLog.Write(ex); }
             OnUi(() =>

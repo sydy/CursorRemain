@@ -228,7 +228,16 @@ final class AppStore: ObservableObject {
         let confirm: ((String) -> Bool)? = manual
             ? { [weak self] message in self?.confirmUpdate(message) ?? false }
             : nil
-        let status = await AppUpdater.run(store: self, manual: manual, confirmApply: confirm)
+        let status = await AppUpdater.run(
+            store: self,
+            manual: manual,
+            confirmApply: confirm,
+            onProgress: { [weak self] progress in
+                Task { @MainActor [weak self] in
+                    self?.updateStatus = progress
+                }
+            }
+        )
         updateStatus = status
         updateBusy = false
         if !manual && status.contains("发现新版本") {
