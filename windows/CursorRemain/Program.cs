@@ -340,7 +340,7 @@ sealed partial class TrayContext : ApplicationContext
                     },
                     RequestRefresh,
                     OpenDashboard,
-                    () => OpenSettings(Token.IsAuthErrorMessage(_error), false),
+                    () => OpenSettings(false, false),
                     () =>
                     {
                         try

@@ -175,7 +175,7 @@ struct FlyoutView: View {
             }
             toolButton(StatusText.flyoutSettingsTitle(store.errorMessage), "gearshape") {
                 FlyoutWindowController.shared.close()
-                store.openSettings(focusToken: Token.isAuthErrorMessage(store.errorMessage))
+                store.openSettings(focusToken: false)
             }
         }
         .padding(.top, 4)
