@@ -108,7 +108,7 @@ pub fn format_flyout_error(error: &str) -> String {
     let text = error.trim();
     if text.is_empty() { return "等待刷新…".to_string(); }
     if !is_auth_error_message(text) { return text.to_string(); }
-    if text.contains("未配置") { "未配置 Token，点下方「粘贴 Token」导入".to_string() } else { "登录已过期，点下方「粘贴 Token」更新".to_string() }
+    if text.contains("未配置") { "未配置账号，请点下方「设置」添加账号".to_string() } else { "登录已过期，请点下方「设置」重新登录".to_string() }
 }
 
 pub fn format_compare_hint(mixed: bool) -> String {
@@ -145,7 +145,7 @@ pub fn format_report_sync_error(error: &str) -> String {
     let text = error.trim();
     if text.is_empty() { return "同步失败".to_string(); }
     if is_auth_error_message(text) {
-        return if text.contains("未配置") { "未配置 Token，请先在设置里导入账号".to_string() } else { "登录已过期，请到设置重新粘贴 Token".to_string() };
+        return if text.contains("未配置") { "未配置账号，请先在设置里添加账号".to_string() } else { "登录已过期，请到设置重新登录".to_string() };
     }
     format!("同步失败：{}", short_error(Some(text), 80))
 }
@@ -196,8 +196,8 @@ pub fn append_trim_note(message: &str, note: &str) -> String {
     if extra.is_empty() { text.to_string() } else if text.is_empty() { extra.to_string() } else { format!("{text}；{extra}") }
 }
 
-pub fn flyout_settings_title(error: &str) -> &'static str {
-    if is_auth_error_message(error) { "粘贴 Token" } else { "设置" }
+pub fn flyout_settings_title(_error: &str) -> &'static str {
+    "设置"
 }
 
 pub fn daily_avg_burn(points: &[Value]) -> Option<f64> {

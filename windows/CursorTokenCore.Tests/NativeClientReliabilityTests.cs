@@ -101,8 +101,8 @@ public class NativeClientReliabilityTests
         Assert.Contains("已是最新", StatusText.FormatReportSyncResult(12, 0, "12:00:00"));
         Assert.Contains("新增 4", StatusText.FormatReportSyncResult(16, 4, "12:00:00"));
         Assert.Contains("还没有本周期明细", StatusText.FormatReportSyncResult(0, 0, "12:00:00"));
-        Assert.Equal("登录已过期，点下方「粘贴 Token」更新", StatusText.FormatFlyoutError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
-        Assert.Equal("未配置 Token，点下方「粘贴 Token」导入", StatusText.FormatFlyoutError("未配置 Token，请打开设置粘贴"));
+        Assert.Equal("登录已过期，请点下方「设置」重新登录", StatusText.FormatFlyoutError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("未配置账号，请点下方「设置」添加账号", StatusText.FormatFlyoutError("未配置 Token，请打开设置粘贴"));
         Assert.Equal("HTTP 429", StatusText.FormatFlyoutError("HTTP 429"));
         Assert.Contains("绿色数字", StatusText.CompareHint);
         Assert.Contains("已填成本", StatusText.CompareHint);
@@ -132,8 +132,8 @@ public class NativeClientReliabilityTests
         Assert.Contains(StatusText.XReportNotice, pending);
         Assert.Contains("剩余  86.2%", pending);
         Assert.DoesNotContain("已用", pending);
-        Assert.Equal("登录已过期，请到设置重新粘贴 Token", StatusText.FormatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
-        Assert.Equal("未配置 Token，请先在设置里导入账号", StatusText.FormatReportSyncError("未配置 Token，请打开设置粘贴"));
+        Assert.Equal("登录已过期，请到设置重新登录", StatusText.FormatReportSyncError("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("未配置账号，请先在设置里添加账号", StatusText.FormatReportSyncError("未配置 Token，请打开设置粘贴"));
         Assert.StartsWith("同步失败：", StatusText.FormatReportSyncError("HTTP 429"));
         Assert.Contains("解不开云同步密钥", StatusText.FormatCloudDecryptNote(false, true, false));
         Assert.Contains("重新粘贴 Token", StatusText.FormatCloudDecryptNote(true, false, false));
@@ -161,8 +161,8 @@ public class NativeClientReliabilityTests
     {
         Assert.Equal("设置", StatusText.FlyoutSettingsTitle(null));
         Assert.Equal("设置", StatusText.FlyoutSettingsTitle("HTTP 429 Too Many Requests"));
-        Assert.Equal("粘贴 Token", StatusText.FlyoutSettingsTitle("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
-        Assert.Equal("粘贴 Token", StatusText.FlyoutSettingsTitle("未配置 Token，请打开设置粘贴"));
+        Assert.Equal("设置", StatusText.FlyoutSettingsTitle("Token 已过期或无效，请重新粘贴 WorkosCursorSessionToken"));
+        Assert.Equal("设置", StatusText.FlyoutSettingsTitle("未配置 Token，请打开设置粘贴"));
         Assert.Equal("正在同步本周期明细…", StatusText.FormatReportSyncProgress(1));
         Assert.Equal("正在同步本周期明细…第 4 页", StatusText.FormatReportSyncProgress(4));
         Assert.Equal("", StatusText.FormatReportFilterEmpty(0));
