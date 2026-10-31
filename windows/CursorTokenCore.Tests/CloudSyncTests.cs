@@ -293,6 +293,63 @@ public class CloudSyncTests
         }
     }
 
+    [Fact]
+    public async Task RefreshTemporaryNetworkErrorDoesNotClearSession()
+    {
+        var cfg = LoggedIn();
+        var handler = new ScriptedHandler
+        {
+            Steps =
+            [
+                (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
+                // Network error / server error during refresh
+                (HttpMethod.Post, "/v1/auth/refresh", 500, """{"detail":"Internal Server Error"}"""),
+            ],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg, write: false);
+            Assert.False(status.Ok);
+            Assert.True(cfg.CloudLoggedIn);
+            Assert.Equal("refresh-token", cfg.CloudRefreshToken);
+            Assert.Equal("t@example.com", cfg.CloudEmail);
+        }
+        finally
+        {
+            CloudSync.TestHttp = null;
+        }
+    }
+
+    [Fact]
+    public async Task Refresh401UnauthorizedClearsSession()
+    {
+        var cfg = LoggedIn();
+        var handler = new ScriptedHandler
+        {
+            Steps =
+            [
+                (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
+                (HttpMethod.Post, "/v1/auth/refresh", 401, """{"detail":"登录已过期，请重新登录"}"""),
+            ],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg, write: false);
+            Assert.False(status.Ok);
+            Assert.False(cfg.CloudLoggedIn);
+            Assert.Equal("", cfg.CloudRefreshToken);
+            Assert.Equal("登录已过期，请重新登录", status.Message);
+        }
+        finally
+        {
+            CloudSync.TestHttp = null;
+        }
+    }
+
     static AppConfig LoggedIn() => new()
     {
         SyncEnabled = true,

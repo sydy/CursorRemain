@@ -14,6 +14,7 @@ public static class CloudSyncApi
 public static class CloudSync
 {
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
+    static readonly SemaphoreSlim RefreshLock = new(1, 1);
     static readonly AsyncLocal<HttpClient?> TestHttpLocal = new();
 
     /// <summary>Test-only HTTP client, scoped to the current async context so parallel tests do not collide.</summary>
@@ -422,35 +423,56 @@ public static class CloudSync
 
     static async Task<JsonDocument> AuthedAsync(AppConfig cfg, HttpMethod method, string path, object? body, CancellationToken ct)
     {
+        var access = cfg.CloudAccessToken;
         try
         {
-            return await SendAsync(method.Method, path, cfg.CloudAccessToken, body, ct);
+            return await SendAsync(method.Method, path, access, body, ct);
         }
         catch (CursorApiException ex) when (ex.StatusCode == 401)
         {
-            if (!await RefreshAsync(cfg, ct)) throw;
+            await RefreshAsync(cfg, access, ct);
             return await SendAsync(method.Method, path, cfg.CloudAccessToken, body, ct);
         }
     }
 
-    static async Task<bool> RefreshAsync(AppConfig cfg, CancellationToken ct)
+    static async Task RefreshAsync(AppConfig cfg, string? failedAccess, CancellationToken ct)
     {
         var refresh = (cfg.CloudRefreshToken ?? "").Trim();
-        if (refresh.Length == 0) return false;
+        if (refresh.Length == 0) throw new CursorApiException("未登录", 401);
+
+        await RefreshLock.WaitAsync(ct);
         try
         {
+            // Another thread may have already refreshed the access token successfully while we were waiting.
+            if (!string.IsNullOrEmpty(failedAccess) && !string.IsNullOrEmpty(cfg.CloudAccessToken) && cfg.CloudAccessToken != failedAccess)
+            {
+                return;
+            }
+
             using var doc = await SendAsync("POST", "/v1/auth/refresh", null, new { refresh_token = refresh }, ct);
             var root = doc.RootElement;
             cfg.CloudAccessToken = root.TryGetProperty("access_token", out var a) ? a.GetString() ?? "" : "";
             if (root.TryGetProperty("refresh_token", out var r))
                 cfg.CloudRefreshToken = r.GetString() ?? cfg.CloudRefreshToken ?? "";
-            return cfg.CloudAccessToken.Length > 0;
+            if (string.IsNullOrEmpty(cfg.CloudAccessToken))
+                throw new CursorApiException("刷新登录失败");
+        }
+        catch (CursorApiException ex) when (ex.StatusCode == 401)
+        {
+            // Only unambiguous 401 Unauthorized from the refresh endpoint indicates that the session is truly dead.
+            CrashLog.Write(ex);
+            ClearSession(cfg);
+            throw;
         }
         catch (Exception ex)
         {
+            // Network timeouts, DNS failures, temporary 5xx/429 errors must NOT clear the session.
             CrashLog.Write(ex);
-            ClearSession(cfg);
-            return false;
+            throw;
+        }
+        finally
+        {
+            RefreshLock.Release();
         }
     }
 

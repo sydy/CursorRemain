@@ -332,29 +332,48 @@ public enum CloudSync {
         return (email, access, refresh, str(payload["sync_storage"]))
     }
 
+    static let refreshLock = NSLock()
+
     static func authed(_ cfg: inout AppConfig, method: String, path: String, body: [String: Any]?) throws -> [String: Any] {
+        let access = cfg.cloudAccessToken
         do {
-            return try send(method: method, path: path, access: cfg.cloudAccessToken, body: body)
+            return try send(method: method, path: path, access: access, body: body)
         } catch let err as CursorAPIError where err.statusCode == 401 {
-            if !refresh(&cfg) { throw err }
+            try refresh(&cfg, failedAccess: access)
             return try send(method: method, path: path, access: cfg.cloudAccessToken, body: body)
         }
     }
 
-    static func refresh(_ cfg: inout AppConfig) -> Bool {
+    static func refresh(_ cfg: inout AppConfig, failedAccess: String? = nil) throws {
         let token = cfg.cloudRefreshToken.trimmingCharacters(in: .whitespaces)
-        if token.isEmpty { return false }
+        if token.isEmpty { throw CursorAPIError("未登录", statusCode: 401) }
+
+        refreshLock.lock()
+        defer { refreshLock.unlock() }
+
+        // If another thread already refreshed the access token, reuse it.
+        if let failedAccess, !failedAccess.isEmpty, !cfg.cloudAccessToken.isEmpty, cfg.cloudAccessToken != failedAccess {
+            return
+        }
+
         do {
             let payload = try send(method: "POST", path: "/v1/auth/refresh", access: nil, body: ["refresh_token": token])
             cfg.cloudAccessToken = str(payload["access_token"])
             if let next = payload["refresh_token"] as? String, !next.isEmpty {
                 cfg.cloudRefreshToken = next
             }
-            return !cfg.cloudAccessToken.isEmpty
-        } catch {
-            AppLog.log("刷新同步登录失败: \(error.localizedDescription)")
+            if cfg.cloudAccessToken.isEmpty {
+                throw CursorAPIError("刷新登录失败")
+            }
+        } catch let err as CursorAPIError where err.statusCode == 401 {
+            // Only unambiguous 401 Unauthorized from the refresh endpoint indicates that the session is truly dead.
+            AppLog.log("刷新同步登录凭证已失效: \(err.message)")
             clearSession(&cfg)
-            return false
+            throw err
+        } catch {
+            // Network timeouts, connection failures, temporary server errors must NOT clear the session.
+            AppLog.log("刷新同步登录遇到临时网络错误: \(error.localizedDescription)")
+            throw error
         }
     }
 
