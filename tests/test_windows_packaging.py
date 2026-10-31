@@ -107,31 +107,3 @@ class WindowsInstallerPackagingTests(unittest.TestCase):
         iss = (ROOT / "windows" / "packaging" / "setup.iss").read_text(encoding="utf-8")
         self.assertIn('@"Local\\CursorRemain_SingleInstance_v2"', program)
         self.assertIn("Local\\CursorRemain_SingleInstance_v2", iss)
-
-
-class ConfigDirMigrationTests(unittest.TestCase):
-    def test_moves_legacy_folder_when_dest_missing(self) -> None:
-        from config import migrate_legacy_config_dir
-
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "CursorTokenTray"
-            dest = Path(tmp) / "CursorRemain"
-            source.mkdir()
-            (source / "config.json").write_text("{\"ok\": true}", encoding="utf-8")
-            self.assertTrue(migrate_legacy_config_dir(source, dest))
-            self.assertTrue((dest / "config.json").is_file())
-            self.assertFalse(source.exists())
-
-    def test_keeps_dest_when_it_already_has_config(self) -> None:
-        from config import migrate_legacy_config_dir
-
-        with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "CursorTokenTray"
-            dest = Path(tmp) / "CursorRemain"
-            source.mkdir()
-            dest.mkdir()
-            (source / "config.json").write_text("{\"from\": \"old\"}", encoding="utf-8")
-            (dest / "config.json").write_text("{\"from\": \"new\"}", encoding="utf-8")
-            self.assertFalse(migrate_legacy_config_dir(source, dest))
-            self.assertEqual((dest / "config.json").read_text(encoding="utf-8"), "{\"from\": \"new\"}")
-            self.assertTrue((source / "config.json").is_file())

@@ -34,8 +34,7 @@ Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，�
 - Windows 10/11 或 **macOS 13+**。Windows 安装版 / zip 已内嵌 .NET 运行时，**不必再装 Desktop Runtime**
 - 发布包为原生程序：Windows 是 .NET 8 自包含单文件 exe，macOS 是 Swift 菜单栏 `.app`
 - 配置兼容旧版工具：仍读写同一份 `config.json`
-
-仓库里的 Python 只保留解析对照（`cursor_api` / `usage_report` 等与 `fixtures/`），桌面壳已移除。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
+- 业务解析核心由 Rust (`core/`) 单源实现，多端纯原生做外壳调用，历史 Python 客户端代码已全部清理。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
 
 配置里的 Session Token 在磁盘上加密保存：Windows 用当前用户 DPAPI，macOS 用钥匙串里的 AES-GCM 包装密钥。钥匙串条目不绑定某一次 ad-hoc 构建，自动更新后不应再反复要登录密码；若仍弹出，选一次「始终允许」即可完成迁移。旧版明文 `config.json` 会在下次保存时自动升级；若回退到更早的原生版本，需要重新导入 Token。
 
@@ -76,7 +75,7 @@ swift test --package-path macos
 
 本地运行日志：`~/Library/Logs/CursorRemain.log`。
 
-夹具（Python / Swift / C# 共用）在 `fixtures/`。
+夹具（Rust / Swift / C# 共用）在 `fixtures/`。
 
 ## 使用已打包版本
 
