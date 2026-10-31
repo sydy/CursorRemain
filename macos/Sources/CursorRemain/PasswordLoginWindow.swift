@@ -61,11 +61,12 @@ final class PasswordLoginController: NSObject, WKNavigationDelegate, NSWindowDel
     private func showWindow() {
         if window == nil {
             let win = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 880, height: 680),
+                contentRect: NSRect(x: 0, y: 0, width: 1000, height: 750),
                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
                 backing: .buffered,
                 defer: false
             )
+            win.minSize = NSSize(width: 800, height: 600)
             win.title = "登录 Cursor 账号"
             win.isReleasedWhenClosed = false
             win.delegate = self

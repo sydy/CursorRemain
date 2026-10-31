@@ -40,8 +40,8 @@ sealed class PasswordLoginForm : Form
         _pollVerifier = pollVerifier ?? "";
         Text = "登录 Cursor 账号";
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(720, 560);
-        ClientSize = new Size(880, 680);
+        MinimumSize = new Size(800, 600);
+        ClientSize = new Size(1000, 750);
         var icon = AppWindow.CreateIcon();
         if (icon is not null) Icon = icon;
         var cancel = UiChrome.Button("取消");
@@ -49,9 +49,10 @@ sealed class PasswordLoginForm : Form
         var bar = new TableLayoutPanel
         {
             Dock = DockStyle.Bottom,
-            Height = 40,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            Padding = new Padding(8, 4, 8, 4),
+            Padding = new Padding(12, 8, 12, 8),
         };
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         bar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -59,6 +60,7 @@ sealed class PasswordLoginForm : Form
         bar.Controls.Add(cancel, 1, 0);
         Controls.Add(_web);
         Controls.Add(bar);
+        bar.BringToFront();
         CancelButton = cancel;
         UiChrome.Apply(this);
         _poll.Tick += async (_, _) => await TickAsync();
