@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO.Compression;
 using System.Reflection;
@@ -269,6 +270,20 @@ public static class AppUpdate
             if (sha.Length > 0) return sha;
         }
         return "";
+    }
+
+    public static string ShaFromExe(string? exePath)
+    {
+        if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath)) return "";
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(exePath).ProductVersion;
+            return ShaFromInformationalVersion(info);
+        }
+        catch
+        {
+            return "";
+        }
     }
 
     public static string DisplayVersion(string? sha = null)

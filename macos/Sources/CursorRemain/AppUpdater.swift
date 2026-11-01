@@ -22,6 +22,9 @@ enum AppUpdater {
         let cfg = store.config
         if !manual && !cfg.autoUpdateEnabled { return "" }
         if !manual && !canSelfUpdate { return "" }
+        if !manual && !cfg.updateLastError.isEmpty && cfg.updateLastError.contains("上次更新没有替换成功") {
+            return cfg.updateLastError
+        }
         if !AppUpdate.shouldAutoCheck(lastCheckAt: cfg.updateLastCheckAt, manual: manual) {
             return cfg.updateLastError.isEmpty ? "已是最新版本" : cfg.updateLastError
         }
@@ -52,6 +55,11 @@ enum AppUpdater {
             let staged = try await downloadAndStage(asset, onProgress: onProgress)
             onProgress?("正在解压并准备安装…")
             let stagedSha = stagedGitCommit(staged)
+            if !stagedSha.isEmpty && AppUpdate.sameSha(stagedSha, AppUpdate.currentCommitSha) {
+                AppUpdate.clearPendingInstall(directory: pendingDirectory(store))
+                rememberInstalled(store: store, sha: stagedSha, assetId: asset.id)
+                return "已是最新版本"
+            }
             if !AppUpdate.stagedBundleMatchesRelease(expectedSha: release.commitSha, stagedSha: stagedSha) {
                 let fail = "下载的安装包与发布版本不一致，已取消更新"
                 AppLog.log("staged sha \(stagedSha) != release \(AppUpdate.normalizeSha(release.commitSha))")
@@ -253,7 +261,7 @@ enum AppUpdater {
         if AppUpdate.pendingInstallFailed(currentSha: AppUpdate.currentCommitSha, pending: pending) {
             AppUpdate.clearPendingInstall(directory: dir)
             store.config = ConfigStore.update(from: store.settingsDirectory) { live in
-                live.updateLastCheckAt = ""
+                live.updateLastCheckAt = AppUpdate.nowIso()
                 live.updateLastError = "上次更新没有替换成功，请再试一次"
             }
         }

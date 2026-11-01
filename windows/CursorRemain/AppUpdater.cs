@@ -36,6 +36,8 @@ static class AppUpdater
         if (_busy) return "正在检查更新…";
         if (!manual && !cfg.AutoUpdateEnabled) return "";
         if (!manual && !CanSelfUpdate) return "";
+        if (!manual && !string.IsNullOrWhiteSpace(cfg.UpdateLastError) && cfg.UpdateLastError.Contains("上次更新没有替换成功", StringComparison.Ordinal))
+            return cfg.UpdateLastError;
         if (!AppUpdate.ShouldAutoCheck(cfg.UpdateLastCheckAt, DateTimeOffset.UtcNow, manual))
             return string.IsNullOrWhiteSpace(cfg.UpdateLastError) ? "已是最新版本" : cfg.UpdateLastError;
 
@@ -84,13 +86,28 @@ static class AppUpdater
                 asset = fallback;
             }
             onProgress?.Invoke("正在解压并准备安装…");
+            var stagedSha = AppUpdate.ShaFromExe(applied);
+            var currentSha = AppUpdate.CurrentCommitSha();
+            if (stagedSha.Length > 0 && currentSha.Length > 0 && AppUpdate.SameSha(stagedSha, currentSha))
+            {
+                AppUpdate.ClearPendingInstall(AppPaths.ConfigDirectory());
+                RememberInstalled(cfg, stagedSha, asset.Id);
+                return "已是最新版本";
+            }
+            if (release.CommitSha.Length > 0 && stagedSha.Length > 0 && !AppUpdate.SameSha(release.CommitSha, stagedSha))
+            {
+                var fail = "下载的安装包与发布版本不一致，已取消更新";
+                RememberCheck(cfg, fail);
+                return fail;
+            }
             if (!LaunchHelper(applied))
             {
                 var fail = "已下载更新，但无法启动安装脚本";
                 RememberCheck(cfg, fail);
                 return fail;
             }
-            if (AppUpdate.RememberedInstallAfterHelper(release.CommitSha, asset.Id, true) is { } pending)
+            var installSha = stagedSha.Length > 0 ? stagedSha : release.CommitSha;
+            if (AppUpdate.RememberedInstallAfterHelper(installSha, asset.Id, true) is { } pending)
                 AppUpdate.WritePendingInstall(AppPaths.ConfigDirectory(), pending.Sha, pending.AssetId);
             restart?.Invoke();
             return decision.Message + "，即将重启";
@@ -321,9 +338,9 @@ static class AppUpdater
             {
                 ConfigStore.Update(live =>
                 {
-                    live.UpdateLastCheckAt = "";
+                    live.UpdateLastCheckAt = AppUpdate.NowIso();
                     live.UpdateLastError = "上次更新没有替换成功，请再试一次";
-                    cfg.UpdateLastCheckAt = "";
+                    cfg.UpdateLastCheckAt = live.UpdateLastCheckAt;
                     cfg.UpdateLastError = live.UpdateLastError;
                     cfg.AutoUpdateEnabled = live.AutoUpdateEnabled;
                     cfg.UpdateInstalledSha = live.UpdateInstalledSha;
@@ -345,6 +362,8 @@ static class AppUpdater
             "set \"PID=%~1\"\r\n" +
             "set \"SRC=%~2\"\r\n" +
             "set \"DST=%~3\"\r\n" +
+            "for %%F in (\"%SRC%\") do set \"SRC_DIR=%%~dpF\"\r\n" +
+            "for %%F in (\"%DST%\") do set \"DST_DIR=%%~dpF\"\r\n" +
             "set /a _i=0\r\n" +
             ":wait\r\n" +
             "if %_i% GEQ 80 goto kill\r\n" +
@@ -361,6 +380,7 @@ static class AppUpdater
             ":copy\r\n" +
             "set /a _c=0\r\n" +
             ":retry\r\n" +
+            "if exist \"%SRC_DIR%cursor_core.dll\" copy /Y \"%SRC_DIR%cursor_core.dll\" \"%DST_DIR%cursor_core.dll\" >nul 2>&1\r\n" +
             "copy /Y \"%SRC%\" \"%DST%\" >nul\r\n" +
             "if not errorlevel 1 goto start\r\n" +
             "set /a _c+=1\r\n" +

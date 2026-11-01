@@ -562,13 +562,6 @@ public enum UsageEvents {
     public static func compareRowNote(_ row: AccountCompareRow, hasToken: Bool = true, lastError: String = "") -> String {
         RustCore.string("compare_row_note", ["plan_cny": row.planCny, "window_plan_cny": row.windowPlanCny, "has_token": hasToken, "last_error": lastError])
     }
-        if !hasToken { return "未配置 Token" }
-        if !error.isEmpty && (error.contains("过期") || error.contains("无效") || error.contains("未配置")) {
-            return error.contains("未配置") ? "未配置 Token" : "登录已过期"
-        }
-        if !compareRowHasCost(row) { return "未填成本" }
-        return ""
-    }
 
     public static func formatCnyUnit(_ amount: Double?, suffix: String) -> String {
         guard let amount else { return "—" }
@@ -1028,44 +1021,6 @@ public enum UsageEvents {
         )
     }
 
-        let kind = classifyKind(kindRaw, usageBasedCosts: costsRaw, isChargeable: isChargeable)
-        let input = max(0, tokenUsage["inputTokens"].asInt() ?? item["inputTokens"].asInt() ?? 0)
-        let output = max(0, tokenUsage["outputTokens"].asInt() ?? item["outputTokens"].asInt() ?? 0)
-        let cacheWrite = max(0, tokenUsage["cacheWriteTokens"].asInt() ?? item["cacheWriteTokens"].asInt() ?? 0)
-        let cacheRead = max(0, tokenUsage["cacheReadTokens"].asInt() ?? item["cacheReadTokens"].asInt() ?? 0)
-        var tokens = sumTokens(tokenUsage)
-        if tokens <= 0 { tokens = sumTokens(item) }
-        if tokens <= 0 { tokens = input + output + cacheWrite + cacheRead }
-        let charged = item["chargedCents"].asDouble() ?? parseMoneyCents(item["usageBasedCosts"])
-        let totalCents = tokenUsage["totalCents"].asDouble() ?? item["totalCents"].asDouble()
-        var email = (item["email"].asString() ?? item["userEmail"].asString() ?? item["user"].asString() ?? "").trimmingCharacters(in: .whitespaces)
-        if email.isEmpty, item["user"].isObject {
-            email = (item["user"]["email"].asString() ?? "").trimmingCharacters(in: .whitespaces)
-        }
-        let owning = (item["owningUser"].asString() ?? item["userId"].asString() ?? "").trimmingCharacters(in: .whitespaces)
-        let givenId = (item["id"].asString() ?? item["eventId"].asString() ?? "").trimmingCharacters(in: .whitespaces)
-        let id = givenId.isEmpty
-            ? [String(ts), owning, model, String(input), String(output), String(cacheWrite), String(cacheRead), kindRaw].joined(separator: "|")
-            : givenId
-        return UsageEvent(
-            id: id,
-            timestampMs: ts,
-            model: model,
-            kind: kind,
-            userEmail: email,
-            owningUser: owning,
-            tokens: max(0, tokens),
-            inputTokens: input,
-            outputTokens: output,
-            cacheWriteTokens: cacheWrite,
-            cacheReadTokens: cacheRead,
-            chargedCents: charged,
-            totalCents: totalCents,
-            isHeadless: item["isHeadless"].asBool() || item["isCloudAgent"].asBool(),
-            isChargeable: isChargeable
-        )
-    }
-
     public static func parseMoneyCents(_ value: JSONValue) -> Double? {
         if let n = value.asDouble(), value.asString() == nil { return n }
         let text = (value.asString() ?? "").trimmingCharacters(in: .whitespaces)
@@ -1182,11 +1137,10 @@ public enum UsageEvents {
                 "temp_valid_hours": allocation.tempValidHours,
                 "billing_cycle_start": allocation.billingCycleStart,
                 "billing_cycle_end": allocation.billingCycleEnd,
-                "now_ms": allocation.nowMs,
+                "now_ms": allocation.nowMs as Any,
             ]
         }
-        _ = RustCore.string("usage_events_csv", payload)
-        return decodeRustText(RustCore.lastText)
+        return RustCore.string("usage_events_csv", payload)
     }
 
     public static func fromDict(_ raw: [String: Any]) -> UsageEvent? {
