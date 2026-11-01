@@ -1143,6 +1143,55 @@ public enum UsageEvents {
         return RustCore.string("usage_events_csv", payload)
     }
 
+    public static func accountCompareToCSV(_ report: AccountCompareReport) -> String {
+        func catJSON(_ cat: AccountCompareCategory) -> [String: Any] {
+            [
+                "count": cat.count,
+                "tokens": cat.tokens,
+                "cny": cat.cny,
+                "cny_per_million": cat.cnyPerMillion as Any,
+                "cny_per_request": cat.cnyPerRequest as Any,
+            ]
+        }
+        let payload: [String: Any] = [
+            "report": [
+                "rows": report.rows.map { row in
+                    [
+                        "label": row.label,
+                        "channel_label": row.channelLabel,
+                        "membership_type": row.membershipType,
+                        "window_label": row.windowLabel,
+                        "window_days": row.windowDays,
+                        "daily_holding_cny": row.dailyHoldingCny,
+                        "total_cny": row.totalCny,
+                        "event_count": row.eventCount,
+                        "total_tokens": row.totalTokens,
+                        "cny_per_million": row.cnyPerMillion as Any,
+                        "cny_per_request": row.cnyPerRequest as Any,
+                        "first_party": catJSON(row.firstParty),
+                        "api": catJSON(row.api),
+                        "grok_bot": catJSON(row.grokBot),
+                    ]
+                },
+                "groups": report.groups.map { group in
+                    [
+                        "channel_label": group.channelLabel,
+                        "daily_holding_cny": group.dailyHoldingCny,
+                        "total_cny": group.totalCny,
+                        "event_count": group.eventCount,
+                        "total_tokens": group.totalTokens,
+                        "cny_per_million": group.cnyPerMillion as Any,
+                        "cny_per_request": group.cnyPerRequest as Any,
+                        "first_party": catJSON(group.firstParty),
+                        "api": catJSON(group.api),
+                        "grok_bot": catJSON(group.grokBot),
+                    ]
+                },
+            ]
+        ]
+        return RustCore.string("account_compare_csv", payload)
+    }
+
     public static func fromDict(_ raw: [String: Any]) -> UsageEvent? {
         let ts: Int64?
         if let n = number64(raw["timestamp_ms"]) ?? number64(raw["timestampMs"]) {
