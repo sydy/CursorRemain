@@ -27,6 +27,7 @@ public sealed class SyncAccount
     public double ActualCny { get; set; }
     public string Channel { get; set; } = "";
     public string SyncUpdatedAt { get; set; } = "";
+    public string LabelUpdatedAt { get; set; } = "";
     public double? LastRemaining { get; set; }
     public string LastError { get; set; } = "";
     public string UsageUpdatedAt { get; set; } = "";
@@ -204,6 +205,7 @@ public static class AccountSync
         ActualCny = UsageEvents.ClampActualCny(account.ActualCny),
         Channel = UsageEvents.SanitizeChannel(account.Channel),
         SyncUpdatedAt = (account.SyncUpdatedAt ?? "").Trim(),
+        LabelUpdatedAt = (account.LabelUpdatedAt ?? "").Trim(),
         LastRemaining = account.LastRemaining,
         LastError = account.LastError ?? "",
         UsageUpdatedAt = (account.UsageUpdatedAt ?? "").Trim(),
@@ -226,6 +228,7 @@ public static class AccountSync
         ActualCny = UsageEvents.ClampActualCny(account.ActualCny),
         Channel = UsageEvents.SanitizeChannel(account.Channel),
         SyncUpdatedAt = (account.SyncUpdatedAt ?? "").Trim(),
+        LabelUpdatedAt = (account.LabelUpdatedAt ?? "").Trim(),
         LastRemaining = account.LastRemaining,
         LastError = account.LastError ?? "",
         UsageUpdatedAt = (account.UsageUpdatedAt ?? "").Trim(),
@@ -255,12 +258,37 @@ public static class AccountSync
                 string.IsNullOrEmpty(left.Email) ? right.Email : left.Email);
         if (string.IsNullOrEmpty(merged.Password))
             merged.Password = string.IsNullOrEmpty(left.Password) ? right.Password : left.Password;
+        var labelFrom = ChooseLabel(left, right, ident);
+        merged.Label = labelFrom.Label;
+        merged.LabelUpdatedAt = labelFrom.LabelUpdatedAt;
         merged.LastRemaining = usage.LastRemaining;
         merged.LastError = usage.LastError;
         merged.UsageUpdatedAt = usage.UsageUpdatedAt;
         merged.BillingCycleStart = usage.BillingCycleStart;
         merged.BillingCycleEnd = usage.BillingCycleEnd;
         return merged;
+    }
+
+    static SyncAccount ChooseLabel(SyncAccount left, SyncAccount right, SyncAccount ident)
+    {
+        if (!string.IsNullOrEmpty(left.LabelUpdatedAt) || !string.IsNullOrEmpty(right.LabelUpdatedAt))
+        {
+            var cmp = CompareIso(left.LabelUpdatedAt, right.LabelUpdatedAt);
+            return cmp > 0 ? left : cmp < 0 ? right : ident;
+        }
+        var leftCustom = IsCustomLabel(left.Label, left.Email);
+        var rightCustom = IsCustomLabel(right.Label, right.Email);
+        if (leftCustom && !rightCustom) return left;
+        if (rightCustom && !leftCustom) return right;
+        return ident;
+    }
+
+    static bool IsCustomLabel(string label, string email)
+    {
+        label = (label ?? "").Trim();
+        if (label.Length == 0) return false;
+        email = CursorPasswordLogin.SanitizeEmail(email);
+        return email.Length == 0 || !label.Equals(email, StringComparison.OrdinalIgnoreCase);
     }
 
     static List<HistoryPoint> MergeHistory(IEnumerable<HistoryPoint>? left, IEnumerable<HistoryPoint>? right)
@@ -511,7 +539,7 @@ public static class AccountSync
     public static string SnapshotIdentity(SyncSnapshot snap)
     {
         var accounts = snap.Accounts.OrderBy(a => a.Id, StringComparer.Ordinal)
-            .Select(a => $"{a.Id}\n{a.Label}\n{a.Email}\n{a.Password}\n{a.Token}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.LastError}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}");
+            .Select(a => $"{a.Id}\n{a.Label}\n{a.Email}\n{a.Password}\n{a.Token}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LabelUpdatedAt}\n{a.LastRemaining}\n{a.LastError}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}");
         var deleted = snap.Deleted.OrderBy(d => d.Id, StringComparer.Ordinal)
             .Select(d => $"{d.Id}\n{d.DeletedAt}");
         return $"{snap.ActiveAccountId}\n{string.Join("|", accounts)}\n{string.Join("|", deleted)}\n{SettingsIdentity(snap.Settings)}\n{UsageIdentity(snap.Usage)}";
@@ -534,7 +562,7 @@ public static class AccountSync
             id = a.Id, label = a.Label, email = a.Email, password = a.Password, token = a.Token,
             membership_type = a.MembershipType, account_kind = a.AccountKind, temp_start_at = a.TempStartAt,
             temp_valid_days = a.TempValidDays, temp_valid_hours = a.TempValidHours, actual_cny = a.ActualCny,
-            channel = a.Channel, sync_updated_at = a.SyncUpdatedAt, last_remaining = a.LastRemaining,
+            channel = a.Channel, sync_updated_at = a.SyncUpdatedAt, label_updated_at = a.LabelUpdatedAt, last_remaining = a.LastRemaining,
             last_error = a.LastError, usage_updated_at = a.UsageUpdatedAt,
             billing_cycle_start = a.BillingCycleStart, billing_cycle_end = a.BillingCycleEnd,
         }),
@@ -592,7 +620,7 @@ public static class AccountSync
     public static bool ApplySnapshotToConfig(AppConfig cfg, SyncSnapshot snap)
     {
         string Before() => string.Join("|", cfg.Accounts.Select(a =>
-            $"{a.Id}\n{a.Token}\n{a.Label}\n{a.Email}\n{a.Password}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}"));
+            $"{a.Id}\n{a.Token}\n{a.Label}\n{a.LabelUpdatedAt}\n{a.Email}\n{a.Password}\n{a.MembershipType}\n{a.AccountKind}\n{a.TempStartAt}\n{a.TempValidDays}\n{a.TempValidHours}\n{a.ActualCny}\n{a.Channel}\n{a.SyncUpdatedAt}\n{a.LastRemaining}\n{a.UsageUpdatedAt}\n{a.BillingCycleStart}\n{a.BillingCycleEnd}"));
         var before = Before();
         var beforeSettings = SettingsIdentity(SnapshotSettings(cfg));
         var existing = cfg.Accounts.ToDictionary(a => a.Id, StringComparer.Ordinal);
@@ -618,6 +646,7 @@ public static class AccountSync
                     ActualCny = ident.ActualCny,
                     Channel = ident.Channel,
                     SyncUpdatedAt = ident.SyncUpdatedAt,
+                    LabelUpdatedAt = ident.LabelUpdatedAt,
                 };
                 ApplyUsageFields(created, ident);
                 merged.Add(created);
@@ -635,6 +664,7 @@ public static class AccountSync
             old.ActualCny = ident.ActualCny;
             old.Channel = ident.Channel;
             old.SyncUpdatedAt = ident.SyncUpdatedAt;
+            old.LabelUpdatedAt = ident.LabelUpdatedAt;
             ApplyUsageFields(old, ident);
             merged.Add(old);
         }
@@ -753,6 +783,8 @@ public static class AccountSync
                 extra += $",\"billing_cycle_start\":{Q(a.BillingCycleStart)}";
             if (!string.IsNullOrEmpty(a.BillingCycleEnd))
                 extra += $",\"billing_cycle_end\":{Q(a.BillingCycleEnd)}";
+            if (!string.IsNullOrEmpty(a.LabelUpdatedAt))
+                extra += $",\"label_updated_at\":{Q(a.LabelUpdatedAt)}";
             return $"{{\"id\":{Q(a.Id)},\"label\":{Q(a.Label)},\"membership_type\":{Q(a.MembershipType)},\"sync_updated_at\":{Q(a.SyncUpdatedAt)},\"token\":{Q(a.Token)}{extra}}}";
         }));
         var deleted = string.Join(",", snap.Deleted.Select(d =>
@@ -1058,6 +1090,7 @@ public static class AccountSync
                     ActualCny = UsageEvents.ClampActualCny(DoubleVal(item, "actual_cny")),
                     Channel = UsageEvents.SanitizeChannel(Str(item, "channel")),
                     SyncUpdatedAt = Str(item, "sync_updated_at").Trim(),
+                    LabelUpdatedAt = Str(item, "label_updated_at").Trim(),
                     LastRemaining = item.TryGetProperty("last_remaining", out var lr) && lr.ValueKind == JsonValueKind.Number ? lr.GetDouble() : null,
                     LastError = Str(item, "last_error"),
                     UsageUpdatedAt = Str(item, "usage_updated_at").Trim(),

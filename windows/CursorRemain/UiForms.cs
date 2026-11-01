@@ -133,7 +133,7 @@ sealed class SettingsForm : Form
         "每行一个 Token。");
     readonly Button _cloudMore = ActionButton("更多");
     AppConfig _cfg;
-    readonly Action<AppConfig> _onSaved;
+    readonly Action<AppConfig, bool> _onSaved;
     readonly Func<string?, Task<ImportResult>> _import;
     readonly Func<bool, Task<string>> _checkUpdateAction;
     readonly Action _requestRefresh;
@@ -142,7 +142,7 @@ sealed class SettingsForm : Form
     bool _loading;
     bool _fitting;
 
-    public SettingsForm(AppConfig cfg, Action<AppConfig> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate, Action requestRefresh)
+    public SettingsForm(AppConfig cfg, Action<AppConfig, bool> onSaved, Func<string?, Task<ImportResult>> import, bool startImport, Func<bool, Task<string>> checkUpdate, Action requestRefresh)
     {
         _cfg = cfg; _onSaved = onSaved; _import = import; _checkUpdateAction = checkUpdate; _requestRefresh = requestRefresh;
         SuspendLayout();
@@ -1379,10 +1379,10 @@ sealed class SettingsForm : Form
         }
     }
 
-    void NotifySaved()
+    void NotifySaved(bool reconcile = true)
     {
         CopyRuntimeFromDisk();
-        _onSaved(_cfg);
+        _onSaved(_cfg, reconcile);
     }
 
     void Persist(bool _)
@@ -1412,7 +1412,7 @@ sealed class SettingsForm : Form
             catch { failed++; }
         }
         AccountSync.TouchChangedSettings(_cfg, beforeSettings);
-        _onSaved(_cfg);
+        _onSaved(_cfg, true);
         LoadFrom(_cfg);
         var saved = StatusText.FormatTokenSaveResult(added, failed);
         if (saved.Length > 0) _status.Text = saved;
@@ -1465,11 +1465,18 @@ sealed class SettingsForm : Form
             if (result.Storage is "server" or "envelope") _cfg.SyncStorage = result.Storage;
             var key = _cfg.SyncStorage == "server" ? "" : dataPassphrase;
             CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, key, result.Access, result.Refresh);
-            if (!IsDisposed) _syncStatus.Text = "正在从云端导入账号和用量…";
+            if (!IsDisposed)
+            {
+                LoadFrom(_cfg);
+                _syncStatus.Text = "登录成功，正在同步账号和用量…";
+            }
+            NotifySaved(reconcile: false);
             var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
-            _syncStatus.Text = status.Ok ? status.Message : status.Message;
-            NotifySaved();
+            if (IsDisposed) return;
+            _syncStatus.Text = status.Message;
+            NotifySaved(reconcile: false);
             LoadFrom(_cfg);
+            _syncStatus.Text = status.Message;
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
         finally
@@ -1502,10 +1509,18 @@ sealed class SettingsForm : Form
             var result = await CloudSync.LoginAsync(email, password);
             if (result.Storage is "server" or "envelope") _cfg.SyncStorage = result.Storage;
             CloudSync.ApplySession(_cfg, result.Email.Length > 0 ? result.Email : email, _cfg.SyncStorage == "server" ? "" : dataPassphrase, result.Access, result.Refresh);
+            if (!IsDisposed)
+            {
+                LoadFrom(_cfg);
+                _syncStatus.Text = "登录成功，正在同步账号和用量…";
+            }
+            NotifySaved(reconcile: false);
             var status = await Task.Run(() => CloudSync.Reconcile(_cfg));
+            if (IsDisposed) return;
             _syncStatus.Text = status.Message;
-            NotifySaved();
+            NotifySaved(reconcile: false);
             LoadFrom(_cfg);
+            _syncStatus.Text = status.Message;
         }
         catch (Exception ex) { _syncStatus.Text = ex.Message; }
     }

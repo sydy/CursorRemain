@@ -2,7 +2,10 @@
 
 SwiftPM 工程：`CursorTokenCore` 可测试的领域逻辑，`CursorRemain` 为 LSUIElement 菜单栏应用。
 
+先构建 Rust 静态库。macOS 只链接 `libcursor_core.a`；若改用 `-lcursor_core`，链接器会选中旁边的动态库，并把构建机上的绝对路径写进可执行文件，换一台机器就无法启动。
+
 ```bash
+cargo build --release --manifest-path ../core/Cargo.toml
 swift test
 swift run CursorRemain
 ./scripts/package_app.sh

@@ -30,6 +30,7 @@ public struct SyncAccount: Equatable, Sendable {
     public var actualCny: Double
     public var channel: String
     public var syncUpdatedAt: String
+    public var labelUpdatedAt: String
     public var lastRemaining: Double?
     public var lastError: String
     public var usageUpdatedAt: String
@@ -49,6 +50,7 @@ public struct SyncAccount: Equatable, Sendable {
         actualCny: Double = 0,
         channel: String = "",
         syncUpdatedAt: String = "",
+        labelUpdatedAt: String = "",
         lastRemaining: Double? = nil,
         lastError: String = "",
         usageUpdatedAt: String = "",
@@ -68,6 +70,7 @@ public struct SyncAccount: Equatable, Sendable {
         self.actualCny = UsageEvents.clampActualCny(actualCny)
         self.channel = UsageEvents.sanitizeChannel(channel)
         self.syncUpdatedAt = syncUpdatedAt
+        self.labelUpdatedAt = labelUpdatedAt
         self.lastRemaining = lastRemaining
         self.lastError = lastError
         self.usageUpdatedAt = usageUpdatedAt.trimmingCharacters(in: .whitespaces)
@@ -305,6 +308,7 @@ public enum AccountSync {
             actualCny: account.actualCny,
             channel: account.channel,
             syncUpdatedAt: account.syncUpdatedAt.trimmingCharacters(in: .whitespaces),
+            labelUpdatedAt: account.labelUpdatedAt.trimmingCharacters(in: .whitespaces),
             lastRemaining: account.lastRemaining,
             lastError: account.lastError,
             usageUpdatedAt: account.usageUpdatedAt,
@@ -328,6 +332,7 @@ public enum AccountSync {
             actualCny: account.actualCny,
             channel: account.channel,
             syncUpdatedAt: account.syncUpdatedAt.trimmingCharacters(in: .whitespaces),
+            labelUpdatedAt: account.labelUpdatedAt.trimmingCharacters(in: .whitespaces),
             lastRemaining: account.lastRemaining,
             lastError: account.lastError,
             usageUpdatedAt: account.usageUpdatedAt,
@@ -359,12 +364,36 @@ public enum AccountSync {
         if merged.password.isEmpty {
             merged.password = left.password.isEmpty ? right.password : left.password
         }
+        let labelFrom = Self.chooseLabel(left, right, ident)
+        merged.label = labelFrom.label
+        merged.labelUpdatedAt = labelFrom.labelUpdatedAt
         merged.lastRemaining = usage.lastRemaining
         merged.lastError = usage.lastError
         merged.usageUpdatedAt = usage.usageUpdatedAt
         merged.billingCycleStart = usage.billingCycleStart
         merged.billingCycleEnd = usage.billingCycleEnd
         return merged
+    }
+
+    /// A renamed account keeps its name when the other copy only has a blank or the
+    /// email-shaped default. An explicit `labelUpdatedAt` still wins, including a clear.
+    static func chooseLabel(_ left: SyncAccount, _ right: SyncAccount, _ ident: SyncAccount) -> SyncAccount {
+        if !left.labelUpdatedAt.isEmpty || !right.labelUpdatedAt.isEmpty {
+            let cmp = compareIso(left.labelUpdatedAt, right.labelUpdatedAt)
+            return cmp > 0 ? left : cmp < 0 ? right : ident
+        }
+        let leftCustom = isCustomLabel(left.label, email: left.email)
+        let rightCustom = isCustomLabel(right.label, email: right.email)
+        if leftCustom && !rightCustom { return left }
+        if rightCustom && !leftCustom { return right }
+        return ident
+    }
+
+    static func isCustomLabel(_ label: String, email: String) -> Bool {
+        let label = label.trimmingCharacters(in: .whitespaces)
+        if label.isEmpty { return false }
+        let email = CursorPasswordLogin.sanitizeEmail(email)
+        return email.isEmpty || label.caseInsensitiveCompare(email) != .orderedSame
     }
 
     static func mergeHistory(_ left: [HistoryPoint], _ right: [HistoryPoint]) -> [HistoryPoint] {
@@ -575,7 +604,7 @@ public enum AccountSync {
 
     public static func snapshotIdentity(_ snap: SyncSnapshot) -> String {
         let accounts = snap.accounts.sorted { $0.id < $1.id }.map {
-            "\($0.id)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.token)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.lastError)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)"
+            "\($0.id)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.token)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.labelUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.lastError)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)"
         }.joined(separator: "|")
         let deleted = snap.deleted.sorted { $0.id < $1.id }.map { "\($0.id)\n\($0.deletedAt)" }.joined(separator: "|")
         return "\(snap.activeAccountId)\n\(accounts)\n\(deleted)\n\(settingsIdentity(snap.settings))\n\(usageIdentity(snap.usage))"
@@ -597,7 +626,8 @@ public enum AccountSync {
                     "token": account.token, "membership_type": account.membershipType, "account_kind": account.accountKind,
                     "temp_start_at": account.tempStartAt, "temp_valid_days": account.tempValidDays,
                     "temp_valid_hours": account.tempValidHours, "actual_cny": account.actualCny, "channel": account.channel,
-                    "sync_updated_at": account.syncUpdatedAt, "last_remaining": account.lastRemaining as Any,
+                    "sync_updated_at": account.syncUpdatedAt, "label_updated_at": account.labelUpdatedAt,
+                    "last_remaining": account.lastRemaining as Any,
                     "last_error": account.lastError, "usage_updated_at": account.usageUpdatedAt,
                     "billing_cycle_start": account.billingCycleStart, "billing_cycle_end": account.billingCycleEnd,
                 ]
@@ -659,7 +689,7 @@ public enum AccountSync {
 
     @discardableResult
     public static func applySnapshotToConfig(_ cfg: inout AppConfig, _ snap: SyncSnapshot) -> Bool {
-        let before = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
+        let before = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.labelUpdatedAt)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
         let beforeSettings = settingsIdentity(snapshotSettings(cfg))
         var existing: [String: Account] = [:]
         for acc in cfg.accounts { existing[acc.id] = acc }
@@ -680,6 +710,7 @@ public enum AccountSync {
                 old.actualCny = ident.actualCny
                 old.channel = ident.channel
                 old.syncUpdatedAt = ident.syncUpdatedAt
+                old.labelUpdatedAt = ident.labelUpdatedAt
                 applyUsageFields(&old, ident)
                 merged.append(old)
             } else {
@@ -698,6 +729,7 @@ public enum AccountSync {
                     channel: ident.channel
                 )
                 acc.syncUpdatedAt = ident.syncUpdatedAt
+                acc.labelUpdatedAt = ident.labelUpdatedAt
                 applyUsageFields(&acc, ident)
                 merged.append(acc)
             }
@@ -711,7 +743,7 @@ public enum AccountSync {
         cfg.activeAccountUpdatedAt = snap.activeAccountUpdatedAt
         let usageChanged = applyUsageToFiles(snap.usage, keepIds: ids)
         cfg.syncLegacyFields()
-        let after = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
+        let after = cfg.accounts.map { "\($0.id)\n\($0.token)\n\($0.label)\n\($0.labelUpdatedAt)\n\($0.email)\n\($0.password)\n\($0.membershipType)\n\($0.accountKind)\n\($0.tempStartAt)\n\($0.tempValidDays)\n\($0.tempValidHours)\n\($0.actualCny)\n\($0.channel)\n\($0.syncUpdatedAt)\n\($0.lastRemaining ?? -1)\n\($0.usageUpdatedAt)\n\($0.billingCycleStart)\n\($0.billingCycleEnd)" }.joined(separator: "|")
         return before != after || beforeSettings != settingsIdentity(snapshotSettings(cfg)) || usageChanged
     }
 
@@ -827,6 +859,9 @@ public enum AccountSync {
             }
             if !acc.channel.isEmpty {
                 extra += ",\"channel\":\(q(acc.channel))"
+            }
+            if !acc.labelUpdatedAt.isEmpty {
+                extra += ",\"label_updated_at\":\(q(acc.labelUpdatedAt))"
             }
             if !acc.email.isEmpty {
                 extra += ",\"email\":\(q(acc.email))"
@@ -1091,6 +1126,7 @@ public enum AccountSync {
                     actualCny: UsageEvents.clampActualCny(num($0["actual_cny"]) ?? num($0["actualCny"]) ?? 0),
                     channel: UsageEvents.sanitizeChannel($0["channel"] as? String),
                     syncUpdatedAt: str($0["sync_updated_at"]).trimmingCharacters(in: .whitespaces),
+                    labelUpdatedAt: str($0["label_updated_at"]).trimmingCharacters(in: .whitespaces),
                     lastRemaining: num($0["last_remaining"]),
                     lastError: str($0["last_error"]),
                     usageUpdatedAt: str($0["usage_updated_at"]).trimmingCharacters(in: .whitespaces),

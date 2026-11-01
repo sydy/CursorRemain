@@ -137,6 +137,7 @@ public struct Account: Equatable, Sendable, Codable {
     public var updatedAt: String
     public var usageUpdatedAt: String
     public var syncUpdatedAt: String
+    public var labelUpdatedAt: String
     public var alertNotifiedLevels: [Int]
     public var authErrorNotified: Bool
     public var exhaustionNotified: Bool
@@ -168,6 +169,7 @@ public struct Account: Equatable, Sendable, Codable {
         updatedAt: String = "",
         usageUpdatedAt: String = "",
         syncUpdatedAt: String = "",
+        labelUpdatedAt: String = "",
         alertNotifiedLevels: [Int] = [],
         authErrorNotified: Bool = false,
         exhaustionNotified: Bool = false,
@@ -198,6 +200,7 @@ public struct Account: Equatable, Sendable, Codable {
         self.updatedAt = updatedAt
         self.usageUpdatedAt = usageUpdatedAt.trimmingCharacters(in: .whitespaces)
         self.syncUpdatedAt = syncUpdatedAt
+        self.labelUpdatedAt = labelUpdatedAt
         self.alertNotifiedLevels = alertNotifiedLevels
         self.authErrorNotified = authErrorNotified
         self.exhaustionNotified = exhaustionNotified
@@ -436,9 +439,13 @@ public struct AppConfig: Equatable, Sendable {
                 accounts[idx].passwordDecryptFailed = false
                 accounts[idx].storedPassword = ""
             }
+            var labelChanged = false
             if let label {
                 let newLabel = label.trimmingCharacters(in: .whitespaces)
-                if accounts[idx].label != newLabel { identityChanged = true }
+                if accounts[idx].label != newLabel {
+                    identityChanged = true
+                    labelChanged = true
+                }
                 accounts[idx].label = newLabel
             }
             if let membershipType { accounts[idx].membershipType = membershipType.trimmingCharacters(in: .whitespaces) }
@@ -451,6 +458,7 @@ public struct AppConfig: Equatable, Sendable {
                 AccountSync.touchAccount(&accounts[idx])
                 AccountSync.forgetDeleted(&self, accountId: accountId)
             }
+            if labelChanged { accounts[idx].labelUpdatedAt = accounts[idx].syncUpdatedAt }
             if activate {
                 if activeAccountId != accountId { AccountSync.touchActiveAccount(&self) }
                 activeAccountId = accountId
@@ -465,11 +473,13 @@ public struct AppConfig: Equatable, Sendable {
             if label == nil { acc.label = CursorPasswordLogin.defaultLabel(acc.email, existing: acc.label) }
         }
         if let password { acc.password = password }
+        let explicitLabel = label != nil
         if let label { acc.label = label.trimmingCharacters(in: .whitespaces) }
         if let membershipType { acc.membershipType = membershipType.trimmingCharacters(in: .whitespaces) }
         if let remaining { acc.lastRemaining = round2(remaining) }
         if let error { acc.lastError = error }
         AccountSync.touchAccount(&acc)
+        if explicitLabel { acc.labelUpdatedAt = acc.syncUpdatedAt }
         AccountSync.forgetDeleted(&self, accountId: accountId)
         accounts.append(acc)
         if activate {
@@ -494,6 +504,7 @@ public struct AppConfig: Equatable, Sendable {
         if accounts[idx].label != newLabel {
             accounts[idx].label = newLabel
             AccountSync.touchAccount(&accounts[idx])
+            accounts[idx].labelUpdatedAt = accounts[idx].syncUpdatedAt
         } else {
             accounts[idx].label = newLabel
         }
@@ -948,6 +959,7 @@ public enum ConfigStore {
         acc.updatedAt = raw["updated_at"] as? String ?? ""
         acc.usageUpdatedAt = (raw["usage_updated_at"] as? String ?? "").trimmingCharacters(in: .whitespaces)
         acc.syncUpdatedAt = raw["sync_updated_at"] as? String ?? ""
+        acc.labelUpdatedAt = (raw["label_updated_at"] as? String ?? "").trimmingCharacters(in: .whitespaces)
         if let remaining = raw["last_remaining"] {
             if remaining is NSNull {
                 acc.lastRemaining = nil
@@ -1040,6 +1052,7 @@ public enum ConfigStore {
                     "updated_at": acc.updatedAt,
                     "usage_updated_at": acc.usageUpdatedAt,
                     "sync_updated_at": acc.syncUpdatedAt,
+                    "label_updated_at": acc.labelUpdatedAt,
                     "alert_notified_levels": acc.alertNotifiedLevels,
                     "auth_error_notified": acc.authErrorNotified,
                     "exhaustion_notified": acc.exhaustionNotified,

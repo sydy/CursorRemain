@@ -95,6 +95,8 @@ struct SettingsRootView: View {
             actualCnyText = formatDecimal(store.config.activeAccount?.actualCny ?? 0)
             channel = store.config.activeAccount?.channel ?? ""
         }
+        .onChange(of: store.config.syncLastAt) { _ in adoptCloudSyncStatus() }
+        .onChange(of: store.config.syncLastError) { _ in adoptCloudSyncStatus() }
     }
 
     var isTemporaryAccount: Bool {
@@ -864,18 +866,39 @@ struct SettingsRootView: View {
         thresholdText = store.config.alertThresholds.map(String.init).joined(separator: ",")
         cloudEmail = store.config.cloudEmail
         cloudPassword = ""
-        syncStatus = {
-            let decrypt = StatusText.formatCloudDecryptNote(
-                decryptError: store.config.decryptError,
-                syncSecretFailed: store.config.syncSecretDecryptFailed,
-                cloudAccessFailed: store.config.cloudAccessDecryptFailed
-            )
-            let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
-            if !decrypt.isEmpty && !text.isEmpty { return decrypt + " " + text }
-            if !decrypt.isEmpty { return decrypt }
-            if !text.isEmpty { return text }
-            return store.config.cloudLoggedIn ? "尚未同步" : ""
-        }()
+        syncStatus = cloudStatusLine()
+    }
+
+    func cloudStatusLine() -> String {
+        let decrypt = StatusText.formatCloudDecryptNote(
+            decryptError: store.config.decryptError,
+            syncSecretFailed: store.config.syncSecretDecryptFailed,
+            cloudAccessFailed: store.config.cloudAccessDecryptFailed
+        )
+        let text = StatusText.formatSyncStatus(lastAt: store.config.syncLastAt, lastError: store.config.syncLastError)
+        if !decrypt.isEmpty && !text.isEmpty { return decrypt + " " + text }
+        if !decrypt.isEmpty { return decrypt }
+        if !text.isEmpty { return text }
+        return store.config.cloudLoggedIn ? "尚未同步" : ""
+    }
+
+    /// Background reconcile updates the store after login. Keep the "登录成功" line until that result arrives.
+    func adoptCloudSyncStatus() {
+        guard store.config.cloudLoggedIn else { return }
+        let line = cloudStatusLine()
+        if line == "尚未同步", syncStatus.hasPrefix("登录成功") { return }
+        if !line.isEmpty { syncStatus = line }
+    }
+
+    func publishCloudSession(_ cfg: inout AppConfig, startedActive: String) {
+        applySyncedConfig(&cfg, startedActive: startedActive, refresh: false)
+        cloudPassword = ""
+        showVerification = false
+        verificationCode = ""
+        cloudDataPassphrase = ""
+        cloudDataPassphraseConfirm = ""
+        syncStatus = "登录成功，正在同步账号和用量…"
+        hint = "登录成功"
     }
 
     func persistAccountFields() {
@@ -931,13 +954,8 @@ struct SettingsRootView: View {
                 let result = try CloudSync.login(email: email, password: password)
                 if result.storage == "server" || result.storage == "envelope" { cfg.syncStorage = result.storage }
                 CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: cfg.syncStorage == "server" ? "" : key, access: result.access, refresh: result.refresh)
-                DispatchQueue.main.async { syncStatus = "正在从云端导入账号和用量…" }
-                let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
-                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
-                    syncStatus = status.message
-                    hint = status.message
-                    cloudPassword = ""
+                    publishCloudSession(&cfg, startedActive: startedActive)
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -967,16 +985,8 @@ struct SettingsRootView: View {
                 let result = try CloudSync.login(email: email, password: password)
                 if result.storage == "server" || result.storage == "envelope" { cfg.syncStorage = result.storage }
                 CloudSync.applySession(&cfg, email: result.email.isEmpty ? email : result.email, dataPassphrase: cfg.syncStorage == "server" ? "" : key, access: result.access, refresh: result.refresh)
-                let status = AccountSync.reconcile(&cfg)
                 DispatchQueue.main.async {
-                    applySyncedConfig(&cfg, startedActive: startedActive, refresh: status.changed)
-                    showVerification = false
-                    verificationCode = ""
-                    cloudPassword = ""
-                    cloudDataPassphrase = ""
-                    cloudDataPassphraseConfirm = ""
-                    syncStatus = status.message
-                    hint = status.message
+                    publishCloudSession(&cfg, startedActive: startedActive)
                 }
             } catch {
                 DispatchQueue.main.async { syncStatus = (error as? CursorAPIError)?.message ?? error.localizedDescription }

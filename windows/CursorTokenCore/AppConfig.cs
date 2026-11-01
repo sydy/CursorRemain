@@ -25,6 +25,7 @@ public sealed class Account
     public string UpdatedAt { get; set; } = "";
     public string UsageUpdatedAt { get; set; } = "";
     public string SyncUpdatedAt { get; set; } = "";
+    public string LabelUpdatedAt { get; set; } = "";
     public List<int> AlertNotifiedLevels { get; set; } = [];
     public bool AuthErrorNotified { get; set; }
     public bool ExhaustionNotified { get; set; }
@@ -202,10 +203,15 @@ public sealed class AppConfig
             existing.PasswordDecryptFailed = false;
             existing.StoredPassword = "";
         }
+        var labelChanged = false;
         if (label is not null)
         {
             var newLabel = label.Trim();
-            if (existing.Label != newLabel) identityChanged = true;
+            if (existing.Label != newLabel)
+            {
+                identityChanged = true;
+                labelChanged = true;
+            }
             existing.Label = newLabel;
         }
         if (membershipType is not null) existing.MembershipType = membershipType.Trim();
@@ -216,6 +222,7 @@ public sealed class AppConfig
             AccountSync.TouchAccount(existing);
             AccountSync.ForgetDeleted(this, accountId);
         }
+        if (labelChanged || (created && label is not null)) existing.LabelUpdatedAt = existing.SyncUpdatedAt;
         if (activate)
         {
             if (ActiveAccountId != accountId) AccountSync.TouchActiveAccount(this);
@@ -251,6 +258,7 @@ public sealed class AppConfig
         {
             acc.Label = newLabel;
             AccountSync.TouchAccount(acc);
+            acc.LabelUpdatedAt = acc.SyncUpdatedAt;
         }
         else acc.Label = newLabel;
         return true;
@@ -837,6 +845,7 @@ public static class ConfigStore
         acc.UpdatedAt = Str(raw, "updated_at");
         acc.UsageUpdatedAt = Str(raw, "usage_updated_at").Trim();
         acc.SyncUpdatedAt = Str(raw, "sync_updated_at");
+        acc.LabelUpdatedAt = Str(raw, "label_updated_at").Trim();
         if (raw.TryGetProperty("last_remaining", out var lr) && lr.ValueKind is JsonValueKind.Number)
             acc.LastRemaining = Numbers.Round2(lr.GetDouble());
         acc.AlertNotifiedLevels = ParseIntList(raw.TryGetProperty("alert_notified_levels", out var an) ? an : default);
@@ -920,6 +929,7 @@ public static class ConfigStore
             ["updated_at"] = a.UpdatedAt,
             ["usage_updated_at"] = a.UsageUpdatedAt,
             ["sync_updated_at"] = a.SyncUpdatedAt,
+            ["label_updated_at"] = a.LabelUpdatedAt,
             ["alert_notified_levels"] = a.AlertNotifiedLevels,
             ["auth_error_notified"] = a.AuthErrorNotified,
             ["exhaustion_notified"] = a.ExhaustionNotified,

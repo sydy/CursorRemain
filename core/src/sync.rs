@@ -141,6 +141,7 @@ fn account_from(item: &Value, id: &str) -> Value {
         "actual_cny": clamp_actual(double_val(item, "actual_cny")),
         "channel": events::sanitize_channel(item.get("channel").and_then(Value::as_str)),
         "sync_updated_at": text(item, "sync_updated_at"),
+        "label_updated_at": text(item, "label_updated_at"),
         "last_remaining": last_remaining,
         "last_error": str_field(item, "last_error"),
         "usage_updated_at": text(item, "usage_updated_at"),
@@ -151,6 +152,36 @@ fn account_from(item: &Value, id: &str) -> Value {
 
 fn snapshot_account(account: &Value) -> Value {
     account_from(account, &text(account, "id"))
+}
+
+/// A renamed account keeps its name when the other copy only has a blank or the
+/// email-shaped default. An explicit `label_updated_at` still wins, including a
+/// clear or a rename back to the email.
+fn choose_label<'a>(left: &'a Value, right: &'a Value, ident: &'a Value) -> &'a Value {
+    let left_at = left["label_updated_at"].as_str().unwrap_or("");
+    let right_at = right["label_updated_at"].as_str().unwrap_or("");
+    if !left_at.is_empty() || !right_at.is_empty() {
+        let cmp = compare_iso(left_at, right_at);
+        return if cmp > 0 { left } else if cmp < 0 { right } else { ident };
+    }
+    let left_custom = is_custom_label(left);
+    let right_custom = is_custom_label(right);
+    if left_custom && !right_custom {
+        left
+    } else if right_custom && !left_custom {
+        right
+    } else {
+        ident
+    }
+}
+
+fn is_custom_label(account: &Value) -> bool {
+    let label = account["label"].as_str().unwrap_or("").trim();
+    if label.is_empty() {
+        return false;
+    }
+    let email = sanitize_email(account.get("email").and_then(Value::as_str));
+    email.is_empty() || !label.eq_ignore_ascii_case(&email)
 }
 
 fn combine_accounts(left: &Value, right: &Value) -> Value {
@@ -183,6 +214,9 @@ fn combine_accounts(left: &Value, right: &Value) -> Value {
         let password = if left["password"].as_str().unwrap_or("").is_empty() { right["password"].as_str().unwrap_or("") } else { left["password"].as_str().unwrap_or("") };
         merged["password"] = json!(password);
     }
+    let label_from = choose_label(left, right, ident);
+    merged["label"] = label_from.get("label").cloned().unwrap_or(json!(""));
+    merged["label_updated_at"] = label_from.get("label_updated_at").cloned().unwrap_or(json!(""));
     merged["last_remaining"] = usage.get("last_remaining").cloned().unwrap_or(Value::Null);
     merged["last_error"] = usage.get("last_error").cloned().unwrap_or(json!(""));
     merged["usage_updated_at"] = usage.get("usage_updated_at").cloned().unwrap_or(json!(""));

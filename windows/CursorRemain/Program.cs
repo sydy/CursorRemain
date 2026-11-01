@@ -470,7 +470,7 @@ sealed partial class TrayContext : ApplicationContext
                     if (startImport) _settings.StartImport();
                     return;
                 }
-                _settings = new SettingsForm(_config, cfg => ApplyConfig(cfg, true), async prefer =>
+                _settings = new SettingsForm(_config, (cfg, reconcile) => ApplyConfig(cfg, true, reconcile), async prefer =>
                 {
                     return await SessionImporter.ImportAndValidate(_client, SessionImporter.DefaultPreferBrowsers(), SessionImporter.OnlyBrowsers(prefer), _config.ExistingTokenVariants());
                 }, startImport, CheckUpdateAsync, RequestRefresh);
@@ -506,7 +506,7 @@ sealed partial class TrayContext : ApplicationContext
         else Paint();
     }
 
-    public void ApplyConfig(AppConfig cfg, bool refresh)
+    public void ApplyConfig(AppConfig cfg, bool refresh, bool reconcile = true)
     {
         var prevAuto = _config.AutostartEnabled;
         _config = cfg;
@@ -516,7 +516,16 @@ sealed partial class TrayContext : ApplicationContext
         UpdateUi();
         if (_report is { IsDisposed: false }) _report.RequestSync();
         if (_compare is { IsDisposed: false }) _compare.Reload();
-        _ = PersistAndSyncAsync(cfg);
+        if (reconcile)
+        {
+            _ = PersistAndSyncAsync(cfg);
+            return;
+        }
+        try { ConfigStore.Save(cfg); }
+        catch (Exception)
+        {
+            _icon.ShowBalloonTip(4000, "保存失败", "无法写入配置（文件忙碌或加密失败），请稍后再试。", ToolTipIcon.Warning);
+        }
     }
 
     async Task PersistAndSyncAsync(AppConfig cfg)

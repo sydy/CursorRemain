@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 enum RustCore {
@@ -61,18 +60,8 @@ enum RustCore {
     }
 }
 
-private func cr_call(_ op: UnsafePointer<CChar>, _ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
-    // The symbol comes from libcursor_core.a. SPM cannot import a C function
-    // without a module map, so the call is resolved through dlsym.
-    guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "cr_call") else {
-        fatalError("找不到 cursor_core 的 cr_call。先执行 cargo build --release --manifest-path core/Cargo.toml。")
-    }
-    typealias Call = @convention(c) (UnsafePointer<CChar>, UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
-    return unsafeBitCast(symbol, to: Call.self)(op, input)
-}
+@_silgen_name("cr_call")
+private func cr_call(_ op: UnsafePointer<CChar>, _ input: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
 
-private func cr_free(_ ptr: UnsafeMutablePointer<CChar>) {
-    guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "cr_free") else { return }
-    typealias Free = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
-    unsafeBitCast(symbol, to: Free.self)(ptr)
-}
+@_silgen_name("cr_free")
+private func cr_free(_ ptr: UnsafeMutablePointer<CChar>)
