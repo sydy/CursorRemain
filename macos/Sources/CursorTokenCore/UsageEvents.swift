@@ -1140,7 +1140,8 @@ public enum UsageEvents {
                 "now_ms": allocation.nowMs as Any,
             ]
         }
-        return RustCore.string("usage_events_csv", payload)
+        _ = RustCore.string("usage_events_csv", payload)
+        return decodeRustText(RustCore.lastText)
     }
 
     public static func accountCompareToCSV(_ report: AccountCompareReport) -> String {
@@ -1189,7 +1190,26 @@ public enum UsageEvents {
                 },
             ]
         ]
-        return RustCore.string("account_compare_csv", payload)
+        _ = RustCore.string("account_compare_csv", payload)
+        return decodeRustText(RustCore.lastText)
+    }
+
+    static func decodeRustText(_ raw: String) -> String {
+        guard raw.count >= 2, raw.hasPrefix("\""), raw.hasSuffix("\"") else { return raw }
+        let body = raw.dropFirst().dropLast()
+        var out = ""
+        var escaped = false
+        for char in body {
+            if escaped {
+                out.append(char == "n" ? "\n" : char)
+                escaped = false
+            } else if char == "\\" {
+                escaped = true
+            } else {
+                out.append(char)
+            }
+        }
+        return out
     }
 
     public static func fromDict(_ raw: [String: Any]) -> UsageEvent? {
