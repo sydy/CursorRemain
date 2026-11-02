@@ -459,25 +459,30 @@ struct SettingsRootView: View {
                             .fontWeight(account.id == store.config.activeAccountId ? .semibold : .regular)
                             .lineLimit(1)
                     }
-                    .width(min: 96, ideal: 148)
+                    .width(
+                        min: AccountTableLayout.nameIdeal,
+                        ideal: AccountTableLayout.nameIdeal,
+                        max: AccountTableLayout.nameIdeal
+                    )
                     TableColumn("套餐") { account in
                         Text(StatusText.formatAccountPlan(account)).lineLimit(1)
                     }
-                    .width(min: 52, ideal: 72)
+                    .width(min: AccountTableLayout.plan, ideal: AccountTableLayout.plan, max: AccountTableLayout.plan)
                     TableColumn("状态") { account in
                         Text(StatusText.formatAccountCheckStatus(account)).lineLimit(1)
                     }
-                    .width(min: 72, ideal: 88)
+                    .width(min: AccountTableLayout.status, ideal: AccountTableLayout.status, max: AccountTableLayout.status)
                     TableColumn("更新时间") { account in
                         Text(StatusText.formatAccountCheckTime(account)).lineLimit(1)
                     }
-                    .width(min: 88, ideal: 108)
+                    .width(min: AccountTableLayout.updated, ideal: AccountTableLayout.updated, max: AccountTableLayout.updated)
                     TableColumn("类型") { account in
                         Text(StatusText.formatAccountKind(account)).lineLimit(1)
                     }
-                    .width(min: 44, ideal: 52)
+                    .width(min: AccountTableLayout.kind, ideal: AccountTableLayout.kind, max: AccountTableLayout.kind)
                 }
-                .frame(height: accountTableHeight)
+                .frame(width: AccountTableLayout.viewportWidth, height: accountTableHeight)
+                .background(AccountTableColumnFit())
             }
         }
         .accessibilityLabel("当前账号")
@@ -1333,6 +1338,116 @@ private struct AppearanceSegment: View {
 }
 
 extension Account: Identifiable {}
+
+/// The account table kept every column at its ideal width. With SwiftUI's
+/// column gaps that row was 568pt, wider than the 500pt settings page, so a
+/// horizontal scroller covered the last account and a vertical one appeared
+/// with it. The name column is the one that can shrink; the other four stay
+/// wide enough for their text. Leftover overflow is trimmed at runtime.
+private enum AccountTableLayout {
+    static let viewportWidth = SettingsMetrics.width - SettingsMetrics.padding * 2
+    static let maxVisibleRows = 5
+    static let nameMin: CGFloat = 64
+    /// 148pt made the row 568pt wide after SwiftUI's 100pt of insets and
+    /// column gaps. 72pt keeps the row inside the 500pt page.
+    static let nameIdeal: CGFloat = 72
+    static let plan: CGFloat = 72
+    static let status: CGFloat = 88
+    static let updated: CGFloat = 108
+    static let kind: CGFloat = 52
+}
+
+private struct AccountTableColumnFit: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        AccountTableFitView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? AccountTableFitView)?.schedule()
+    }
+}
+
+private final class AccountTableFitView: NSView {
+    private var scheduled = false
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func layout() {
+        super.layout()
+        schedule()
+    }
+
+    func schedule() {
+        guard !scheduled else { return }
+        scheduled = true
+        DispatchQueue.main.async { [weak self] in
+            self?.scheduled = false
+            self?.fit()
+        }
+    }
+
+    private func fit() {
+        guard let scroll = Self.findTableScroll(from: self),
+              let table = scroll.documentView as? NSTableView else { return }
+        let columns = table.tableColumns
+        guard columns.count == 5 else { return }
+
+        if scroll.hasHorizontalScroller { scroll.hasHorizontalScroller = false }
+        if scroll.horizontalScrollElasticity != .none { scroll.horizontalScrollElasticity = .none }
+        let needsVertical = table.numberOfRows > AccountTableLayout.maxVisibleRows
+        if scroll.hasVerticalScroller != needsVertical { scroll.hasVerticalScroller = needsVertical }
+        let elasticity: NSScrollView.Elasticity = needsVertical ? .automatic : .none
+        if scroll.verticalScrollElasticity != elasticity { scroll.verticalScrollElasticity = elasticity }
+
+        let clip = scroll.contentView.bounds.width
+        guard clip > 40 else { return }
+        let content = table.frame.width
+        guard content > 1 else { return }
+        let delta = content - clip
+        // Only shrink. Growing the name column back toward the old ideal
+        // is what made the horizontal scroller cover the last row.
+        guard delta > 1 else { return }
+
+        let name = columns[0]
+        let fitted = (name.width - delta).rounded(.down)
+        if fitted >= AccountTableLayout.nameMin {
+            guard abs(name.width - fitted) > 0.5 else { return }
+            name.minWidth = AccountTableLayout.nameMin
+            name.maxWidth = fitted
+            name.width = fitted
+            return
+        }
+
+        let scale = clip / content
+        for column in columns {
+            let width = max(36, (column.width * scale).rounded(.down))
+            column.minWidth = 36
+            column.maxWidth = 4000
+            column.width = width
+        }
+    }
+
+    private static func findTableScroll(from view: NSView) -> NSScrollView? {
+        var node = view.superview
+        var depth = 0
+        while let current = node, depth < 12 {
+            if let found = search(current) { return found }
+            node = current.superview
+            depth += 1
+        }
+        return nil
+    }
+
+    private static func search(_ view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView, scroll.documentView is NSTableView {
+            return scroll
+        }
+        for subview in view.subviews {
+            if let found = search(subview) { return found }
+        }
+        return nil
+    }
+}
 
 private enum SettingsMetrics {
     static let width: CGFloat = 540
