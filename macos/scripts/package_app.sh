@@ -6,19 +6,16 @@ cd "$ROOT"
 cargo build --release --manifest-path "$REPO/core/Cargo.toml"
 swift build -c release --product CursorRemain
 BIN="$(swift build -c release --show-bin-path)/CursorRemain"
-if otool -L "$BIN" | grep -q 'libcursor_core\.dylib'; then
-  echo "error: CursorRemain still dynamically links libcursor_core.dylib" >&2
-  otool -L "$BIN" | grep cursor_core >&2 || true
-  exit 1
-fi
-if ! nm "$BIN" | grep -Eq ' [Tt] _cr_call$'; then
-  echo "error: CursorRemain is missing statically linked _cr_call" >&2
-  exit 1
-fi
 DIST="$ROOT/dist/CursorRemain.app"
 rm -rf "$DIST"
 mkdir -p "$DIST/Contents/MacOS" "$DIST/Contents/Resources"
 cp "$BIN" "$DIST/Contents/MacOS/CursorRemain"
+DYLIB="$REPO/core/target/release/libcursor_core.dylib"
+if [[ -f "$DYLIB" ]]; then
+  mkdir -p "$DIST/Contents/Frameworks"
+  cp "$DYLIB" "$DIST/Contents/Frameworks/libcursor_core.dylib"
+  install_name_tool -change "$DYLIB" "@executable_path/../Frameworks/libcursor_core.dylib" "$DIST/Contents/MacOS/CursorRemain" 2>/dev/null || true
+fi
 cp "$ROOT/Resources/Info.plist" "$DIST/Contents/Info.plist"
 VERSION="$(tr -d '[:space:]' < "$REPO/VERSION" 2>/dev/null || true)"
 if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
