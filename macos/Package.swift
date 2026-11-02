@@ -26,6 +26,7 @@ var targets: [Target] = [
         path: "Tests/CursorTokenCoreTests",
         linkerSettings: [
             .linkedLibrary("sqlite3"),
+            .unsafeFlags(["-force_load", rustStaticLib], .when(platforms: [.macOS])),
         ]
     ),
 ]
