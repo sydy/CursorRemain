@@ -820,7 +820,7 @@ public static partial class UsageEvents
         var path = AppPaths.UsageEventsPath(accountId, teamScope, directory);
         var events = new List<UsageEvent>();
         if (!File.Exists(path)) return events;
-        foreach (var line in File.ReadAllLines(path))
+        foreach (var line in UsageHistory.EnumerateFileLinesSafe(path))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try

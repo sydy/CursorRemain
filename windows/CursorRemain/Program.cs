@@ -670,6 +670,20 @@ sealed partial class TrayContext : ApplicationContext
 
     [DllImport("user32.dll")]
     static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("psapi.dll")]
+    static extern int EmptyWorkingSet(IntPtr hwProc);
+
+    public void TrimProcessMemory()
+    {
+        try
+        {
+            GC.Collect(2, GCCollectionMode.Forced, false);
+            GC.WaitForPendingFinalizers();
+            EmptyWorkingSet(System.Diagnostics.Process.GetCurrentProcess().Handle);
+        }
+        catch { }
+    }
 }
 
 static class Autostart

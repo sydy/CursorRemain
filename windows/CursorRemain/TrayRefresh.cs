@@ -12,6 +12,7 @@ sealed partial class TrayContext
             {
                 await RefreshAll();
                 _ = TryReconcileAsync(save: true);
+                TrimProcessMemory();
             }
             catch (OperationCanceledException) { break; }
             catch (Exception ex) { CrashLog.Write(ex); }

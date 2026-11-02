@@ -38,8 +38,56 @@ public static class UsageHistory
             ["api"] = api is null ? null : Numbers.Round2(api.Value),
             ["account_id"] = aid,
         };
-        File.AppendAllText(path, JsonSerializer.Serialize(obj) + "\n");
+        var line = JsonSerializer.Serialize(obj) + "\n";
+        SafeAppendText(path, line);
         if (ts is null) MaybePrune(path);
+    }
+
+    public static void SafeAppendText(string path, string text)
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            try
+            {
+                using var fs = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                using var sw = new StreamWriter(fs, System.Text.Encoding.UTF8);
+                sw.Write(text);
+                return;
+            }
+            catch (IOException) when (i < 4)
+            {
+                Thread.Sleep(20 * (i + 1));
+            }
+        }
+    }
+
+    public static IEnumerable<string> EnumerateFileLinesSafe(string path)
+    {
+        if (!File.Exists(path)) yield break;
+        FileStream? fs = null;
+        for (var i = 0; i < 5; i++)
+        {
+            try
+            {
+                fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                break;
+            }
+            catch (IOException) when (i < 4)
+            {
+                Thread.Sleep(20 * (i + 1));
+            }
+        }
+        if (fs is null) yield break;
+
+        using (fs)
+        using (var sr = new StreamReader(fs, System.Text.Encoding.UTF8))
+        {
+            string? line;
+            while ((line = sr.ReadLine()) is not null)
+            {
+                yield return line;
+            }
+        }
     }
 
     static void MaybePrune(string path)
@@ -56,7 +104,7 @@ public static class UsageHistory
         if (!File.Exists(path)) return;
         var cutoff = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - Math.Max(1, keepDays) * 86400L;
         var kept = new List<string>();
-        foreach (var line in File.ReadAllLines(path))
+        foreach (var line in EnumerateFileLinesSafe(path))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
@@ -67,7 +115,16 @@ public static class UsageHistory
             }
             catch { }
         }
-        File.WriteAllText(path, kept.Count == 0 ? "" : string.Join("\n", kept) + "\n");
+        var tmp = path + ".tmp." + Guid.NewGuid().ToString("N");
+        try
+        {
+            File.WriteAllText(tmp, kept.Count == 0 ? "" : string.Join("\n", kept) + "\n");
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            if (File.Exists(tmp)) try { File.Delete(tmp); } catch { }
+        }
     }
 
     public static void Replace(IEnumerable<HistoryPoint> points, string accountId, string? directory = null)
@@ -105,7 +162,7 @@ public static class UsageHistory
         var points = new List<HistoryPoint>();
         var path = AppPaths.HistoryPath(string.IsNullOrEmpty(aid) ? null : aid, dir);
         if (!File.Exists(path)) return points;
-        foreach (var line in File.ReadAllLines(path))
+        foreach (var line in EnumerateFileLinesSafe(path))
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
             try
