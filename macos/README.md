@@ -1,8 +1,8 @@
-# macOS 菜单栏（Swift）
+# macOS
 
-SwiftPM 工程：`CursorTokenCore` 可测试的领域逻辑，`CursorRemain` 为 LSUIElement 菜单栏应用。
+Swift 菜单栏程序。`CursorTokenCore` 是可测试的领域逻辑，`CursorRemain` 是菜单栏应用。使用说明见仓库根目录 [README.md](../README.md)。
 
-先构建 Rust 静态库。macOS 只链接 `libcursor_core.a`；若改用 `-lcursor_core`，链接器会选中旁边的动态库，并把构建机上的绝对路径写进可执行文件，换一台机器就无法启动。
+先构建 Rust 静态库，并且只链接 `libcursor_core.a`。若链接成动态库，可执行文件会带上构建机的绝对路径，换一台机器就无法启动。
 
 ```bash
 cargo build --release --manifest-path ../core/Cargo.toml
@@ -11,11 +11,4 @@ swift run CursorRemain
 ./scripts/package_app.sh
 ```
 
-读取 `~/Library/Application Support/CursorRemain/config.json`。Token 用钥匙串中的 AES-GCM 包装密钥加密后写入；该条目使用不绑定具体构建的 ACL，避免每次自动更新都再要一次登录密码。从 Safari 导入 Cookie 需要完全磁盘访问权限（设置窗会检测并提供跳转）。从 Cursor 应用导入的会话可在设置里点「登录到 Cursor」写回客户端切号；浏览器 Cookie 不能写回。打包后的 `.app` 默认对照 GitHub 正式版（`v*`）自动更新；`swift run` 不会覆盖本机文件。版本号来自仓库根目录 `VERSION`，打包脚本会写入 Info.plist。
-
-从 GitHub Releases 下载的 zip 带隔离属性。若提示「已损坏」，先点取消，到「系统设置 → 隐私与安全性」点「仍要打开」并输入密码（Sequoia 取消了右键打开放行）。没有该按钮时再运行 `首次打开.command`，或：
-
-```bash
-xattr -cr CursorRemain.app
-open CursorRemain.app
-```
+配置在 `~/Library/Application Support/CursorRemain/config.json`。版本号来自仓库根目录 `VERSION`，打包脚本会写入 Info.plist。`swift run` 不会覆盖已安装的程序。

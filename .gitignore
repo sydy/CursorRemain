@@ -29,3 +29,4 @@ windows/**/bin/
 windows/**/obj/
 windows/**/TestResults/
 *.user
+.acl-recovery/

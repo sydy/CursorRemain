@@ -1,203 +1,58 @@
-# Cursor 余量
+# Cursor 余量 (CursorRemain)
 
-Windows 系统托盘、macOS 菜单栏小工具：拉取 Cursor 套餐用量，用**圆形进度条**显示**剩余百分比**。程序名 **CursorRemain**。
+轻量级 Cursor 额度监控工具，常驻 Windows 系统托盘 / macOS 菜单栏，实时查看套餐剩余百分比与用量详情。
 
-> 使用非官方 Dashboard 接口，接口或 Cookie 可能变更；Token 请勿分享。
+## 特性
 
-## 功能
+- **状态监控**：托盘/菜单栏显示用量进度环、剩余百分比或色点，悬浮卡片展示本周期消耗与耗尽预测。
+- **多账号管理**：支持多账号独立监控与告警，一键将导入的会话写回 Cursor 客户端完成切号。
+- **便捷导入**：一键从本地 Cursor 读取，亦支持浏览器 Cookie、直接粘贴 Token 或账号密码登录。
+- **用量分析**：内置明细报表、模型消耗排行、多账号横向对比，支持导出 CSV。
+- **提醒与自启**：多档额度阈值通知、耗尽风险预警、开机自启与静默自动更新。
+- **多端同步**：可选将账号与用量同步到云端（支持端到端加密信封）。
 
-- 托盘 / 菜单栏圆形进度（显示剩余 %）；支持圆环 / 纯数字 / 仅色点
-- **左键**：打开状态飞出层（多次点击只打开，不关闭；悬停不弹出）
-- **失焦 / Esc**：关闭飞出层
-- **右键**：Windows 为系统原生菜单，macOS 为原生菜单栏菜单（刷新 / 用量报表 / 账号对比 / 设置 / 退出）
-- 飞出层快捷操作：复制摘要 / 刷新 / 报表 / 对比 / 设置；圆环下打开用量页
-- 飞出层打开期间随后台刷新实时更新
-- 飞出层周期卡片展示近日消耗与能否撑到重置
-- Token 过期检测、一键打开设置并聚焦 Token 输入框
-- 多档额度告警（默认 50/20/5）与耗尽风险通知
-- **多账号**：保存多个 Cursor 会话，托盘显示当前账号；其余账号后台刷新并独立告警。可粘贴 Token、从 Cursor / 浏览器导入，或把邮箱密码粘进同一输入框打开官方登录页自动取 Token。从 Cursor 应用导入的会话可 **登录到 Cursor**（写入客户端并切号）；浏览器 Cookie 和邮箱登录拿到的会话只能查用量，写回去会把 Cursor 登出，因此会被拒绝
-- **云同步**：设置里验证邮箱并注册 / 登录后，账号、设置和用量会同步到 `https://sync.harker.cn`。默认同步方式是服务器保存明细；仍可改回原来的本机加密信封。支持通过验证邮箱重置登录密码，也支持导出 / 导入加密包备份
-- 个人套餐与企业 / 团队套餐兼用：个人按 included usage 百分比；企业账号走 [用量页](https://cursor.com/dashboard/usage) 的金额计费（已用 / 额度）
-- **Grok Bot 周额度**：飞出层单独一条进度（本周已用 %）。这是 Cursor 账号上的独立周池，不计入左侧圆环的月度剩余；套餐不含 Bot、企业池化额度或接口失败时不画这条。周额度用尽后若开了按需，会落到同一条 On-Demand 金额卡
-- 中文设置窗口（Windows 为 WinForms，macOS 为 SwiftUI；账户 / 通知 / 托盘或菜单栏 / 同步分页）
-- **用量报表**：打开窗口时增量拉取 [Usage 页](https://cursor.com/dashboard/usage) 按次明细，本地缓存；总览、按日趋势、按模型排行、明细表与 CSV 导出。默认当前账号，团队管理员可切全员。可按计费类型、额度（First-party / API / Grok Bot）、模型、来源与开始/结束日期筛选；开始和结束可单独设定或留空走默认（不限制），每个账号会记住上次设定。可填写月费与汇率，或为每个账号单独填「实际成本（人民币）」；实付按当前周期或有效期窗口折算分摊，与账号对比一致，KPI 显示已分摊而不是整月成本。填了实际成本后按需不再按官网标价另加。企业 / 团队额度只作展示，不是真实支出
-- **账号对比**：独立窗口，按渠道标签（自费 / 第三方）分组。每个账号一行，First-party / API / Grok Bot 各占一行，数字按列对齐。窗口按各号自己的最新周期或有效期（没有则近 30 天），日均持有 = 折合月费÷30，窗口实付把月费/实际成本按窗口天数折算后再摊，且不超过所填实际成本。表里同时给出 ¥/百万 Token、¥/次。打开先读本地明细，点「同步」再逐号拉取；可导出 CSV。短期号请把买价折成月费（买价÷天数×30）
-- 默认每 10 分钟刷新（可配置）
-- 开机自启（默认开启；Windows 写当前用户注册表 `Run` 项，macOS 用 `SMAppService` / LaunchAgent）
-- **自动更新**（默认开启）：启动后对照 [正式版 Release](https://github.com/sydy/CursorRemain/releases/latest)（`v*`），有新版本就下载本平台 zip、替换当前程序并重启。Windows 安装版 / 便携版在本机已有 **.NET 8 Desktop Runtime** 时改下不含运行时的轻量包 `CursorRemain-windows-light.zip`，否则仍下自包含 zip。设置里会显示 `主版本号 (提交哈希)`，例如 `2.1.0 (abc1234)`。开发运行不会覆盖本机文件，只会打开下载页
+## 下载安装
 
-悬浮框与 macOS 相同为左右分栏：左侧圆环剩余百分比、套餐说明与用量链接；右侧金额 / First-party·API / Grok Bot 进度卡片、Token / 重置 / 近日消耗与能否撑到重置，以及复制 / 刷新 / 报表 / 对比 / 设置。  
-预计可用按本周期已用比例与已过天数估算，并与重置日对比提示「预计能撑到重置」或「可能提前耗尽」。企业 / 团队账号打开 [用量页](https://cursor.com/dashboard/usage)，个人账号仍打开账单页。
+前往 [Releases](https://github.com/sydy/CursorRemain/releases/latest) 下载最新版本：
 
-## 环境
+- **Windows** (10/11)：
+  - **安装版**：`CursorRemain-windows-setup.exe`（推荐，内置运行时，支持原地自动更新）
+  - **便携版**：`CursorRemain-windows.zip`（解压即用）
+- **macOS** (13+)：
+  - 下载 `CursorRemain-macos.zip`，解压后将 `CursorRemain.app` 拖入「应用程序」
+  - 若打开时提示“已损坏”，在终端执行 `xattr -cr /Applications/CursorRemain.app` 即可
 
-- Windows 10/11 或 **macOS 13+**。Windows 安装版 / zip 已内嵌 .NET 运行时，**不必再装 Desktop Runtime**
-- 发布包为原生程序：Windows 是 .NET 8 自包含单文件 exe，macOS 是 Swift 菜单栏 `.app`
-- 配置兼容旧版工具：仍读写同一份 `config.json`
-- 业务解析核心由 Rust (`core/`) 单源实现，多端纯原生做外壳调用，历史 Python 客户端代码已全部清理。日常请用下面的原生程序。`快速启动.bat` / `快速启动.command` / `build.bat` / `build_mac.sh` 会转向原生工程。
+## 账号添加
 
-配置里的 Session Token 在磁盘上加密保存：Windows 用当前用户 DPAPI，macOS 用钥匙串里的 AES-GCM 包装密钥。钥匙串条目不绑定某一次 ad-hoc 构建，自动更新后不应再反复要登录密码；若仍弹出，选一次「始终允许」即可完成迁移。旧版明文 `config.json` 会在下次保存时自动升级；若回退到更早的原生版本，需要重新导入 Token。
+在「设置 → 账号」中添加：
+1. **从 Cursor 导入**（推荐）：自动读取本机已登录的桌面会话，后续可直接切号。
+2. **浏览器导入**：支持 Safari / Firefox。
+3. **手动添加**：支持直接粘贴 Token (`WorkosCursorSessionToken`) 或账号密码。
 
-## 开发运行
+## 开发与构建
 
-### Windows（C# / .NET 8）
+核心逻辑（解析、报表、同步、更新判断）由 Rust (`core/`) 实现，外壳采用纯原生开发。
+
+### Windows (C# / .NET 8)
 
 ```powershell
 dotnet run --project windows/CursorRemain/CursorRemain.csproj -c Release
-```
-
-核心解析单测（不含 WinForms）：
-
-```powershell
 dotnet test windows/CursorTokenCore.Tests/CursorTokenCore.Tests.csproj
 ```
 
-### macOS（Swift）
+### macOS (Swift)
 
 ```bash
 cargo build --release --manifest-path core/Cargo.toml
 swift run --package-path macos CursorRemain
 ```
 
-或打包成 `.app`：
+### Rust Core
 
 ```bash
-./macos/scripts/package_app.sh
-open macos/dist/CursorRemain.app
+cargo test --manifest-path core/Cargo.toml
 ```
 
-核心解析单测：
-
-```bash
-swift test --package-path macos
-```
-
-图标会出现在屏幕右上角菜单栏。首次从 Safari 导入 Cookie 时，如读不到请到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」打开「Cursor 余量」。
-
-本地运行日志：`~/Library/Logs/CursorRemain.log`。
-
-夹具（Rust / Swift / C# 共用）在 `fixtures/`。
-
-## 使用已打包版本
-
-### Windows
-
-**安装版（推荐）**
-
-1. 从 [正式版 Release](https://github.com/sydy/CursorRemain/releases/latest) 下载 `CursorRemain-windows-setup.exe`
-2. 双击安装。默认装到当前用户目录（`%LOCALAPPDATA%\Programs\CursorRemain`），不需要管理员；开始菜单会出现「Cursor 余量」
-3. 装完可直接启动，无需另装 .NET。开机自启由程序自己注册，之后会自动对照正式版更新（可在设置里关闭）。本机已有 .NET 8 Desktop Runtime 时，自动更新会改下不含运行时的 `CursorRemain-windows-light.zip`；没有运行时则仍下自包含 zip。请勿把轻量包当成首次安装包
-
-**便携版**
-
-1. 下载 `CursorRemain-windows.zip`，解压运行 `CursorRemain.exe`。已内嵌运行时，不必另装 .NET
-2. 可将该 exe 拷到任意位置使用；开机自启会指向该 exe
-
-本地发布：
-
-```powershell
-dotnet publish windows/CursorRemain/CursorRemain.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist
-powershell -File windows/packaging/build_installer.ps1 -PublishDir dist
-```
-
-### macOS
-
-1. 从 [正式版 Release](https://github.com/sydy/CursorRemain/releases/latest) 下载 `CursorRemain-macos.zip`，解压后将 `.app` 拖到「应用程序」（也可先放在下载文件夹）
-2. 双击打开。若弹出「已损坏 / 移到废纸篓」：**点「取消」，不要移到废纸篓**
-3. 打开 **系统设置 → 隐私与安全性**，拉到下面的安全性，点 **「仍要打开」**，再输入本机密码。这就是以前右键打开时那次放行，只是 Sequoia 以后不再允许用右键绕过
-4. 若设置里没有「仍要打开」，再双击 zip 里的 **`首次打开.command`**（系统会用「来自互联网，要打开吗」那种确认）。仍不行再在终端执行：
-
-```bash
-xattr -cr /Applications/CursorRemain.app
-open /Applications/CursorRemain.app
-```
-
-路径按实际位置改。放行一次之后就可以正常打开。  
-5. 开机自启会注册本机登录项（`SMAppService`）。之后会自动对照 Latest 更新（可在设置里关闭）
-
-本地打包：`./macos/scripts/package_app.sh`
-
-## GitHub Actions 自动编译
-
-仓库使用 **GitHub Actions**（`.github/workflows/build.yml`）在每次推送 / PR 时：
-
-1. 在 Ubuntu 跑 Python 夹具测试与 C# 核心测试
-2. 在 `macos-latest` 跑 Swift 测试
-3. 在 `windows-latest` 打出 `CursorRemain-windows-setup.exe` 安装版与 `CursorRemain-windows.zip` 便携包（.NET 8 自包含，无需 Desktop Runtime），以及不含运行时的 `CursorRemain-windows-light.zip` 供自动更新
-4. 在 `macos-latest` 打出 `CursorRemain-macos.zip`（Swift `.app`）
-
-版本号写在仓库根目录 `VERSION`。合入 `main` 后：
-
-- 若 `v{VERSION}` 还不存在，会创建**正式版** Release（例如 [v2.1.0](https://github.com/sydy/CursorRemain/releases/latest)），之后自动更新以它为准
-- 同时覆盖滚动预发布 **[latest](https://github.com/sydy/CursorRemain/releases/tag/latest)**，给同版本号的已装客户端按提交哈希更新
-- 对应 run 的 **Artifacts**（保留 1 天；若制品配额尚未重算，这里可能暂时没有）
-
-PR 不上传制品。要发下一个正式版，只需改 `VERSION`（例如 `2.1.0` → `2.2.0`）后合入 `main`；也可以打匹配的 `v*` 标签。  
-也可在仓库 **Actions** 页点 **Run workflow** 手动触发。
-
-## 获取 Token
-
-### 方式一：浏览器登录并导入（推荐）
-
-1. 托盘 / 菜单栏右键 → **设置…**
-2. 优先点 **从 Cursor 导入**（读取本机已登录的 Cursor 应用，不依赖浏览器 Cookie）
-3. 若未登录 Cursor 应用，再点 **Safari 登录** / **Firefox 登录**，在对应浏览器登录 [cursor.com](https://cursor.com/dashboard)
-4. 工具会校验用量并写入 Token（已有同一账号则更新，新账号会加入列表并切换为当前）
-
-导入成功后，可在设置或托盘菜单点 **登录到 Cursor / 在 Cursor 登录当前账号**：工具会礼貌关闭 Cursor（不强制结束），把当前账号的**桌面会话**写入 `state.vscdb`，再重新打开。只会改 `cursorAuth/*` 与 `glass.lastSignedInAuthId`，并在同目录留下 `state.vscdb.tray-backup`；不改机器码，也不写 Electron Cookie。
-
-浏览器里的 `WorkosCursorSessionToken`（JWT `type=web`）**不能**写回 Cursor，否则客户端会登出。要切号请先在 Cursor 里登录一次并「从 Cursor 导入」，之后即可在已导入的桌面会话之间切换。
-
-若浏览器里已经登录，可直接点 **仅导入 Cookie**。同一浏览器通常只能登录一个 Cursor 账号；要加第二个号，请先在浏览器换号登录再导入，或手动粘贴另一个 Token。
-
-**Windows**：可从 **Cursor 应用**或 **Firefox** 导入。Chrome / Edge 使用 App-Bound Cookie 加密，本工具无法读取，请改用 Firefox 或手动粘贴。
-
-**macOS**：优先 Cursor 应用、Safari / Firefox。Safari 若读不到，到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」打开「Cursor 余量」。设置窗会检测权限并提供跳转。Chrome 系仍会尝试钥匙串解密，失败时请改用 Safari / Firefox。
-
-### 方式二：粘贴 Token 或邮箱密码
-
-1. 托盘 / 菜单栏右键 → **设置…**
-2. 在添加账号框里粘贴，每行一个，然后点 **添加**。支持：
-   - Token（`WorkosCursorSessionToken=…`、`user_…::jwt` 等）
-   - `name@example.com:密码`、`name@example.com----密码`、邮箱后跟 Tab / 空格再跟密码
-   - `账号：name@example.com密码：xxxx`（全角 / 半角冒号均可；「账号」也可写成帐号 / 账户 / 邮箱 / 用户名）
-   - 两行：`账号：邮箱` 下一行 `密码：xxxx`
-3. Token 行会立刻写入。邮箱密码行会逐个弹出官方登录页并尽量自动填写；验证码或邮箱 OTP 请在窗口里完成。失败会记下并继续下一个，最后切到成功添加的账号
-4. 新号默认用规范化邮箱当备注；你改过的备注不会被覆盖
-5. 密码只在本机用操作系统加密保存。选择「本机加密信封」时，云同步会把它封进端到端信封（PBKDF2 + AES-256-GCM）；选择「服务器保存明细」时，同步服务器能看到账号密码
-
-邮箱密码这条路径拿到的是浏览器会话，**只能查用量**，不能「登录到 Cursor」写回客户端。Google / GitHub 账号请仍用浏览器导入，或在弹出窗口里点对应登录按钮。
-
-复制 Token 的方法：浏览器登录 [cursor.com/dashboard](https://cursor.com/dashboard/usage)（个人账号也可打开 [Spending](https://cursor.com/dashboard/spending)）→ `F12` → **Application**（Safari 为「存储」）→ **Cookies** → `https://cursor.com` → 复制 `WorkosCursorSessionToken` 的值。
-
-## 配置文件位置
-
-Windows：`%APPDATA%\CursorRemain\config.json`  
-macOS：`~/Library/Application Support/CursorRemain/config.json`  
-旧版若还在 `CursorTokenTray` 目录，启动时会迁到新目录（新目录已有 `config.json` 则不覆盖）。  
-用量历史：同目录 `usage_history.<账号ID>.jsonl`（旧版单文件 `usage_history.jsonl` 会在首次启动时归到当时那个账号）  
-用量明细缓存：同目录 `usage_events.<账号ID>.jsonl`（团队全员为 `usage_events.<账号ID>.team.jsonl`）
-
-## 云同步
-
-1. 在一台电脑打开 **设置 → 同步**，用邮箱注册并输入邮件中的验证码
-2. 选择同步方式。新账号默认是**服务器保存明细**：账号、设置和用量以明文行存在同步服务器上，登录只需要密码。改成**本机加密信封**后，还要设置独立的数据加密口令（至少 16 位）；其他设备也要选同一种方式，信封模式登录时要输入相同口令
-3. 启动时、保存账号 / 设置时、定时刷新时会自动与云端合并：按账号 `id` 最后写入获胜；删除会留下墓碑。自定义备注单独合并：空名称或默认邮箱名称不会盖掉已改过的备注，两边都改过时以最后一次改名为准。当前账号和每项设置（刷新间隔、告警、通知、图标、月费、汇率）各自按字段时间戳合并。剩余用量按 `usage_updated_at` 最后写入获胜；用量历史和报表明细按时间戳合并。信封模式上传前会压缩并裁掉过旧明细以免撑爆 1MB 限制
-4. 加密信封使用 PBKDF2-SHA256（600,000 次迭代）+ AES-256-GCM。登录密码可独立修改或通过邮箱重置；信封模式下不会改变数据加密口令，设置中可单独更改数据加密口令并重新加密云端密文。本机 `config.json` 里的加密口令和登录态按操作系统加密保存
-
-同步账号身份、上述跨设备设置、剩余用量、用量历史和报表缓存。开机自启、自动更新和告警去重仍留本机。  
-服务器保存明细时，Token 和账号密码对同步服务器可见，重置登录密码后数据仍在。信封模式下，忘记登录密码可通过已验证邮箱重置；忘记数据加密口令后服务端无法恢复明文，只能使用仍保存该口令的设备或加密备份。两种方式的数据不会自动互拷，切换后下一次同步会把本机快照写到所选的那一侧。服务端部署与邮件配置见 `server/README.md`。
-
-升级前已使用云同步的账号仍走本机加密信封，第一次登录时数据加密口令仍是旧版登录密码。登录后可在同步设置中单独更改为新口令，或改成服务器保存明细；更改口令后其他设备需退出云同步，再用新口令重新登录。
-
-## 说明
-
-- 圆环颜色：剩余 &gt;50% 绿，20–50% 黄，&lt;20% 红
-- 「登录到 Cursor」会礼貌关闭客户端（不强制结束），只改登录相关键；聊天记录、机器码、Electron Cookie 不动。若 10 秒内没退出，会放弃写入以免冲掉未保存文件
-- Windows：托盘、右键菜单、状态飞出层、设置都在**同一个 .NET 8 进程**里用 WinForms 完成（`NotifyIcon` + 系统菜单）。若图标在溢出区，可拖到任务栏常显
-- 这是 **macOS 菜单栏**应用，不是 iOS；没有 Dock 图标，圆环在屏幕**最上方**菜单栏右侧（Wi‑Fi / 控制中心旁边），并带剩余百分比文字
-- macOS：若看不到图标，点菜单栏「•••」或「控制中心」展开隐藏项；也可在「活动监视器」结束「Cursor 余量」后重新打开
-- 首次打开若立刻提示「已在后台运行」，多半是旧进程还在，先在活动监视器里退出再启动
-- macOS 点「设置…」会在**当前菜单栏进程**弹出系统原生设置窗，不另起子进程。打开设置 / 用量报表 / 账号对比时 Dock 可能短暂出现图标；窗口都关掉后图标会收回，菜单栏圆环应还在
-- 自动更新会结束当前进程再打开新 `.app`；若手动覆盖安装，请先在「活动监视器」结束旧的「Cursor 余量」，不要两个版本叠着跑
-- Token 过期后请重新导入或粘贴；飞出层会提示并可一键打开设置
+配置文件路径：
+- Windows: `%APPDATA%\CursorRemain\config.json`
+- macOS: `~/Library/Application Support/CursorRemain/config.json`
