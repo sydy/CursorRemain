@@ -10,6 +10,17 @@ if errorlevel 1 (
   echo 未找到 dotnet，请先安装 .NET 8 SDK。
   exit /b 1
 )
+
+where cargo >nul 2>&1
+if not errorlevel 1 (
+  echo 正在编译 Rust 核心库 (cursor_core)...
+  cargo build --release --manifest-path core\Cargo.toml
+  if errorlevel 1 (
+    echo Rust 核心库编译失败，请检查 Rust 工具链。
+    exit /b 1
+  )
+)
+
 dotnet publish windows\CursorRemain\CursorRemain.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -o dist
 if errorlevel 1 exit /b 1
 copy /y "%~dp0windows\packaging\首次运行.txt" "%~dp0dist\首次运行.txt" >nul

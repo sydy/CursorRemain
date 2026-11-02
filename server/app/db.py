@@ -159,6 +159,14 @@ def get_conn() -> sqlite3.Connection:
         return _CONN
 
 
+def close_for_tests() -> None:
+    global _CONN
+    with _LOCK:
+        if _CONN is not None:
+            _CONN.close()
+            _CONN = None
+
+
 def reset_for_tests(path: Path) -> None:
     global _CONN
     with _LOCK:

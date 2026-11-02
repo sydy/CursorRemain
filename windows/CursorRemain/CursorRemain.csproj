@@ -37,6 +37,12 @@
     <ProjectReference Include="..\CursorTokenCore\CursorTokenCore.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />
   </ItemGroup>
+  <!-- Remove unused WPF component from WebView2 to prevent WindowsBase conflict warning MSB3277 -->
+  <Target Name="RemoveWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(FileName)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
   <Target Name="CopyCursorCore" AfterTargets="Publish" Condition="Exists('$(NativeOutputDir)cursor_core.dll')">
     <Copy SourceFiles="$(NativeOutputDir)cursor_core.dll" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>

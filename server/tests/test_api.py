@@ -8,13 +8,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+# Ensure server package directory is on sys.path even when pytest runs from workspace root
+SERVER_DIR = Path(__file__).resolve().parent.parent
+if str(SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(SERVER_DIR))
+
 os.environ.setdefault("JWT_SECRET", "test-secret-for-sync-please-use-32b+")
 
 from fastapi.testclient import TestClient
 
 from app import settings
 from app.auth import LIMITER
-from app.db import reset_for_tests
+from app.db import close_for_tests, reset_for_tests
 from app.main import app
 from app.settings import DEV_JWT_FALLBACK, JWT_SECRET_MIN_LEN, resolve_jwt_secret
 
@@ -41,7 +46,11 @@ class ApiTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.mail_patch.stop()
-        self.tmp.cleanup()
+        close_for_tests()
+        try:
+            self.tmp.cleanup()
+        except OSError:
+            pass
 
     def _capture_mail(self, email: str, code: str, purpose: str) -> None:
         self.sent_codes[(email, purpose)] = code
@@ -184,9 +193,11 @@ class ApiTests(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         self.assertNotEqual(denied.returncode, 0, denied.stderr)
-        self.assertIn("JWT_SECRET", denied.stderr)
+        self.assertIn("JWT_SECRET", denied.stderr or "")
 
         env["ALLOW_DEV_JWT"] = "1"
         allowed = subprocess.run(
@@ -195,6 +206,8 @@ class ApiTests(unittest.TestCase):
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
         self.assertEqual(allowed.stdout.strip(), DEV_JWT_FALLBACK)
