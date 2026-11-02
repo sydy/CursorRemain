@@ -951,6 +951,7 @@ sealed class SettingsForm : Form
     void FillAccountRows()
     {
         _accounts.Rows.Clear();
+        DataGridViewRow? activeRow = null;
         foreach (var a in _cfg.Accounts)
         {
             var index = _accounts.Rows.Add(
@@ -959,8 +960,21 @@ sealed class SettingsForm : Form
                 StatusText.FormatAccountCheckStatus(a),
                 StatusText.FormatAccountCheckTime(a),
                 StatusText.FormatAccountKind(a));
-            _accounts.Rows[index].Tag = a.Id;
-            if (a.Id == _cfg.ActiveAccountId) _accounts.Rows[index].Selected = true;
+            var row = _accounts.Rows[index];
+            row.Tag = a.Id;
+            if (a.Id == _cfg.ActiveAccountId)
+            {
+                activeRow = row;
+            }
+        }
+        if (activeRow != null)
+        {
+            _accounts.CurrentCell = activeRow.Cells[0];
+            activeRow.Selected = true;
+        }
+        else if (_accounts.Rows.Count == 0)
+        {
+            _accounts.CurrentCell = null;
         }
         ApplyAccountGridMetrics();
     }
