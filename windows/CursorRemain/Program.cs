@@ -274,11 +274,24 @@ sealed partial class TrayContext : ApplicationContext
                 var item = new ToolStripMenuItem(title) { Checked = acc.Id == _config.ActiveAccountId, Tag = acc.Id };
                 item.Click += (_, _) =>
                 {
-                    if (item.Tag is string id) { _config.SetActiveAccount(id); ApplyConfig(_config, true); }
+                    if (item.Tag is string id && id != _config.ActiveAccountId)
+                    {
+                        SwitchAccount(id);
+                    }
                 };
                 _switcher.DropDownItems.Add(item);
             }
         }
+    }
+
+    void SwitchAccount(string accountId)
+    {
+        if (!_config.SetActiveAccount(accountId)) return;
+        var acc = _config.ActiveAccount;
+        _usage = acc?.LastRemaining is { } r ? new UsageSnapshot { RemainingPercent = r, MembershipType = acc.MembershipType } : null;
+        _error = null;
+        _updated = acc?.UsageUpdatedAt;
+        ApplyConfig(_config, refresh: true);
     }
 
     void RequestRefresh()

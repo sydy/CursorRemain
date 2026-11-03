@@ -51,13 +51,27 @@ sealed partial class TrayContext
             return;
         }
         var activeId = _config.ActiveAccountId;
-        var ordered = targets.OrderBy(a => a.Id == activeId ? 0 : 1).ToList();
-        var outcomes = (await BoundedWork.MapAsync(ordered, async acc =>
+        var activeTarget = targets.FirstOrDefault(a => a.Id == activeId);
+        var others = targets.Where(a => a.Id != activeId).ToList();
+
+        var outcomes = new List<RefreshOutcome>();
+        if (!string.IsNullOrEmpty(activeTarget.Id))
         {
-            var o = await FetchOne(acc);
-            ApplyActiveOutcome(o, generation);
-            return o;
-        })).ToList();
+            var activeOutcome = await FetchOne(activeTarget);
+            ApplyActiveOutcome(activeOutcome, generation);
+            outcomes.Add(activeOutcome);
+        }
+
+        if (others.Count > 0)
+        {
+            var otherOutcomes = await BoundedWork.MapAsync(others, async acc =>
+            {
+                var o = await FetchOne(acc);
+                ApplyActiveOutcome(o, generation);
+                return o;
+            });
+            outcomes.AddRange(otherOutcomes);
+        }
 
         var notices = new List<(string Title, string Body, bool Warn)>();
         AppConfig cfg;
