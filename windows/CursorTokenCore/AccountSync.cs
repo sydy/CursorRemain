@@ -343,7 +343,7 @@ public static class AccountSync
         foreach (var aid in accountIds)
         {
             if (string.IsNullOrWhiteSpace(aid)) continue;
-            var history = UsageHistory.LoadRecent(SyncUsageHistoryDays, aid, directory);
+            var history = UsageHistory.LoadRecent(SyncUsageHistoryDays, aid, directory, maxPoints: 500);
             var events = UsageEvents.Prune(UsageEvents.Load(aid, false, directory), cutoff);
             var team = UsageEvents.Prune(UsageEvents.Load(aid, true, directory), cutoff);
             if (history.Count == 0 && events.Count == 0 && team.Count == 0) continue;

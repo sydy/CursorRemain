@@ -209,6 +209,7 @@ sealed partial class TrayContext : ApplicationContext
         {
             if (string.IsNullOrEmpty(_config.SessionToken))
                 OpenSettings(true, false);
+            Task.Run(() => UsageHistory.PruneAll());
             _ = LoopAsync(_cts.Token);
             _ = UpdateLoopAsync(_cts.Token);
             if (Program.LaunchReport) OpenReport();
@@ -321,7 +322,7 @@ sealed partial class TrayContext : ApplicationContext
         if (!_menu.Visible) RefreshAccountMenu();
         if (_flyout is { Visible: true, IsDisposed: false })
         {
-            var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id);
+            var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id, maxPoints: 500);
             _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
         }
     }
@@ -352,7 +353,7 @@ sealed partial class TrayContext : ApplicationContext
                     },
                     OpenReport,
                     OpenCompare);
-                var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id);
+                var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id, maxPoints: 500);
                 _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
                 _flyout.PopupNear(anchor ?? Cursor.Position);
             }
@@ -554,6 +555,7 @@ sealed partial class TrayContext : ApplicationContext
                 _reconcileAgain = false;
                 var captured = _config;
                 var startedActive = captured.ActiveAccountId;
+                var prevAccountsFingerprint = string.Join("|", captured.Accounts.Select(a => $"{a.Id}:{a.Token}:{a.Label}"));
                 var status = await Task.Run(() => CloudSync.Reconcile(captured));
                 if ((status.Ok || status.Changed) && !ReferenceEquals(captured, _config))
                 {
@@ -566,7 +568,11 @@ sealed partial class TrayContext : ApplicationContext
                     catch (Exception ex) { CrashLog.Write(ex); }
                 }
                 NotifyCloudSync(status);
-                if (status.Changed) RequestRefresh();
+                var curAccountsFingerprint = string.Join("|", _config.Accounts.Select(a => $"{a.Id}:{a.Token}:{a.Label}"));
+                if (status.Changed && prevAccountsFingerprint != curAccountsFingerprint)
+                {
+                    RequestRefresh();
+                }
             } while (_reconcileAgain && _config.SyncEnabled);
         }
         catch (Exception ex) { CrashLog.Write(ex); }
