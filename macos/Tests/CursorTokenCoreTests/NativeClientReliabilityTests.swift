@@ -48,6 +48,30 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertEqual(RefreshGeneration.accountRefreshLimit, 2)
     }
 
+    func testConcurrentRustCallsKeepTheirOwnResults() async {
+        let iterations = 24
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<iterations {
+                group.addTask {
+                    XCTAssertTrue(Token.isAuthErrorMessage("Token 已过期"))
+                    XCTAssertFalse(Token.isAuthErrorMessage("刷新失败: 超时"))
+                    let marker = "acct-\(index)-\(UUID().uuidString)"
+                    let csv = UsageEvents.toCSV([
+                        UsageEvent(
+                            id: marker,
+                            timestampMs: 1_700_000_000_000,
+                            model: marker,
+                            kind: UsageEvents.kindIncluded,
+                            tokens: 3
+                        )
+                    ])
+                    XCTAssertTrue(csv.hasPrefix("\u{FEFF}"))
+                    XCTAssertTrue(csv.contains(marker))
+                }
+            }
+        }
+    }
+
     func testNormalizeReportRangeSwapsInvertedDates() {
         let swapped = UsageEvents.normalizeReportRange("2026-09-15", "2026-09-01")
         XCTAssertEqual(swapped.start, "2026-09-01")

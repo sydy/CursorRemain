@@ -1,9 +1,22 @@
 import Foundation
 
 enum RustCore {
-    static var lastText = ""
-    // lastText keeps the raw FFI text because JSON decoding drops a leading BOM.
+    private struct Reply {
+        var text: String
+        var value: Any
+    }
+
     static func call(_ op: String, _ input: Any) -> Any {
+        invoke(op, input).value
+    }
+
+    /// JSON text from this call, before Foundation decoding.
+    /// Usage CSV keeps it because decoding drops a leading BOM.
+    static func rawText(_ op: String, _ input: Any) -> String {
+        invoke(op, input).text
+    }
+
+    private static func invoke(_ op: String, _ input: Any) -> Reply {
         let data: Data
         do {
             data = try JSONSerialization.data(withJSONObject: input, options: [.fragmentsAllowed])
@@ -19,13 +32,12 @@ enum RustCore {
         guard let ptr else { fatalError("cursor_core 没有返回结果") }
         defer { cr_free(ptr) }
         let text = String(cString: ptr)
-        Self.lastText = text
         guard let output = text.data(using: .utf8),
               let value = try? JSONSerialization.jsonObject(with: output, options: [.fragmentsAllowed])
         else {
             fatalError("cursor_core 返回了非 JSON")
         }
-        return value
+        return Reply(text: text, value: value)
     }
 
     static func string(_ op: String, _ input: Any) -> String {

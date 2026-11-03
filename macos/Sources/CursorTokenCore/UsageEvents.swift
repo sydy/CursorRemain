@@ -1140,8 +1140,7 @@ public enum UsageEvents {
                 "now_ms": allocation.nowMs as Any,
             ]
         }
-        _ = RustCore.string("usage_events_csv", payload)
-        return decodeRustText(RustCore.lastText)
+        return decodeRustText(RustCore.rawText("usage_events_csv", payload))
     }
 
     public static func accountCompareToCSV(_ report: AccountCompareReport) -> String {
@@ -1190,8 +1189,7 @@ public enum UsageEvents {
                 },
             ]
         ]
-        _ = RustCore.string("account_compare_csv", payload)
-        return decodeRustText(RustCore.lastText)
+        return decodeRustText(RustCore.rawText("account_compare_csv", payload))
     }
 
     static func decodeRustText(_ raw: String) -> String {
