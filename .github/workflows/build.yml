@@ -99,6 +99,16 @@ jobs:
       run: swift test --package-path macos
     - name: Compile menu bar app
       run: swift build --package-path macos --product CursorRemain -c release
+    - name: Reject dynamic cursor_core linkage
+      run: |
+        set -euo pipefail
+        bin="$(swift build --package-path macos --product CursorRemain -c release --show-bin-path)/CursorRemain"
+        deps="$(otool -L "$bin")"
+        if printf '%s\n' "$deps" | grep -E 'libcursor_core\.dylib|/Users/runner/' >/dev/null; then
+          echo "$deps" >&2
+          echo "CursorRemain must statically link libcursor_core.a" >&2
+          exit 1
+        fi
 
   cleanup-artifacts:
     name: Cleanup artifacts
