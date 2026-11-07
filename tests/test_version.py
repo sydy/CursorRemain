@@ -77,6 +77,7 @@ class VersionConsistencyTests(unittest.TestCase):
     def test_macos_package_force_loads_static_core(self) -> None:
         manifest = (ROOT / "macos" / "Package.swift").read_text(encoding="utf-8")
         self.assertIn("-force_load", manifest)
+        self.assertIn("-Xlinker", manifest)
         self.assertIn("libcursor_core.a", manifest)
         self.assertIn("#filePath", manifest)
         self.assertNotIn('.linkedLibrary("cursor_core"', manifest)

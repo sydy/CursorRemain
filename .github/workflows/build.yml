@@ -95,6 +95,19 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
     - name: Build Rust core
       run: cargo build --release --manifest-path core/Cargo.toml
+    - name: Hide cursor_core dylib before Swift link
+      run: |
+        set -euo pipefail
+        stash=core/target/release/.cursor-core-dylib-stash
+        mkdir -p "$stash"
+        for dylib in \
+          core/target/release/libcursor_core.dylib \
+          core/target/release/deps/libcursor_core.dylib
+        do
+          if [[ -e "$dylib" ]]; then
+            mv -f "$dylib" "$stash/$(basename "$(dirname "$dylib")")-$(basename "$dylib")"
+          fi
+        done
     - name: Swift tests
       run: swift test --package-path macos
     - name: Compile menu bar app

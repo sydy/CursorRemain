@@ -18,7 +18,8 @@ var targets: [Target] = [
         linkerSettings: [
             .linkedLibrary("sqlite3"),
             .linkedFramework("Security", .when(platforms: [.macOS])),
-            .unsafeFlags(["-force_load", cursorCoreStatic], .when(platforms: [.macOS])),
+            // Pass via -Xlinker: SPM feeds these to swiftc, which rejects bare -force_load.
+            .unsafeFlags(["-Xlinker", "-force_load", "-Xlinker", cursorCoreStatic], .when(platforms: [.macOS])),
         ]
     ),
     .testTarget(
@@ -28,7 +29,7 @@ var targets: [Target] = [
         linkerSettings: [
             .linkedLibrary("sqlite3"),
             .linkedFramework("Security", .when(platforms: [.macOS])),
-            .unsafeFlags(["-force_load", cursorCoreStatic], .when(platforms: [.macOS])),
+            .unsafeFlags(["-Xlinker", "-force_load", "-Xlinker", cursorCoreStatic], .when(platforms: [.macOS])),
         ]
     ),
 ]
