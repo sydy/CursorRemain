@@ -70,9 +70,17 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn('REPO/VERSION', script)
         self.assertIn("CFBundleShortVersionString", script)
         self.assertIn("CFBundleVersion", script)
-        self.assertIn("assert_no_cursor_core_dylib", script)
+        self.assertIn("assert_portable_linkage", script)
+        self.assertIn("normalize_linkage.sh", script)
         self.assertIn("libcursor_core.a", script)
         self.assertIn("libcursor_core.dylib", script)
+
+    def test_normalize_linkage_makes_app_portable(self) -> None:
+        script = (ROOT / "macos" / "scripts" / "normalize_linkage.sh").read_text(encoding="utf-8")
+        self.assertIn("install_name_tool -change", script)
+        self.assertIn("@executable_path/../Frameworks/libcursor_core.dylib", script)
+        self.assertIn("install_name_tool -id", script)
+        self.assertIn("codesign --force --deep --sign", script)
 
     def test_macos_package_force_loads_static_core(self) -> None:
         manifest = (ROOT / "macos" / "Package.swift").read_text(encoding="utf-8")
