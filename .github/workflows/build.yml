@@ -85,48 +85,11 @@ jobs:
     - name: Docker build
       run: docker build -t cursor-sync:${{ github.sha }} ./server
 
-  test-macos:
-    name: Test (Swift)
-    needs: [version]
-    if: needs.version.outputs.build == 'true'
-    runs-on: macos-latest
-    steps:
-    - uses: actions/checkout@v7
-    - uses: dtolnay/rust-toolchain@stable
-    - name: Build Rust core
-      run: cargo build --release --manifest-path core/Cargo.toml
-    - name: Hide cursor_core dylib before Swift link
-      run: |
-        set -euo pipefail
-        stash=core/target/release/.cursor-core-dylib-stash
-        mkdir -p "$stash"
-        for dylib in \
-          core/target/release/libcursor_core.dylib \
-          core/target/release/deps/libcursor_core.dylib
-        do
-          if [[ -e "$dylib" ]]; then
-            mv -f "$dylib" "$stash/$(basename "$(dirname "$dylib")")-$(basename "$dylib")"
-          fi
-        done
-    - name: Swift tests
-      run: swift test --package-path macos
-    - name: Compile menu bar app
-      run: swift build --package-path macos --product CursorRemain -c release
-    # Do not gate the macOS package here. Swift may still link the cdylib and
-    # embed the runner's absolute target/release path; package_app.sh bundles
-    # that dylib and normalize_linkage.sh rewrites the load path, then asserts
-    # the result is portable. Failing this job only skipped Build macOS, so
-    # the rolling `latest` release kept serving a stale .app.
-    - name: Report cursor_core linkage
-      run: |
-        bin="$(swift build --package-path macos --product CursorRemain -c release --show-bin-path)/CursorRemain"
-        deps="$(otool -L "$bin" | grep -i cursor_core || true)"
-        if [[ -z "$deps" ]]; then
-          echo "linkage: static (libcursor_core.a folded into the executable)"
-        else
-          echo "linkage: dynamic, normalized at packaging time:"
-          echo "$deps"
-        fi
+  # Swift tests run inside build-macos. A separate macOS test job needed a
+  # second hosted macOS runner, and hosted macOS capacity is scarce: the test
+  # job would grab a runner, then Build macOS timed out waiting for one
+  # ("job was not acquired by Runner of type hosted") and the rolling `latest`
+  # kept serving the stale .app. One macOS job, one runner, always ships.
 
   cleanup-artifacts:
     name: Cleanup artifacts
@@ -266,23 +229,38 @@ jobs:
           generate_release_notes: true
           make_latest: true
 
-  # Do not wait on the Python/.NET test job. Swift tests still gate this job.
+  # Swift tests run here so the whole macOS pipeline needs one hosted runner.
   # Only this job rewrites the rolling `latest` notes. Windows uploads its
   # zips without moving that SHA, so a skipped macOS build cannot advertise a
   # commit whose CursorRemain-macos.zip is still the previous one.
   build-macos:
     name: Build macOS
     runs-on: macos-latest
-    needs: [version, test-macos]
+    needs: [version]
     if: needs.version.outputs.build == 'true'
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Swift tests
+        run: |
+          cargo build --release --manifest-path core/Cargo.toml
+          swift test --package-path macos
       - name: Package .app
         run: |
-          chmod +x macos/scripts/package_app.sh
+          chmod +x macos/scripts/package_app.sh macos/scripts/normalize_linkage.sh
           SOURCE_REVISION="${GITHUB_SHA}" ./macos/scripts/package_app.sh
+      - name: Verify packaged app is portable
+        run: |
+          set -euo pipefail
+          bin=macos/dist/CursorRemain.app/Contents/MacOS/CursorRemain
+          otool -L "$bin"
+          if otool -L "$bin" | awk '/libcursor_core\.dylib/ && $1 !~ /^@/ {print; found=1} END {exit !found}'; then
+            echo "error: packaged app still resolves libcursor_core from an absolute path" >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict macos/dist/CursorRemain.app
       - name: Zip .app
         run: |
           ditto -c -k macos/dist/release CursorRemain-macos.zip
