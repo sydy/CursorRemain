@@ -14,6 +14,9 @@ fi
 
 # Cargo also emits a cdylib for Windows. Hide it before Swift links so a
 # future Package.swift regression cannot silently pick the dylib again.
+# Cargo 1.99 only writes libcursor_core.dylib at target/release (deps keeps
+# hashed names), so guard each path: a bare `mv` under `set -e` killed
+# packaging with "No such file or directory".
 stash_dir="$REPO/core/target/release/.cursor-core-dylib-stash"
 mkdir -p "$stash_dir"
 shopt -s nullglob
@@ -21,6 +24,7 @@ for dylib in \
   "$REPO/core/target/release/libcursor_core.dylib" \
   "$REPO/core/target/release/deps/libcursor_core.dylib"
 do
+  [[ -e "$dylib" ]] || continue
   base="$(basename "$(dirname "$dylib")")-$(basename "$dylib")"
   mv -f "$dylib" "$stash_dir/$base"
 done

@@ -74,6 +74,9 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn("normalize_linkage.sh", script)
         self.assertIn("libcursor_core.a", script)
         self.assertIn("libcursor_core.dylib", script)
+        # Cargo does not always write deps/libcursor_core.dylib; an unguarded
+        # mv under `set -e` aborted macOS packaging on CI.
+        self.assertIn('[[ -e "$dylib" ]] || continue', script)
 
     def test_normalize_linkage_makes_app_portable(self) -> None:
         script = (ROOT / "macos" / "scripts" / "normalize_linkage.sh").read_text(encoding="utf-8")
