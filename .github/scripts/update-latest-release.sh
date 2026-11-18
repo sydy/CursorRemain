@@ -9,6 +9,7 @@ if [[ -z "${GITHUB_SHA:-}" || -z "${GITHUB_REPOSITORY:-}" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 VERSION="$(tr -d '[:space:]' < "${ROOT}/VERSION")"
 SHORT_SHA="${GITHUB_SHA:0:7}"
 SUBJECT="$(git log -1 --format=%s "${GITHUB_SHA}" | tr -d '\r')"
@@ -16,7 +17,6 @@ BODY="$(git log -1 --format=%b "${GITHUB_SHA}" | tr -d '\r')"
 STAT="$(git log -1 --stat --oneline "${GITHUB_SHA}" | tail -n +2 || true)"
 RECENT_COMMITS="$(git log -5 --pretty=format:"- [\`%h\`](${SERVER_URL}/${GITHUB_REPOSITORY}/commit/%H) %s (%ad)" --date=short || true)"
 TIME_UTC="$(date -u +"%Y-%m-%d %H:%M UTC")"
-SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
 RUN_URL="${SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 COMMIT_URL="${SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}"
 NOTES_FILE="${GITHUB_WORKSPACE:-.}/latest-release-notes.md"
