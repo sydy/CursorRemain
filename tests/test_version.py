@@ -93,6 +93,17 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn("#filePath", manifest)
         self.assertNotIn('.linkedLibrary("cursor_core"', manifest)
 
+    def test_account_list_avoids_native_table_scrollers(self) -> None:
+        # 原生 SwiftUI Table 在账号很少时也会同时冒出横向与纵向滚动条，
+        # 把最后一行盖住；账号列表因此改为自绘行。
+        view = (ROOT / "macos" / "Sources" / "CursorRemain" / "SettingsView.swift").read_text(encoding="utf-8")
+        self.assertNotIn("Table(store.config.accounts", view)
+        self.assertNotIn("AccountTableColumnFit", view)
+        self.assertIn("private enum AccountTableLayout", view)
+        self.assertIn("static let rowHeight", view)
+        self.assertIn("var accountHeaderRow", view)
+        self.assertIn("func accountRow(", view)
+
     def test_snapshot_json_round_trips_quota_fields(self) -> None:
         # Grok Bot 合并会经 Rust 往返一次快照；回传 JSON 缺字段就会把
         # auto/api/cents 清成 nil，悬浮窗只剩一条 Grok Bot 进度条。
