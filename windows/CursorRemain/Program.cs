@@ -367,11 +367,30 @@ sealed partial class TrayContext : ApplicationContext
                         catch { }
                     },
                     OpenReport,
-                    OpenCompare);
+                    OpenCompare,
+                    ReloginDoubao);
                 var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id, maxPoints: 500);
                 _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist),
                     CurrentDoubaoUsage, CurrentDoubaoError, CurrentDoubaoUpdated);
                 _flyout.PopupNear(anchor ?? Cursor.Position);
+            }
+            catch (Exception ex) { CrashLog.Write(ex); }
+        });
+    }
+
+    /// <summary>浮窗「登录豆包」：直接开按账号隔离的 WebView2 登录窗，成功后原地换 Cookie 并刷新。</summary>
+    void ReloginDoubao()
+    {
+        OnUi(() =>
+        {
+            try
+            {
+                var account = _config.ActiveDoubaoAccount;
+                if (account is null) { OpenSettings(false, false); return; }
+                using var dlg = new DoubaoLoginForm(account.Id);
+                if (dlg.ShowDialog() != DialogResult.OK || dlg.Cookie.Length == 0) return;
+                _config.UpsertDoubaoAccount(dlg.Cookie, existingId: account.Id, activate: true);
+                ApplyConfig(_config, refresh: true);
             }
             catch (Exception ex) { CrashLog.Write(ex); }
         });

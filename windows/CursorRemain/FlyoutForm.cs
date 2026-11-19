@@ -7,7 +7,7 @@ namespace CursorRemain;
 
 sealed class FlyoutForm : Form
 {
-    readonly Action _dismissBalloon, _refresh, _web, _settings, _copy, _report, _compare;
+    readonly Action _dismissBalloon, _refresh, _web, _settings, _copy, _report, _compare, _doubaoLogin;
     readonly System.Windows.Forms.Timer _activateTimer = new() { Interval = 220 };
     readonly System.Windows.Forms.Timer _holdTimer = new() { Interval = 180 };
     readonly System.Windows.Forms.Timer _hideTimer = new() { Interval = 160 };
@@ -29,9 +29,10 @@ sealed class FlyoutForm : Form
 
     protected override bool ShowWithoutActivation => true;
 
-    public FlyoutForm(Action dismissBalloon, Action refresh, Action web, Action settings, Action copy, Action report, Action compare)
+    public FlyoutForm(Action dismissBalloon, Action refresh, Action web, Action settings, Action copy, Action report, Action compare, Action doubaoLogin)
     {
         _dismissBalloon = dismissBalloon;
+        _doubaoLogin = doubaoLogin;
         _refresh = refresh;
         _web = web;
         _settings = settings;
@@ -103,6 +104,7 @@ sealed class FlyoutForm : Form
                 case "report": _report(); break;
                 case "compare": _compare(); break;
                 case "settings": _settings(); break;
+                case "doubaologin": _doubaoLogin(); break;
                 case "web": _web(); break;
             }
         };
@@ -516,7 +518,7 @@ sealed class FlyoutForm : Form
 
     void DrawButtons(Graphics g, RectangleF box, FlyoutPalette pal, float s)
     {
-        var items = new (string Id, string Icon, string Label)[]
+        var items = new List<(string Id, string Icon, string Label)>
         {
             ("copy", "\uE8C8", "复制"),
             ("refresh", "\uE72C", "刷新"),
@@ -524,12 +526,15 @@ sealed class FlyoutForm : Form
             ("compare", "\uE9F9", "对比"),
             ("settings", "\uE713", StatusText.FlyoutSettingsTitle(_error)),
         };
+        // 豆包登录失效时给一个直达登录窗口的按钮，不再绕设置页。
+        if (!string.IsNullOrWhiteSpace(_doubaoError))
+            items.Insert(items.Count - 1, ("doubaologin", "\uE77B", "登录豆包"));
         using var font = UiChrome.UiFont(9f);
         using var iconFont = IconFont(11f);
         using var measure = new StringFormat(StringFormat.GenericTypographic);
         var hasIcon = iconFont is not null;
-        var sizes = new (float Width, float Height)[items.Length];
-        for (var i = 0; i < items.Length; i++)
+        var sizes = new (float Width, float Height)[items.Count];
+        for (var i = 0; i < items.Count; i++)
         {
             var text = g.MeasureString(items[i].Label, font, int.MaxValue, measure);
             sizes[i] = FlyoutLayout.ToolButtonSize(text.Width, text.Height, hasIcon, s);
@@ -539,7 +544,7 @@ sealed class FlyoutForm : Form
         var padX = FlyoutLayout.ToolButtonPadX * s;
         var iconSlot = hasIcon ? FlyoutLayout.ToolButtonIcon * s : 0;
         var iconTextGap = hasIcon ? FlyoutLayout.ToolButtonIconGap * s : 0;
-        for (var i = 0; i < items.Length; i++)
+        for (var i = 0; i < items.Count; i++)
         {
             var it = items[i];
             var fr = frames[i];
