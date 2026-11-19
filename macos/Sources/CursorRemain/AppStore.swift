@@ -15,6 +15,9 @@ final class AppStore: ObservableObject {
     @Published var doubaoUsage: UsageSnapshot?
     @Published var doubaoError: String?
     @Published var doubaoUpdatedAt: String?
+    /// 当前豆包账号下一次允许拉取的时间，设置页显示「下次刷新」。
+    @Published var doubaoNextRefreshAt: Date?
+    @Published var doubaoLoginBusy = false
     @Published var settingsVisible = false
     @Published var flyoutVisible = false
     @Published var importStatus = ""
@@ -187,6 +190,7 @@ final class AppStore: ObservableObject {
         doubaoUsage = nil
         doubaoError = nil
         doubaoUpdatedAt = nil
+        doubaoNextRefreshAt = nil
         applyConfig(cfg, refresh: true)
     }
 
@@ -196,6 +200,7 @@ final class AppStore: ObservableObject {
         doubaoUsage = nil
         doubaoError = nil
         doubaoUpdatedAt = nil
+        doubaoNextRefreshAt = nil
         applyConfig(cfg, refresh: false)
     }
 
@@ -476,10 +481,12 @@ final class AppStore: ObservableObject {
         }
         if let doubao = outcomes.first(where: { $0.id == cfg.activeDoubaoAccount?.id }) {
             applyDoubaoOutcome(doubao)
+            doubaoNextRefreshAt = Self.nextDoubaoFetch(config.refreshIntervalMinutes)
         } else if cfg.activeDoubaoAccount == nil {
             doubaoUsage = nil
             doubaoError = nil
             doubaoUpdatedAt = nil
+            doubaoNextRefreshAt = nil
         }
         for n in notices { notify(n.0, n.1) }
         if !refreshNow { accountCheckStatus = "" }
@@ -551,8 +558,26 @@ final class AppStore: ObservableObject {
         doubaoUsage = nil
         doubaoError = nil
         doubaoUpdatedAt = nil
+        doubaoNextRefreshAt = nil
         applyConfig(cfg, refresh: true)
         return ""
+    }
+
+    /// 浮窗失效状态下的「一键重新登录」：直接开内嵌登录窗口，成功后原地换 Cookie 并刷新。
+    func reloginActiveDoubao() {
+        guard !doubaoLoginBusy, let account = config.activeDoubaoAccount else { return }
+        doubaoLoginBusy = true
+        Task { @MainActor in
+            defer { doubaoLoginBusy = false }
+            let cookie = await DoubaoLoginController.shared.run(accountId: account.id)
+            guard let cookie, !cookie.isEmpty else { return }
+            let message = saveDoubaoAccount(cookie: cookie, existingId: account.id)
+            if !message.isEmpty {
+                doubaoError = message
+            } else {
+                requestRefresh()
+            }
+        }
     }
 
     /// 在系统浏览器打开豆包订阅页（网页侧栏有「豆包订阅」入口）。

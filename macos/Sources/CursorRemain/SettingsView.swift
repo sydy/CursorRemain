@@ -299,6 +299,13 @@ struct SettingsRootView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if account.id == store.config.activeDoubaoAccountId,
+                       let next = store.doubaoNextRefreshAt {
+                        Text("· 下次 \(shortTime(next))")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 8)
                     Button("重新登录") { loginDoubaoAccount(existing: account) }
                         .disabled(doubaoLoginRunning)
@@ -317,6 +324,12 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     func loginDoubaoAccount(existing: Account?) {

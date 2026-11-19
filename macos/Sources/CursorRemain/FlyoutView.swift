@@ -233,12 +233,13 @@ struct FlyoutView: View {
                 }
                 Spacer(minLength: 0)
                 if store.doubaoError != nil {
-                    Button("重新登录") {
+                    Button(store.doubaoLoginBusy ? "正在登录…" : "重新登录") {
                         FlyoutWindowController.shared.close()
-                        store.openSettings(focusToken: false)
+                        store.reloginActiveDoubao()
                     }
                     .font(.caption2)
                     .buttonStyle(.link)
+                    .disabled(store.doubaoLoginBusy)
                 } else {
                     Text(store.config.activeDoubaoAccount?.displayLabel ?? "")
                         .font(.caption2)
