@@ -1,4 +1,4 @@
-use crate::{config, events, login, status, sync, token, update, usage, validity};
+use crate::{config, doubao, events, login, status, sync, token, update, usage, validity};
 use serde_json::{json, Value};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -37,6 +37,14 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "can_write_to_cursor" => json!(token::can_write_to_cursor(text(input, "input"))),
         "extract_jwt" => json!(token::extract_jwt(text(input, "input"))),
         "parse_usage_summary" => usage::parse_usage_summary(&input["payload"], input["now"].as_str()),
+        "parse_doubao_quota" => doubao::parse_doubao_quota(&input["payload"], input["now"].as_str()),
+        "doubao_window_text" => json!(doubao::window_text(&input["window"])),
+        "doubao_reset_text" => json!(doubao::reset_text(&input["window"], input["now"].as_str())),
+        "doubao_identity" => doubao::identity(&input["payload"], text(input, "cookie")),
+        "doubao_account_id" => json!(doubao::account_id(text(input, "input"), text(input, "salt"))),
+        "normalize_doubao_cookie" => json!(doubao::normalize_cookie(text(input, "input"))),
+        "sanitize_provider" => json!(doubao::sanitize_provider(text(input, "input"))),
+        "is_doubao_auth_code" => json!(doubao::is_auth_code(input["code"].as_i64())),
         "parse_sand_usage" => usage::parse_sand_usage_status(&input["payload"], input["now"].as_str()).unwrap_or(Value::Null),
         "apply_sand_usage" => {
             let mut snapshot = input["snapshot"].clone();

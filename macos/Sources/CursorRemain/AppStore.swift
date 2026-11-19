@@ -11,6 +11,10 @@ final class AppStore: ObservableObject {
     @Published var usage: UsageSnapshot?
     @Published var errorMessage: String?
     @Published var updatedAt: String?
+    /// 豆包账号独立的一套状态：Cursor 的 `usage` 只对应 Cursor 当前账号。
+    @Published var doubaoUsage: UsageSnapshot?
+    @Published var doubaoError: String?
+    @Published var doubaoUpdatedAt: String?
     @Published var settingsVisible = false
     @Published var flyoutVisible = false
     @Published var importStatus = ""
@@ -25,6 +29,7 @@ final class AppStore: ObservableObject {
     @Published var dailyAvgBurn: Double?
 
     let client = CursorClient()
+    let doubaoClient = DoubaoClient()
     var settingsDirectory: URL?
 
     private var refreshTask: Task<Void, Never>?
@@ -35,6 +40,8 @@ final class AppStore: ObservableObject {
     private var reconcileRunning = false
     private var reconcileAgain = false
     private var lastCloudNotify = ""
+    /// 豆包额度官方约 5 分钟更新一次：每个账号至少隔 5 分钟再拉，手动刷新不受限。
+    private var doubaoNextFetch: [String: Date] = [:]
 
     init(directory: URL? = nil) {
         settingsDirectory = directory
@@ -54,7 +61,7 @@ final class AppStore: ObservableObject {
         loopRefresh()
         loopUpdates()
         enqueueReconcile(refresh: false)
-        if config.sessionToken.isEmpty {
+        if !config.hasAnyAccount {
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 self.openSettings(focusToken: true)
@@ -75,7 +82,7 @@ final class AppStore: ObservableObject {
     func requestRefresh() {
         refreshGeneration += 1
         refreshNow = true
-        accountCheckStatus = config.accounts.isEmpty ? "" : "正在检查账号状态…"
+        accountCheckStatus = config.cursorAccounts.isEmpty ? "" : "正在检查账号状态…"
         waitTask?.cancel()
     }
 
@@ -171,6 +178,25 @@ final class AppStore: ObservableObject {
         updatedAt = nil
         applyConfig(cfg, refresh: true)
         reloadHistory()
+    }
+
+    /// 只切换浮窗展示的豆包账号，不动 Cursor 的当前账号。
+    func switchDoubaoAccount(_ id: String) {
+        var cfg = config
+        guard cfg.setActiveDoubaoAccount(id) else { return }
+        doubaoUsage = nil
+        doubaoError = nil
+        doubaoUpdatedAt = nil
+        applyConfig(cfg, refresh: true)
+    }
+
+    func removeDoubaoAccount(_ id: String) {
+        var cfg = config
+        guard cfg.removeAccount(id) else { return }
+        doubaoUsage = nil
+        doubaoError = nil
+        doubaoUpdatedAt = nil
+        applyConfig(cfg, refresh: false)
     }
 
     func loginToCursor(confirmClose: (Bool) -> Bool) async -> CursorAuthApplyResult {
@@ -347,7 +373,10 @@ final class AppStore: ObservableObject {
     func refreshAll() async {
         refreshGeneration += 1
         let generation = refreshGeneration
-        let targets = config.accounts.map { RefreshTarget(id: $0.id, token: $0.token, decryptFailed: $0.tokenDecryptFailed) }
+        let forced = refreshNow
+        let targets = config.accounts.map {
+            RefreshTarget(id: $0.id, token: $0.token, provider: $0.provider, decryptFailed: $0.tokenDecryptFailed)
+        }
         if targets.isEmpty {
             usage = nil
             errorMessage = "未配置 Token，请打开设置粘贴"
@@ -355,15 +384,25 @@ final class AppStore: ObservableObject {
             historyPoints = []
             dailyAvgBurn = nil
             accountCheckStatus = ""
+            doubaoUsage = nil
+            doubaoError = nil
+            doubaoUpdatedAt = nil
             return
         }
         let activeId = config.activeAccountId
-        let ordered = targets.sorted { a, b in
+        let cursorTargets = targets.filter { $0.provider != AccountProvider.doubao }
+        let doubaoTargets = targets.filter { $0.provider == AccountProvider.doubao }.filter {
+            forced || Self.doubaoFetchAllowed(doubaoNextFetch[$0.id])
+        }
+        let ordered = cursorTargets.sorted { a, b in
             (a.id == activeId ? 0 : 1) < (b.id == activeId ? 0 : 1)
+        } + doubaoTargets.sorted { a, b in
+            (a.id == config.activeDoubaoAccount?.id ? 0 : 1) < (b.id == config.activeDoubaoAccount?.id ? 0 : 1)
         }
         let client = self.client
+        let doubaoClient = self.doubaoClient
         var outcomes: [Outcome] = await RefreshGeneration.mapBounded(ordered) { acc in
-            await Self.fetchOne(client: client, account: acc)
+            await Self.fetchOne(client: client, doubaoClient: doubaoClient, account: acc)
         }
         for o in outcomes {
             applyActiveOutcome(o, generation: generation)
@@ -379,11 +418,18 @@ final class AppStore: ObservableObject {
                 )
             }
         }
+        for o in outcomes where o.provider == AccountProvider.doubao {
+            doubaoNextFetch[o.id] = Self.nextDoubaoFetch(config.refreshIntervalMinutes)
+        }
 
         var notices: [(String, String)] = []
         let cfg = ConfigStore.update(from: settingsDirectory) { live in
             for o in outcomes {
                 guard let idx = live.accounts.firstIndex(where: { $0.id == o.id }) else { continue }
+                if live.accounts[idx].isDoubao {
+                    applyDoubaoOutcomeToConfig(&live, index: idx, outcome: o, notices: &notices)
+                    continue
+                }
                 if let snap = o.snap {
                     var adjusted = snap
                     AccountValidity.applyEndOverride(&adjusted, account: live.accounts[idx])
@@ -420,20 +466,104 @@ final class AppStore: ObservableObject {
         config = cfg
         if let active = outcomes.first(where: { $0.id == cfg.activeAccountId }) {
             applyActiveOutcome(active, generation: generation)
-        } else if cfg.accounts.isEmpty {
+        } else if cfg.cursorAccounts.isEmpty {
             usage = nil
-            errorMessage = "未配置 Token，请打开设置粘贴"
+            errorMessage = cfg.hasAnyAccount ? "未添加 Cursor 账号" : "未配置 Token，请打开设置粘贴"
             updatedAt = nil
             reloadHistory()
         } else {
             reloadHistory()
+        }
+        if let doubao = outcomes.first(where: { $0.id == cfg.activeDoubaoAccount?.id }) {
+            applyDoubaoOutcome(doubao)
+        } else if cfg.activeDoubaoAccount == nil {
+            doubaoUsage = nil
+            doubaoError = nil
+            doubaoUpdatedAt = nil
         }
         for n in notices { notify(n.0, n.1) }
         if !refreshNow { accountCheckStatus = "" }
         enqueueReconcile(refresh: false)
     }
 
+    private static func nextDoubaoFetch(_ refreshMinutes: Int) -> Date {
+        let seconds = max(DoubaoCredentials.maxFetchIntervalSeconds, TimeInterval(max(1, refreshMinutes) * 60))
+        return Date().addingTimeInterval(seconds)
+    }
+
+    private static func doubaoFetchAllowed(_ next: Date?) -> Bool {
+        guard let next else { return true }
+        return Date() >= next
+    }
+
+    private func applyDoubaoOutcome(_ o: Outcome) {
+        if let snap = o.snap {
+            doubaoUsage = snap
+            doubaoError = nil
+        } else if let err = o.error {
+            doubaoUsage = nil
+            doubaoError = err
+        }
+        doubaoUpdatedAt = o.stamp
+    }
+
+    private func applyDoubaoOutcomeToConfig(
+        _ live: inout AppConfig,
+        index: Int,
+        outcome: Outcome,
+        notices: inout [(String, String)]
+    ) {
+        let id = live.accounts[index].id
+        if let snap = outcome.snap {
+            live.applySnapshot(
+                to: id,
+                membershipType: snap.membershipType,
+                remaining: snap.remainingPercent,
+                error: "",
+                updatedAt: outcome.stamp
+            )
+            live.accounts[index].authErrorNotified = false
+            var account = live.accounts[index]
+            // 豆包拿不到周期起止时间，本期对它关闭「耗尽风险」预警。
+            let found = AlertLogic.evaluate(config: live, account: &account, snapshot: snap, exhaustionRisk: false)
+            live.accounts[index] = account
+            for n in found { notices.append((n.title, n.body)) }
+        } else if let err = outcome.error {
+            live.applySnapshot(to: id, error: err, updatedAt: outcome.stamp)
+            if outcome.authError, !live.accounts[index].authErrorNotified {
+                live.accounts[index].authErrorNotified = true
+                if live.notifyEnabled {
+                    notices.append(("豆包登录已失效", "账号「\(live.accounts[index].displayLabel)」：\(err)"))
+                }
+            }
+        }
+    }
+
+    /// 设置页添加/重新登录豆包账号后落盘，并立即刷新浮窗状态。
+    @discardableResult
+    func saveDoubaoAccount(cookie: String, existingId: String? = nil, membershipType: String? = nil) -> String {
+        var cfg = config
+        do {
+            _ = try cfg.upsertDoubaoAccount(cookie: cookie, membershipType: membershipType, existingId: existingId)
+        } catch {
+            return error.localizedDescription
+        }
+        doubaoUsage = nil
+        doubaoError = nil
+        doubaoUpdatedAt = nil
+        applyConfig(cfg, refresh: true)
+        return ""
+    }
+
+    /// 在系统浏览器打开豆包订阅页（网页侧栏有「豆包订阅」入口）。
+    func openDoubaoSubscription() {
+        if let url = URL(string: DoubaoCredentials.loginURL) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     private func applyActiveOutcome(_ o: Outcome, generation: Int) {
+        guard o.provider != AccountProvider.doubao else { return }
         guard RefreshGeneration.shouldApply(
             outcomeId: o.id,
             activeId: config.activeAccountId,
@@ -455,32 +585,45 @@ final class AppStore: ObservableObject {
     private struct RefreshTarget: Sendable {
         var id: String
         var token: String
+        var provider: String
         var decryptFailed: Bool
     }
 
     private struct Outcome: @unchecked Sendable {
         var id: String
+        var provider: String
         var snap: UsageSnapshot?
         var error: String?
         var authError: Bool
         var stamp: String
     }
 
-    nonisolated private static func fetchOne(client: CursorClient, account: RefreshTarget) async -> Outcome {
+    nonisolated private static func fetchOne(client: CursorClient, doubaoClient: DoubaoClient, account: RefreshTarget) async -> Outcome {
         let stamp = AccountSync.nowIso()
         if account.decryptFailed {
-            return Outcome(id: account.id, snap: nil, error: TokenProtector.decryptFailedMessage, authError: false, stamp: stamp)
+            return Outcome(id: account.id, provider: account.provider, snap: nil, error: TokenProtector.decryptFailedMessage, authError: false, stamp: stamp)
         }
         if account.token.trimmingCharacters(in: .whitespaces).isEmpty {
-            return Outcome(id: account.id, snap: nil, error: "未配置 Token，请打开设置粘贴", authError: false, stamp: stamp)
+            let message = account.provider == AccountProvider.doubao ? "未配置豆包 Cookie，请重新登录" : "未配置 Token，请打开设置粘贴"
+            return Outcome(id: account.id, provider: account.provider, snap: nil, error: message, authError: false, stamp: stamp)
+        }
+        if account.provider == AccountProvider.doubao {
+            do {
+                let snap = try await doubaoClient.fetchQuota(cookie: account.token, timeout: 20)
+                return Outcome(id: account.id, provider: account.provider, snap: snap, error: nil, authError: false, stamp: stamp)
+            } catch let err as CursorAPIError {
+                return Outcome(id: account.id, provider: account.provider, snap: nil, error: err.message, authError: err.isAuthError, stamp: stamp)
+            } catch {
+                return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败: \(error.localizedDescription)", authError: false, stamp: stamp)
+            }
         }
         do {
             let snap = try await client.fetchUsageSummary(sessionToken: account.token, timeout: 20)
-            return Outcome(id: account.id, snap: snap, error: nil, authError: false, stamp: stamp)
+            return Outcome(id: account.id, provider: account.provider, snap: snap, error: nil, authError: false, stamp: stamp)
         } catch let err as CursorAPIError {
-            return Outcome(id: account.id, snap: nil, error: err.message, authError: err.isAuthError, stamp: stamp)
+            return Outcome(id: account.id, provider: account.provider, snap: nil, error: err.message, authError: err.isAuthError, stamp: stamp)
         } catch {
-            return Outcome(id: account.id, snap: nil, error: "刷新失败: \(error.localizedDescription)", authError: false, stamp: stamp)
+            return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败: \(error.localizedDescription)", authError: false, stamp: stamp)
         }
     }
 

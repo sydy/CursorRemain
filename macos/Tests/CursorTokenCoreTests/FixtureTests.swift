@@ -1695,3 +1695,79 @@ final class SparklineGeometryTests: XCTestCase {
         )
     }
 }
+
+final class DoubaoQuotaFixtureTests: XCTestCase {
+    private func num(_ value: Any?) -> Double? {
+        if let n = value as? NSNumber { return n.doubleValue }
+        if let d = value as? Double { return d }
+        if let s = value as? String { return Double(s) }
+        return nil
+    }
+
+    private func text(_ value: Any?) -> String { value as? String ?? "" }
+
+    private func flag(_ value: Any?) -> Bool { value as? Bool ?? false }
+
+    func testQuotaCases() throws {
+        let root = try XCTUnwrap(try json("doubao_quota_cases.json") as? [[String: Any]])
+        for cse in root {
+            let name = cse["name"] as? String ?? "?"
+            let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: cse["payload"] as Any))
+            let result = UsageParser.parseDoubaoQuota(payload)
+            let expected = cse["expected"] as? [String: Any] ?? [:]
+            if let errorText = expected["error_contains"] as? String {
+                let message = result.error ?? ""
+                XCTAssertTrue(message.contains(errorText), "\(name): \(message)")
+                XCTAssertEqual(result.authError, flag(expected["auth_error"]), name)
+                XCTAssertNil(result.snapshot, name)
+                continue
+            }
+            let snap = try XCTUnwrap(result.snapshot, name)
+            XCTAssertEqual(snap.usedPercent, try XCTUnwrap(num(expected["used_percent"])), accuracy: 0.0001, name)
+            XCTAssertEqual(snap.remainingPercent, try XCTUnwrap(num(expected["remaining_percent"])), accuracy: 0.0001, name)
+            XCTAssertEqual(snap.membershipType, text(expected["membership_type"]), name)
+            XCTAssertEqual(snap.billingMode, "percent", name)
+            let wanted = try XCTUnwrap(expected["windows"] as? [[String: Any]], name)
+            XCTAssertEqual(snap.windows.count, wanted.count, name)
+            for (window, want) in zip(snap.windows, wanted) {
+                XCTAssertEqual(window.key, text(want["key"]), name)
+                XCTAssertEqual(window.label, text(want["label"]), "\(name).\(window.key)")
+                XCTAssertEqual(window.usedPercent, try XCTUnwrap(num(want["used_percent"])), accuracy: 0.0001, name)
+                XCTAssertEqual(window.lessThanOnePercent, flag(want["less_than_one_percent"]), name)
+                XCTAssertEqual(window.exhausted, flag(want["exhausted"]), name)
+                XCTAssertEqual(window.unlimited, flag(want["unlimited"]), name)
+                XCTAssertEqual(window.resetAt, want["reset_at"] as? String, "\(name).\(window.key).reset")
+                if let count = want["count"] as? Int {
+                    XCTAssertEqual(window.count, count, "\(name).\(window.key).count")
+                }
+            }
+        }
+    }
+
+    func testFormatCases() throws {
+        let root = try XCTUnwrap(try json("doubao_format_cases.json") as? [String: Any])
+        for row in try XCTUnwrap(root["window_text"] as? [[String: Any]]) {
+            let window = try XCTUnwrap(row["window"] as? [String: Any])
+            XCTAssertEqual(
+                UsageParser.doubaoWindowText(UsageParser.windowFromRust(window)),
+                text(row["output"])
+            )
+        }
+        for row in try XCTUnwrap(root["reset_text"] as? [[String: Any]]) {
+            let window = UsageParser.windowFromRust(try XCTUnwrap(row["window"] as? [String: Any]))
+            let now = try XCTUnwrap(AccountSync.parseIso(text(row["now"])))
+            XCTAssertEqual(UsageParser.doubaoResetText(window, now: now), text(row["output"]))
+        }
+        for row in try XCTUnwrap(root["cookie_normalize"] as? [[String: Any]]) {
+            XCTAssertEqual(DoubaoCredentials.normalize(text(row["input"])), text(row["output"]))
+        }
+        for row in try XCTUnwrap(root["provider"] as? [[String: Any]]) {
+            XCTAssertEqual(AccountProvider.sanitize(text(row["input"])), text(row["output"]))
+        }
+        for row in try XCTUnwrap(root["identity"] as? [[String: Any]]) {
+            let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: row["payload"] as Any))
+            let accountId = DoubaoCredentials.accountId(payload: payload, cookie: text(row["cookie"]))
+            XCTAssertEqual(accountId, text(row["account_id"]), text(row["name"]))
+        }
+    }
+}

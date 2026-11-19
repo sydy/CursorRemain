@@ -36,23 +36,43 @@ sealed partial class TrayContext
         }
     }
 
-    sealed record RefreshOutcome(string Id, UsageSnapshot? Snap, string? Error, bool AuthError, string Stamp);
+    sealed record RefreshTarget(string Id, string Token, string Provider, bool TokenDecryptFailed);
+    sealed record RefreshOutcome(string Id, string Provider, UsageSnapshot? Snap, string? Error, bool AuthError, string Stamp);
+
+    /// <summary>Doubao refreshes the quota about every 5 minutes; manual refresh ignores this.</summary>
+    static readonly TimeSpan DoubaoMinInterval = TimeSpan.FromMinutes(5);
+    readonly DoubaoClient _doubaoClient = new();
+    readonly Dictionary<string, DateTimeOffset> _doubaoNextFetch = new(StringComparer.Ordinal);
+    UsageSnapshot? _doubaoUsage;
+    string? _doubaoError;
+    string? _doubaoUpdated;
+    string? _doubaoOutcomeId;
 
     async Task RefreshAll()
     {
         var generation = Interlocked.Increment(ref _refreshGeneration);
-        var targets = _config.Accounts.Select(a => (a.Id, a.Token, a.TokenDecryptFailed)).ToList();
-        if (targets.Count == 0)
+        var forced = _refreshNow;
+        var allTargets = _config.Accounts
+            .Select(a => new RefreshTarget(a.Id, a.Token, a.Provider, a.TokenDecryptFailed))
+            .ToList();
+        if (allTargets.Count == 0)
         {
             _usage = null;
             _error = "未配置 Token，请打开设置粘贴";
             _updated = null;
+            _doubaoUsage = null;
+            _doubaoError = null;
+            _doubaoUpdated = null;
             UpdateUi();
             return;
         }
         var activeId = _config.ActiveAccountId;
-        var activeTarget = targets.FirstOrDefault(a => a.Id == activeId);
-        var others = targets.Where(a => a.Id != activeId).ToList();
+        var cursorTargets = allTargets.Where(a => a.Provider != AccountProvider.Doubao).ToList();
+        var doubaoTargets = allTargets.Where(a => a.Provider == AccountProvider.Doubao)
+            .Where(a => forced || DoubaoFetchAllowed(_doubaoNextFetch, a.Id))
+            .ToList();
+        var activeTarget = cursorTargets.FirstOrDefault(a => a.Id == activeId);
+        var others = cursorTargets.Where(a => a.Id != activeId).ToList();
 
         var outcomes = new List<RefreshOutcome>();
         if (!string.IsNullOrEmpty(activeTarget.Id))
@@ -73,6 +93,17 @@ sealed partial class TrayContext
             outcomes.AddRange(otherOutcomes);
         }
 
+        if (doubaoTargets.Count > 0)
+        {
+            var doubaoOutcomes = await BoundedWork.MapAsync(doubaoTargets, async acc => await FetchOne(acc));
+            outcomes.AddRange(doubaoOutcomes);
+            var now = DateTimeOffset.UtcNow;
+            var interval = DoubaoMinInterval > TimeSpan.FromMinutes(Math.Max(1, _config.RefreshIntervalMinutes))
+                ? DoubaoMinInterval
+                : TimeSpan.FromMinutes(Math.Max(1, _config.RefreshIntervalMinutes));
+            foreach (var o in doubaoOutcomes) _doubaoNextFetch[o.Id] = now + interval;
+        }
+
         var notices = new List<(string Title, string Body, bool Warn)>();
         AppConfig cfg;
         try
@@ -83,6 +114,31 @@ sealed partial class TrayContext
                 {
                     var acc = live.Accounts.FirstOrDefault(a => a.Id == o.Id);
                     if (acc is null) continue;
+                    if (acc.IsDoubao)
+                    {
+                        if (o.Snap is { } doubaoSnap)
+                        {
+                            live.ApplySnapshot(o.Id, doubaoSnap.MembershipType, doubaoSnap.RemainingPercent, "", o.Stamp);
+                            acc.AuthErrorNotified = false;
+                            // No billing cycle for Doubao, so exhaustion-risk alerts stay off this release.
+                            foreach (var n in AlertLogic.Evaluate(live, acc, doubaoSnap, exhaustionRisk: false))
+                                notices.Add((n.Title, n.Body, false));
+                        }
+                        else if (o.Error is not null)
+                        {
+                            live.ApplySnapshot(o.Id, error: o.Error, updatedAt: o.Stamp);
+                            if (o.AuthError && !acc.AuthErrorNotified)
+                            {
+                                acc.AuthErrorNotified = true;
+                                if (live.NotifyEnabled)
+                                {
+                                    var body = string.IsNullOrEmpty(acc.DisplayLabel) ? o.Error : $"账号「{acc.DisplayLabel}」：{o.Error}";
+                                    notices.Add(("豆包登录已失效", body, true));
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if (o.Snap is { } snap)
                     {
                         AccountValidity.ApplyEndOverride(snap, acc);
@@ -115,10 +171,18 @@ sealed partial class TrayContext
         }
 
         _config = cfg;
-        var active = outcomes.FirstOrDefault(o => o.Id == cfg.ActiveAccountId);
+        var active = outcomes.FirstOrDefault(o => o.Id == cfg.ActiveAccountId && o.Provider != AccountProvider.Doubao);
         if (active is not null) ApplyActiveOutcome(active, generation);
-        else if (cfg.Accounts.Count == 0) { _usage = null; _error = "未配置 Token，请打开设置粘贴"; _updated = null; UpdateUi(); }
-        else UpdateUi();
+        else if (cfg.CursorAccounts.Count == 0)
+        {
+            _usage = null;
+            _error = cfg.HasAnyAccount ? "未添加 Cursor 账号" : "未配置 Token，请打开设置粘贴";
+            _updated = null;
+        }
+        var doubao = outcomes.FirstOrDefault(o => o.Id == cfg.ActiveDoubaoAccount?.Id);
+        if (doubao is not null) ApplyDoubaoOutcome(doubao);
+        else if (cfg.ActiveDoubaoAccount is null) { _doubaoUsage = null; _doubaoError = null; _doubaoUpdated = null; }
+        UpdateUi();
         OnUi(() =>
         {
             foreach (var n in notices)
@@ -129,6 +193,7 @@ sealed partial class TrayContext
 
     void ApplyActiveOutcome(RefreshOutcome o, long generation)
     {
+        if (o.Provider == AccountProvider.Doubao) return;
         if (!RefreshGeneration.ShouldApply(o.Id, _config.ActiveAccountId, generation, Volatile.Read(ref _refreshGeneration)))
             return;
         if (o.Snap is { } snap) { _usage = snap; _error = null; _updated = o.Stamp; }
@@ -136,27 +201,63 @@ sealed partial class TrayContext
         UpdateUi();
     }
 
-    async Task<RefreshOutcome> FetchOne((string Id, string Token, bool TokenDecryptFailed) acc)
+    static bool DoubaoFetchAllowed(Dictionary<string, DateTimeOffset> next, string id) =>
+        !next.TryGetValue(id, out var at) || DateTimeOffset.UtcNow >= at;
+
+    // Only the active Doubao account's own result may paint the flyout block.
+    UsageSnapshot? CurrentDoubaoUsage => _doubaoOutcomeId == _config.ActiveDoubaoAccountId ? _doubaoUsage : null;
+    string? CurrentDoubaoError => _doubaoOutcomeId == _config.ActiveDoubaoAccountId ? _doubaoError : null;
+    string? CurrentDoubaoUpdated => _doubaoOutcomeId == _config.ActiveDoubaoAccountId ? _doubaoUpdated : null;
+
+    void ApplyDoubaoOutcome(RefreshOutcome o)
+    {
+        _doubaoOutcomeId = o.Id;
+        if (o.Snap is { } snap) { _doubaoUsage = snap; _doubaoError = null; }
+        else if (o.Error is not null) { _doubaoUsage = null; _doubaoError = o.Error; }
+        _doubaoUpdated = o.Stamp;
+    }
+
+    async Task<RefreshOutcome> FetchOne(RefreshTarget acc)
     {
         var stamp = AccountSync.NowIso();
         if (acc.TokenDecryptFailed)
-            return new RefreshOutcome(acc.Id, null, TokenProtector.DecryptFailedMessage, false, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, null, TokenProtector.DecryptFailedMessage, false, stamp);
         if (string.IsNullOrWhiteSpace(acc.Token))
-            return new RefreshOutcome(acc.Id, null, "未配置 Token，请打开设置粘贴", false, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, null,
+                acc.Provider == AccountProvider.Doubao ? "未配置豆包 Cookie，请重新登录" : "未配置 Token，请打开设置粘贴",
+                false, stamp);
+        if (acc.Provider == AccountProvider.Doubao)
+        {
+            try
+            {
+                var snap = await _doubaoClient.FetchQuota(acc.Token, 20);
+                UsageHistory.Append(snap.RemainingPercent, snap.AutoPercentUsed, snap.ApiPercentUsed, accountId: acc.Id);
+                return new RefreshOutcome(acc.Id, acc.Provider, snap, null, false, stamp);
+            }
+            catch (CursorApiException err)
+            {
+                return new RefreshOutcome(acc.Id, acc.Provider, null, err.Message, err.IsAuthError, stamp);
+            }
+            catch (Exception ex)
+            {
+                CrashLog.Write(ex);
+                return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败: " + ex.Message, false, stamp);
+            }
+        }
         try
         {
             var snap = await _client.FetchUsageSummary(acc.Token, 20);
             UsageHistory.Append(snap.RemainingPercent, snap.AutoPercentUsed, snap.ApiPercentUsed, accountId: acc.Id);
-            return new RefreshOutcome(acc.Id, snap, null, false, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, snap, null, false, stamp);
         }
         catch (CursorApiException err)
         {
-            return new RefreshOutcome(acc.Id, null, err.Message, err.IsAuthError, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, null, err.Message, err.IsAuthError, stamp);
         }
         catch (Exception ex)
         {
             CrashLog.Write(ex);
-            return new RefreshOutcome(acc.Id, null, "刷新失败: " + ex.Message, false, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败: " + ex.Message, false, stamp);
         }
     }
 }

@@ -20,6 +20,12 @@ sealed class FlyoutForm : Form
     double? _dailyAvg;
     string? _hover;
     bool _holdOpen;
+    UsageWindow[] _doubaoWindows = [];
+    string? _doubaoError;
+    string? _doubaoUpdated;
+    string? _doubaoLabel;
+    string? _doubaoMembership;
+    bool _showsDoubao;
 
     protected override bool ShowWithoutActivation => true;
 
@@ -115,7 +121,8 @@ sealed class FlyoutForm : Form
         }
     }
 
-    public void Render(UsageSnapshot? usage, string? error, string? updated, AppConfig cfg, List<HistoryPoint>? history = null, double? dailyAvg = null)
+    public void Render(UsageSnapshot? usage, string? error, string? updated, AppConfig cfg, List<HistoryPoint>? history = null, double? dailyAvg = null,
+        UsageSnapshot? doubaoUsage = null, string? doubaoError = null, string? doubaoUpdated = null)
     {
         _usage = usage;
         _error = error;
@@ -123,7 +130,15 @@ sealed class FlyoutForm : Form
         _accountLabel = cfg.ActiveAccount?.DisplayLabel;
         if (history is not null) _history = history;
         _dailyAvg = dailyAvg;
+        var doubao = cfg.ActiveDoubaoAccount;
+        _showsDoubao = doubao is not null;
+        _doubaoWindows = doubaoUsage?.Windows.ToArray() ?? [];
+        _doubaoError = _showsDoubao ? doubaoError : null;
+        _doubaoUpdated = doubaoUpdated;
+        _doubaoLabel = doubao?.DisplayLabel;
+        _doubaoMembership = doubao?.MembershipType;
         ApplyPalette();
+        if (IsHandleCreated) ApplyScaledSize();
         Invalidate();
     }
 
@@ -195,12 +210,16 @@ sealed class FlyoutForm : Form
         _hits.Clear();
         var btnH = Px(FlyoutLayout.ToolButtonHeight);
         var btnGap = 4 * s;
-        var contentBottom = Height - pad - btnH - btnGap;
+        var doubaoH = _showsDoubao ? Px(FlyoutLayout.DoubaoHeight(_doubaoWindows.Length)) : 0;
+        var doubaoGap = _showsDoubao ? Px(FlyoutLayout.DoubaoBlockGap) : 0;
+        var contentBottom = Height - pad - btnH - btnGap - doubaoH - doubaoGap;
         var left = new RectangleF(pad, pad, leftW, Math.Max(0, contentBottom - pad));
         DrawLeft(g, left, pal, s);
         var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Math.Max(0, contentBottom - pad));
         DrawRight(g, right, pal, s);
-        DrawButtons(g, new RectangleF(pad, contentBottom + btnGap, Width - pad * 2, btnH), pal, s);
+        if (_showsDoubao)
+            DrawDoubao(g, new RectangleF(pad, contentBottom + doubaoGap, Width - pad * 2, doubaoH), pal, s);
+        DrawButtons(g, new RectangleF(pad, Height - pad - btnH, Width - pad * 2, btnH), pal, s);
     }
 
     void DrawLeft(Graphics g, RectangleF box, FlyoutPalette pal, float s)
@@ -365,6 +384,76 @@ sealed class FlyoutForm : Form
         }
     }
 
+    /// <summary>Doubao block: window rows only, never the Cursor "本期 / 按需 / API" rows.</summary>
+    void DrawDoubao(Graphics g, RectangleF box, FlyoutPalette pal, float s)
+    {
+        using var capFont = UiChrome.UiFont(8.25f);
+        using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
+        var titleH = Px(FlyoutLayout.DoubaoTitleHeight);
+        var rowH = Px(FlyoutLayout.DoubaoRowHeight);
+        var rows = _doubaoWindows;
+        var innerH = titleH + Math.Max(1, rows.Length) * rowH;
+        DrawCard(g, box.X, box.Y, box.Width, pal, innerH, inner =>
+        {
+            var title = new List<string> { "豆包" };
+            if (!string.IsNullOrWhiteSpace(_doubaoMembership)) title.Add(_doubaoMembership!);
+            if (!string.IsNullOrWhiteSpace(_doubaoUpdated)) title.Add("更新 " + ShortClock(_doubaoUpdated));
+            DrawString(g, string.Join(" · ", title), capFont, pal.Text,
+                new RectangleF(inner.X, inner.Y, inner.Width * 0.6f, titleH));
+            if (!string.IsNullOrWhiteSpace(_doubaoLabel))
+                DrawString(g, _doubaoLabel!, capFont, pal.Secondary,
+                    new RectangleF(inner.X, inner.Y, inner.Width, titleH), StringAlignment.Far);
+
+            var y = inner.Y + titleH;
+            var row = new RectangleF(inner.X, y, inner.Width, rowH);
+            if (!string.IsNullOrWhiteSpace(_doubaoError))
+            {
+                DrawString(g, StatusText.ShortError(_doubaoError, 64), capFont, Color.FromArgb(231, 76, 60), row);
+                return;
+            }
+            if (rows.Length == 0)
+            {
+                DrawString(g, "等待刷新…", capFont, pal.Secondary, row);
+                return;
+            }
+            foreach (var window in rows)
+            {
+                var remaining = window.Unlimited ? 100 : 100 - window.UsedPercent;
+                var tone = ToneColor(remaining, false, window.Unlimited);
+                var label = window.Count is > 1 ? $"{window.Label}（{window.Count} 项）" : window.Label;
+                if (window.IsCurrentPeriod)
+                {
+                    var reset = UsageParser.DoubaoResetText(window);
+                    label += " · " + (reset.Length == 0 ? "开始使用后计时" : reset);
+                }
+                using (var dot = new SolidBrush(tone))
+                    g.FillEllipse(dot, row.X, row.Y + 4 * s, 6 * s, 6 * s);
+                DrawString(g, label, capFont, pal.Secondary, new RectangleF(row.X + 12 * s, row.Y, row.Width * 0.7f, 16 * s));
+                var value = UsageParser.DoubaoWindowText(window);
+                if (window.Key == "incentive" && !window.Unlimited && !window.Exhausted)
+                    value += " · 剩 " + PercentText(100 - window.UsedPercent);
+                DrawString(g, value, valueFont, pal.Text,
+                    new RectangleF(row.X, row.Y, row.Width, 16 * s), StringAlignment.Far);
+                DrawBar(g, new RectangleF(row.X, row.Y + 18 * s, row.Width, Px(FlyoutLayout.BarHeight)),
+                    window.Unlimited ? 1 : window.UsedPercent / 100, tone, pal);
+                row.Y += rowH;
+            }
+        });
+    }
+
+    static string PercentText(double value)
+    {
+        var rounded = Math.Round(Math.Clamp(value, 0, 100), 1);
+        var text = rounded.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+        return (text.EndsWith(".0", StringComparison.Ordinal) ? text[..^2] : text) + "%";
+    }
+
+    static string ShortClock(string iso)
+    {
+        var local = AccountSync.ParseIso(iso)?.ToLocalTime();
+        return local is null ? "" : local.Value.ToString("HH:mm");
+    }
+
     float DrawCard(Graphics g, float x, float y, float width, FlyoutPalette pal, float innerHeight, Action<RectangleF> content)
     {
         var pad = Px(FlyoutLayout.CardPadding);
@@ -486,7 +575,7 @@ sealed class FlyoutForm : Form
     void ApplyScaledSize()
     {
         var w = UiLayout.ScalePx(FlyoutLayout.Width, DeviceDpi);
-        var h = UiLayout.ScalePx(FlyoutLayout.Height, DeviceDpi);
+        var h = UiLayout.ScalePx(FlyoutLayout.HeightWithDoubao(_showsDoubao, _doubaoWindows.Length), DeviceDpi);
         ClientSize = new Size(w, h);
         ApplyRoundedRegion();
     }

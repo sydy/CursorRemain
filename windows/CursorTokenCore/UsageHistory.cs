@@ -309,7 +309,7 @@ public static class AlertLogic
     public static bool IsExhaustionRisk(UsageSnapshot snap) =>
         RustCore.Bool("is_exhaustion_risk", new { estimated_usable_days = snap.EstimatedUsableDays, days_remaining = snap.DaysRemaining });
 
-    public static List<Notice> Evaluate(AppConfig config, Account account, UsageSnapshot snapshot)
+    public static List<Notice> Evaluate(AppConfig config, Account account, UsageSnapshot snapshot, bool exhaustionRisk = true)
     {
         if (!config.NotifyEnabled) return [];
         var notices = new List<Notice>();
@@ -329,7 +329,7 @@ public static class AlertLogic
             foreach (var lvl in newly) notified.Add(lvl);
             changed = true;
         }
-        if (config.NotifyExhaustionRisk)
+        if (config.NotifyExhaustionRisk && exhaustionRisk)
         {
             var atRisk = IsExhaustionRisk(snapshot);
             if (atRisk && !account.ExhaustionNotified)

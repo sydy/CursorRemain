@@ -382,6 +382,86 @@ fn password_login_cases() {
 }
 
 #[test]
+fn doubao_quota_cases() {
+    for case in fixture("doubao_quota_cases.json").as_array().unwrap() {
+        let name = case["name"].as_str().unwrap_or("");
+        let now = case["now"].as_str();
+        let got = cursor_core::doubao::parse_doubao_quota(&case["payload"], now);
+        let exp = &case["expected"];
+        if exp.get("error_contains").is_some() {
+            let error = got["error"].as_str().unwrap_or_else(|| panic!("{name}: no error in {got}"));
+            assert!(error.contains(exp["error_contains"].as_str().unwrap()), "{name}: {error}");
+            assert_eq!(got["auth_error"].as_bool(), Some(exp["auth_error"].as_bool().unwrap_or(false)), "{name}.auth");
+            assert!(got.get("windows").is_none(), "{name}.windows");
+            continue;
+        }
+        assert!(got.get("error").is_none(), "{name}: unexpected error {got}");
+        assert_eq!(got["used_percent"].as_f64(), exp["used_percent"].as_f64(), "{name}.used");
+        assert_eq!(got["remaining_percent"].as_f64(), exp["remaining_percent"].as_f64(), "{name}.remaining");
+        assert_eq!(got["membership_type"].as_str(), Some(exp["membership_type"].as_str().unwrap_or("")), "{name}.membership");
+        assert_eq!(got["billing_mode"].as_str(), Some("percent"), "{name}.billing_mode");
+        assert_eq!(got["provider"].as_str(), Some("doubao"), "{name}.provider");
+        let windows = got["windows"].as_array().unwrap_or_else(|| panic!("{name}: no windows"));
+        let expected = exp["windows"].as_array().unwrap();
+        assert_eq!(windows.len(), expected.len(), "{name}.window_count");
+        for (window, want) in windows.iter().zip(expected) {
+            let key = want["key"].as_str().unwrap();
+            assert_eq!(window["key"].as_str(), Some(key), "{name}.key");
+            assert_eq!(window["label"].as_str(), want["label"].as_str(), "{name}.{key}.label");
+            assert_eq!(window["used_percent"].as_f64(), want["used_percent"].as_f64(), "{name}.{key}.used");
+            assert_eq!(
+                window["less_than_one_percent"].as_bool(),
+                Some(want["less_than_one_percent"].as_bool().unwrap_or(false)),
+                "{name}.{key}.low"
+            );
+            assert_eq!(
+                window["exhausted"].as_bool(),
+                Some(want["exhausted"].as_bool().unwrap_or(false)),
+                "{name}.{key}.exhausted"
+            );
+            assert_eq!(
+                window["unlimited"].as_bool(),
+                Some(want["unlimited"].as_bool().unwrap_or(false)),
+                "{name}.{key}.unlimited"
+            );
+            assert_eq!(window["used_amount"].as_str(), want["used_amount"].as_str(), "{name}.{key}.used_amount");
+            assert_eq!(window["total_amount"].as_str(), want["total_amount"].as_str(), "{name}.{key}.total_amount");
+            assert_eq!(window["reset_at"].as_str(), want["reset_at"].as_str(), "{name}.{key}.reset");
+            if let Some(count) = want.get("count").and_then(Value::as_i64) {
+                assert_eq!(window["count"].as_i64(), Some(count), "{name}.{key}.count");
+            }
+        }
+    }
+}
+
+#[test]
+fn doubao_format_cases() {
+    let root = fixture("doubao_format_cases.json");
+    for row in root["window_text"].as_array().unwrap() {
+        assert_eq!(cursor_core::doubao::window_text(&row["window"]), row["output"].as_str().unwrap());
+    }
+    for row in root["reset_text"].as_array().unwrap() {
+        assert_eq!(
+            cursor_core::doubao::reset_text(&row["window"], row["now"].as_str()),
+            row["output"].as_str().unwrap(),
+            "{:?}",
+            row["window"]
+        );
+    }
+    for row in root["identity"].as_array().unwrap() {
+        let got = cursor_core::doubao::identity(&row["payload"], row["cookie"].as_str().unwrap_or(""));
+        assert_eq!(got["source"].as_str(), row["source"].as_str(), "{}", row["name"].as_str().unwrap_or(""));
+        assert_eq!(got["account_id"].as_str(), row["account_id"].as_str(), "{}", row["name"].as_str().unwrap_or(""));
+    }
+    for row in root["cookie_normalize"].as_array().unwrap() {
+        assert_eq!(cursor_core::doubao::normalize_cookie(row["input"].as_str().unwrap_or("")), row["output"].as_str().unwrap());
+    }
+    for row in root["provider"].as_array().unwrap() {
+        assert_eq!(cursor_core::doubao::sanitize_provider(row["input"].as_str().unwrap_or("")), row["output"].as_str().unwrap());
+    }
+}
+
+#[test]
 fn account_validity_cases() {
     let root = fixture("account_validity_cases.json");
     for row in root["kind"].as_array().unwrap() {

@@ -516,8 +516,10 @@ public static class AccountSync
     public static SyncSnapshot SnapshotFromConfig(AppConfig cfg)
     {
         var accounts = new List<SyncAccount>();
-        foreach (var acc in cfg.Accounts)
+        foreach (var acc in cfg.CursorAccounts)
         {
+            // Doubao stays out of cloud sync: old clients would treat the Cookie as a
+            // Cursor token and send it to cursor.com.
             var row = SnapshotAccount(acc);
             if (row.Id.Length == 0 || row.Token.Length == 0) continue;
             accounts.Add(row);
@@ -668,7 +670,9 @@ public static class AccountSync
             ApplyUsageFields(old, ident);
             merged.Add(old);
         }
-        cfg.Accounts = merged;
+        // Local-only accounts (Doubao) are never part of the snapshot and must survive.
+        var localOnly = cfg.Accounts.Where(a => a.IsDoubao).ToList();
+        cfg.Accounts = merged.Concat(localOnly).ToList();
         cfg.DeletedAccounts = SanitizeDeleted(snap.Deleted);
         var ids = merged.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
         if (ids.Contains(snap.ActiveAccountId)) cfg.ActiveAccountId = snap.ActiveAccountId;
@@ -687,7 +691,8 @@ public static class AccountSync
     /// </summary>
     public static bool AdoptReconciled(AppConfig live, AppConfig reconciled)
     {
-        var reconciledIds = reconciled.Accounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+        // Compare Cursor accounts only: Doubao is not synced and must not look "extra".
+        var reconciledIds = reconciled.CursorAccounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
         var combined = MergeSnapshots(SnapshotFromConfig(live), SnapshotFromConfig(reconciled));
         ApplySnapshotToConfig(live, combined);
         live.SyncLastAt = reconciled.SyncLastAt;
@@ -704,7 +709,7 @@ public static class AccountSync
         live.CloudAccessDecryptFailed = reconciled.CloudAccessDecryptFailed;
         live.CloudRefreshDecryptFailed = reconciled.CloudRefreshDecryptFailed;
         live.DecryptError = reconciled.DecryptError;
-        return live.Accounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal).SetEquals(reconciledIds) == false;
+        return live.CursorAccounts.Select(a => a.Id).ToHashSet(StringComparer.Ordinal).SetEquals(reconciledIds) == false;
     }
 
     /// <summary>
@@ -716,7 +721,7 @@ public static class AccountSync
         var live = (liveActive ?? cfg.SessionActiveAccountId ?? "").Trim();
         startedActive = (startedActive ?? "").Trim();
         if (live.Length == 0 || live == startedActive) return false;
-        if (!cfg.Accounts.Any(a => a.Id == live)) return false;
+        if (!cfg.CursorAccounts.Any(a => a.Id == live)) return false;
         if (cfg.ActiveAccountId == live) return false;
         cfg.ActiveAccountId = live;
         cfg.SyncLegacyFields();

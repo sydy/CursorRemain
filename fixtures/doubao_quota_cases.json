@@ -1,0 +1,652 @@
+[
+  {
+    "name": "paid_three_windows",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "member_info": {
+          "user_id": "12345678",
+          "membership_type": "高级"
+        },
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "feature_group": 1,
+              "feature_group_name": "对话",
+              "window_limits": [
+                {
+                  "window_type": 1,
+                  "used_percent": 12.5,
+                  "end_time": 1763700000000
+                },
+                {
+                  "window_type": 2,
+                  "used_percent": 40,
+                  "end_time": 1764200000000
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 65,
+                  "end_time": 1764700000000
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 65,
+      "remaining_percent": 35,
+      "membership_type": "高级",
+      "windows": [
+        {
+          "key": "5h",
+          "label": "当前时段",
+          "used_percent": 12.5,
+          "reset_at": "2025-11-21T04:40:00Z"
+        },
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 40,
+          "reset_at": "2025-11-26T23:33:20Z"
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 65,
+          "reset_at": "2025-12-02T18:26:40Z"
+        }
+      ]
+    }
+  },
+  {
+    "name": "current_plus_long",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "member_info": {
+          "membership_type": "标准"
+        },
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 1,
+                  "used_percent": 30
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 10
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 10,
+      "remaining_percent": 90,
+      "membership_type": "标准",
+      "windows": [
+        {
+          "key": "5h",
+          "label": "当前时段",
+          "used_percent": 30,
+          "reset_at": null
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 10,
+          "reset_at": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "string_numbers",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": "1",
+                  "used_percent": "12.34",
+                  "end_time": "1763596800000"
+                },
+                {
+                  "window_type": "2",
+                  "used_percent": "40.5"
+                },
+                {
+                  "window_type": "4",
+                  "used_percent": "9"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 40.5,
+      "remaining_percent": 59.5,
+      "membership_type": "",
+      "windows": [
+        {
+          "key": "5h",
+          "label": "当前时段",
+          "used_percent": 12.3,
+          "reset_at": "2025-11-20T00:00:00Z"
+        },
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 40.5,
+          "reset_at": null
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 9,
+          "reset_at": null
+        }
+      ]
+    }
+  },
+  {
+    "name": "low_and_exhausted",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 2,
+                  "used_percent": 0.4,
+                  "less_than_one_percent": true
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 100,
+                  "exhausted": true
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 100,
+      "remaining_percent": 0,
+      "windows": [
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 0.4,
+          "less_than_one_percent": true,
+          "exhausted": false
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 100,
+          "exhausted": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "usage_exhausted",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": true,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 1,
+                  "used_percent": 20
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 30
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 100,
+      "remaining_percent": 0,
+      "windows": [
+        {
+          "key": "5h",
+          "label": "当前时段",
+          "used_percent": 20
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 30
+        }
+      ]
+    }
+  },
+  {
+    "name": "exemption_active",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 1,
+                  "used_percent": 0,
+                  "end_time": 1763596800000,
+                  "exemption": {
+                    "active": true,
+                    "end_time": 1763700000000
+                  }
+                },
+                {
+                  "window_type": 2,
+                  "used_percent": 20
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 45
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 45,
+      "remaining_percent": 55,
+      "windows": [
+        {
+          "key": "5h",
+          "label": "当前时段",
+          "used_percent": 0,
+          "unlimited": true,
+          "reset_at": "2025-11-21T04:40:00Z"
+        },
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 20
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 45
+        }
+      ]
+    }
+  },
+  {
+    "name": "unknown_window_type",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 2,
+                  "used_percent": 25
+                },
+                {
+                  "window_type": 4,
+                  "used_percent": 20
+                },
+                {
+                  "window_type": 9,
+                  "used_percent": 99
+                },
+                {
+                  "window_type": 0,
+                  "used_percent": 88
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 25,
+      "remaining_percent": 75,
+      "windows": [
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 25
+        },
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 20
+        }
+      ]
+    }
+  },
+  {
+    "name": "not_subscribed",
+    "payload": {
+      "code": 0,
+      "data": {
+        "member_info": {},
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": []
+        }
+      }
+    },
+    "expected": {
+      "error_contains": "没有额度窗口"
+    }
+  },
+  {
+    "name": "login_invalid",
+    "payload": {
+      "code": 710012001,
+      "message": "login invalid",
+      "msg": "login invalid"
+    },
+    "expected": {
+      "error_contains": "登录已失效",
+      "auth_error": true,
+      "has_snapshot": false
+    }
+  },
+  {
+    "name": "other_business_error",
+    "payload": {
+      "code": 710000123,
+      "message": "something wrong"
+    },
+    "expected": {
+      "error_contains": "查询失败",
+      "auth_error": false,
+      "has_snapshot": false
+    }
+  },
+  {
+    "name": "package_window",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 2,
+                  "used_percent": 30
+                }
+              ]
+            }
+          ]
+        },
+        "quota_package_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 3,
+                  "used_percent": 33,
+                  "used_amount": "12",
+                  "total_amount": "36"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 30,
+      "remaining_percent": 70,
+      "windows": [
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 30
+        },
+        {
+          "key": "package",
+          "label": "创作额度包",
+          "used_percent": 33,
+          "used_amount": "12",
+          "total_amount": "36"
+        }
+      ]
+    }
+  },
+  {
+    "name": "merged_groups",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "feature_group": 1,
+              "window_limits": [
+                {
+                  "window_type": 2,
+                  "used_percent": 10
+                }
+              ]
+            },
+            {
+              "feature_group": 2,
+              "window_limits": [
+                {
+                  "window_type": 2,
+                  "used_percent": 55
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 55,
+      "remaining_percent": 45,
+      "windows": [
+        {
+          "key": "7d",
+          "label": "近 7 天",
+          "used_percent": 55
+        }
+      ]
+    }
+  },
+  {
+    "name": "enterprise_fallback",
+    "now": "2025-11-20T00:00:00Z",
+    "payload": {
+      "code": 0,
+      "data": {
+        "window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": []
+        },
+        "enterprise_window_limit_section": {
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "window_limits": [
+                {
+                  "window_type": 4,
+                  "used_percent": 70
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "expected": {
+      "used_percent": 70,
+      "remaining_percent": 30,
+      "windows": [
+        {
+          "key": "1m",
+          "label": "每月",
+          "used_percent": 70
+        }
+      ]
+    }
+  },
+  {
+    "name": "real_free_tier_incentive_only",
+    "now": "2026-11-19T00:00:00Z",
+    "source": "real response, 2026-11-19, 个人订阅/免费体验",
+    "payload": {
+      "data": {
+        "current_subscription": {
+          "agreement_price": 0,
+          "agreement_status": 0,
+          "agreement_type": 1,
+          "display": {
+            "product_name": "个人订阅",
+            "short_name": "免费体验"
+          },
+          "effective_time": 0,
+          "end_time": 0,
+          "has_switched": false,
+          "is_gift": false,
+          "next_deduct_time": 0,
+          "period_type": 0,
+          "product_line": "",
+          "sku_key": "",
+          "source_type": 0,
+          "start_time": 0,
+          "status": 0,
+          "subscription_id": 0,
+          "subscription_type": 0,
+          "timezone": 0
+        },
+        "enterprise_package_entitlement_groups": [],
+        "enterprise_subscription": {
+          "sku_key": ""
+        },
+        "enterprise_window_limit_section": {
+          "entitlement_count": 0,
+          "usage_exhausted": false,
+          "window_limit_groups": []
+        },
+        "incentive_quota_section": {
+          "entitlement_count": 24,
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "feature_group": "doubao_activity_reward_quota",
+              "feature_group_name": "活动赠送额度",
+              "window_limits": [
+                {
+                  "end_time": 1795347718376,
+                  "item_type": 0,
+                  "less_than_one_percent": false,
+                  "start_time": 0,
+                  "used_percent": 10,
+                  "window_type": 3
+                }
+              ]
+            }
+          ]
+        },
+        "member_info": {
+          "hasActiveSubscription": false,
+          "hasEnterpriseSubscription": false,
+          "has_business_subscription": false,
+          "has_team_subscription": false,
+          "usr_type": 0
+        },
+        "switch_data": {
+          "show_consumption": false
+        },
+        "window_limit_section": {}
+      },
+      "code": 0,
+      "msg": "",
+      "message": ""
+    },
+    "expected": {
+      "used_percent": 10,
+      "remaining_percent": 90,
+      "membership_type": "",
+      "windows": [
+        {
+          "key": "incentive",
+          "label": "活动赠送额度",
+          "used_percent": 10,
+          "reset_at": "2026-11-22T11:41:58.376Z",
+          "count": 24
+        }
+      ]
+    }
+  },
+  {
+    "name": "real_unauthenticated_no_cookie",
+    "now": "2026-11-19T00:00:00Z",
+    "source": "real response, 2026-11-19, 无 Cookie",
+    "payload": {
+      "data": null,
+      "code": 710012001,
+      "msg": "登录已过期，请重新登录",
+      "message": "login invalid",
+      "error": {
+        "code": 710012001,
+        "message": "登录已过期，请重新登录",
+        "locale": "zh"
+      }
+    },
+    "expected": {
+      "error_contains": "登录已失效",
+      "auth_error": true
+    }
+  }
+]

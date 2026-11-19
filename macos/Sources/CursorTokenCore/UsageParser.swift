@@ -45,8 +45,60 @@ private let xMemberships: Set<String> = [
 ]
 private let modelNameAliases: [String: String] = ["default": "auto"]
 
-public struct ModelTokenUsage: Equatable, Sendable {
-    public var name: String
+/// 通用额度窗口。豆包走这个列表，不新增一组 `doubao*` 字段。
+public struct UsageWindow: Equatable, Sendable {
+    public var key: String
+    public var label: String
+    public var usedPercent: Double
+    public var lessThanOnePercent: Bool
+    public var exhausted: Bool
+    public var unlimited: Bool
+    public var usedAmount: String?
+    public var totalAmount: String?
+    public var resetAt: String?
+    /// 活动赠送额度的条目数（服务端 `entitlement_count`），用于卡片标注「N 项」。
+    public var count: Int?
+
+    public init(
+        key: String = "",
+        label: String = "",
+        usedPercent: Double = 0,
+        lessThanOnePercent: Bool = false,
+        exhausted: Bool = false,
+        unlimited: Bool = false,
+        usedAmount: String? = nil,
+        totalAmount: String? = nil,
+        resetAt: String? = nil,
+        count: Int? = nil
+    ) {
+        self.key = key
+        self.label = label
+        self.usedPercent = usedPercent
+        self.lessThanOnePercent = lessThanOnePercent
+        self.exhausted = exhausted
+        self.unlimited = unlimited
+        self.usedAmount = usedAmount
+        self.totalAmount = totalAmount
+        self.resetAt = resetAt
+        self.count = count
+    }
+
+    /// 「当前时段」每 5 小时重置一次，只有这一档展示重置倒计时。
+    public var isCurrentPeriod: Bool { key == "5h" }
+}
+
+public struct DoubaoQuotaResult {
+    public var snapshot: UsageSnapshot?
+    public var error: String?
+    public var authError: Bool
+    public init(snapshot: UsageSnapshot? = nil, error: String? = nil, authError: Bool = false) {
+        self.snapshot = snapshot
+        self.error = error
+        self.authError = authError
+    }
+}
+
+public struct ModelTokenUsage: Equatable, Sendable {    public var name: String
     public var tokens: Int
     public var cents: Double
     public var tier: Int
@@ -99,6 +151,8 @@ public struct UsageSnapshot: Equatable {
     public var isXSubscription: Bool
     public var usageResetAt: String?
     public var prepaidRemainingCents: Double?
+    /// 豆包的额度窗口；Cursor 快照为空。
+    public var windows: [UsageWindow]
 
     public init(
         usedPercent: Double,
@@ -134,7 +188,8 @@ public struct UsageSnapshot: Equatable {
         grokBotDaysRemaining: Int? = nil,
         isXSubscription: Bool = false,
         usageResetAt: String? = nil,
-        prepaidRemainingCents: Double? = nil
+        prepaidRemainingCents: Double? = nil,
+        windows: [UsageWindow] = []
     ) {
         self.usedPercent = usedPercent
         self.remainingPercent = remainingPercent
@@ -170,6 +225,7 @@ public struct UsageSnapshot: Equatable {
         self.isXSubscription = isXSubscription
         self.usageResetAt = usageResetAt
         self.prepaidRemainingCents = prepaidRemainingCents
+        self.windows = windows
     }
 
     public var isTeamAccount: Bool {
@@ -331,6 +387,55 @@ public enum UsageParser {
         return snap
     }
 
+    /// 豆包额度。`code` 非 0 时返回 error，不伪造 0%。
+    public static func parseDoubaoQuota(_ payload: JSONValue, now: Date = Date()) -> DoubaoQuotaResult {
+        let result = RustCore.call("parse_doubao_quota", ["payload": payload.raw, "now": isoNow(now)]) as? [String: Any] ?? [:]
+        if let error = result["error"] as? String, !error.isEmpty {
+            return DoubaoQuotaResult(snapshot: nil, error: error, authError: result["auth_error"] as? Bool ?? false)
+        }
+        var snap = snapshotFromRust(result)
+        snap.raw = payload
+        return DoubaoQuotaResult(snapshot: snap, error: nil, authError: false)
+    }
+
+    public static func doubaoWindowText(_ window: UsageWindow) -> String {
+        RustCore.string("doubao_window_text", ["window": windowJSON(window)])
+    }
+
+    public static func doubaoResetText(_ window: UsageWindow, now: Date = Date()) -> String {
+        RustCore.string("doubao_reset_text", ["window": windowJSON(window), "now": isoNow(now)])
+    }
+
+    public static func windowJSON(_ window: UsageWindow) -> [String: Any] {
+        [
+            "key": window.key,
+            "label": window.label,
+            "used_percent": window.usedPercent,
+            "less_than_one_percent": window.lessThanOnePercent,
+            "exhausted": window.exhausted,
+            "unlimited": window.unlimited,
+            "used_amount": window.usedAmount as Any,
+            "total_amount": window.totalAmount as Any,
+            "reset_at": window.resetAt as Any,
+            "count": window.count as Any,
+        ]
+    }
+
+    public static func windowFromRust(_ row: [String: Any]) -> UsageWindow {
+        UsageWindow(
+            key: row["key"] as? String ?? "",
+            label: row["label"] as? String ?? "",
+            usedPercent: (row["used_percent"] as? NSNumber)?.doubleValue ?? 0,
+            lessThanOnePercent: row["less_than_one_percent"] as? Bool ?? false,
+            exhausted: row["exhausted"] as? Bool ?? false,
+            unlimited: row["unlimited"] as? Bool ?? false,
+            usedAmount: row["used_amount"] as? String,
+            totalAmount: row["total_amount"] as? String,
+            resetAt: row["reset_at"] as? String,
+            count: (row["count"] as? NSNumber)?.intValue
+        )
+    }
+
     static func isoNow(_ now: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -371,6 +476,7 @@ public enum UsageParser {
             "grok_bot_period_start": snapshot.grokBotPeriodStart as Any,
             "grok_bot_reset_at": snapshot.grokBotResetAt as Any,
             "grok_bot_days_remaining": snapshot.grokBotDaysRemaining as Any,
+            "windows": snapshot.windows.map(windowJSON),
         ]
     }
 
@@ -414,7 +520,8 @@ public enum UsageParser {
             grokBotDaysRemaining: whole("grok_bot_days_remaining"),
             isXSubscription: dict["is_x_subscription"] as? Bool ?? false,
             usageResetAt: optionalText("usage_reset_at"),
-            prepaidRemainingCents: num("prepaid_remaining_cents")
+            prepaidRemainingCents: num("prepaid_remaining_cents"),
+            windows: (dict["windows"] as? [[String: Any]] ?? []).map(windowFromRust)
         )
     }
 
@@ -448,6 +555,7 @@ public enum UsageParser {
         to.grokBotPeriodStart = from.grokBotPeriodStart
         to.grokBotResetAt = from.grokBotResetAt
         to.grokBotDaysRemaining = from.grokBotDaysRemaining
+        to.windows = from.windows
     }
 
     public static func membershipKey(_ raw: String?) -> String {

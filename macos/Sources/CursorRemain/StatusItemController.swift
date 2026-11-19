@@ -150,9 +150,9 @@ final class StatusItemController: NSObject {
         menu.addItem(withTitle: "账号对比…", action: #selector(openCompare), keyEquivalent: "").target = self
         let switcher = NSMenuItem(title: "切换账号", action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        let accounts = store.config.accounts
+        let accounts = store.config.cursorAccounts
         if accounts.isEmpty {
-            let empty = NSMenuItem(title: "暂无账号", action: nil, keyEquivalent: "")
+            let empty = NSMenuItem(title: "暂无 Cursor 账号", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             sub.addItem(empty)
         } else {
@@ -170,6 +170,9 @@ final class StatusItemController: NSObject {
         menu.addItem(switcher)
         menu.addItem(withTitle: "让 Cursor 使用此账号…", action: #selector(loginCursor), keyEquivalent: "").target = self
         menu.addItem(withTitle: "添加账号…", action: #selector(importToken), keyEquivalent: "").target = self
+        if let doubao = store.config.activeDoubaoAccount {
+            menu.addItem(withTitle: "打开豆包订阅（\(doubao.displayLabel)）", action: #selector(openDoubao), keyEquivalent: "").target = self
+        }
         menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: "").target = self
         menu.addItem(withTitle: "检查更新…", action: #selector(checkUpdate), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -184,6 +187,7 @@ final class StatusItemController: NSObject {
 
     @objc private func refresh() { store.requestRefresh() }
     @objc private func openWeb() { store.openDashboard() }
+    @objc private func openDoubao() { store.openDoubaoSubscription() }
     @objc private func openReport() { store.openReport() }
     @objc private func openCompare() { store.openCompare() }
     @objc private func importToken() { store.openSettings(focusToken: true) }

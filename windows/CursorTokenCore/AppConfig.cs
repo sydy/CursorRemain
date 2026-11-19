@@ -6,9 +6,20 @@ using System.Text.Json;
 
 namespace CursorTokenCore;
 
+public static class AccountProvider
+{
+    public const string Cursor = "cursor";
+    public const string Doubao = "doubao";
+
+    public static string Sanitize(string? raw) =>
+        RustCore.String("sanitize_provider", new { input = raw ?? "" });
+}
+
 public sealed class Account
 {
     public string Id { get; set; } = "";
+    /// <summary><c>cursor</c> (default) or <c>doubao</c>. Missing in old configs means cursor.</summary>
+    public string Provider { get; set; } = AccountProvider.Cursor;
     public string Label { get; set; } = "";
     public string Email { get; set; } = "";
     public string Password { get; set; } = "";
@@ -48,6 +59,7 @@ public sealed class Account
             if (!string.IsNullOrWhiteSpace(Email)) return Email.Trim();
             if (!string.IsNullOrWhiteSpace(MembershipType)) return MembershipType.Trim();
             var aid = Id.Trim();
+            if (IsDoubao) return "豆包账号";
             if (aid.StartsWith("tok_")) return "未命名账号";
             if (aid.Length > 14) return aid[..12] + "…";
             return aid.Length == 0 ? "未命名账号" : aid;
@@ -59,13 +71,18 @@ public sealed class Account
         var parts = new List<string> { DisplayLabel };
         var memb = MembershipType.Trim();
         if (memb.Length > 0 && !memb.Equals(DisplayLabel, StringComparison.OrdinalIgnoreCase)) parts.Add(memb);
-        if (AccountValidity.IsTemporary(this)) parts.Add("临时");
+        if (IsTemporary) parts.Add("临时");
         if (LastRemaining is { } r) parts.Add($"剩余 {r:0}%");
         if (!string.IsNullOrWhiteSpace(LastError) && LastRemaining is null) parts.Add("已失效");
         var text = string.Join(" · ", parts);
         if (isActive) text += "  (当前)";
         return text;
     }
+
+    public bool IsDoubao => Provider == AccountProvider.Doubao;
+    public bool IsCursor => !IsDoubao;
+    /// <summary>Doubao accounts are never "temporary": hint cache and validity UI do not apply.</summary>
+    public bool IsTemporary => IsCursor && AccountValidity.IsTemporary(this);
 }
 
 public sealed class AppConfig
@@ -74,6 +91,8 @@ public sealed class AppConfig
     public List<Account> Accounts { get; set; } = [];
     public string ActiveAccountId { get; set; } = "";
     public string ActiveAccountUpdatedAt { get; set; } = "";
+    /// <summary>Which Doubao account the flyout shows. Local only; never part of cloud sync.</summary>
+    public string ActiveDoubaoAccountId { get; set; } = "";
     public Dictionary<string, string> SettingsFieldUpdatedAt { get; set; } = new(StringComparer.Ordinal);
     public int RefreshIntervalMinutes { get; set; } = 10;
     public int LowQuotaThreshold { get; set; } = 20;
@@ -122,7 +141,14 @@ public sealed class AppConfig
     public string StoredSessionToken { get; set; } = "";
 
     public Account? ActiveAccount =>
-        Accounts.FirstOrDefault(a => a.Id == ActiveAccountId) ?? Accounts.FirstOrDefault();
+        CursorAccounts.FirstOrDefault(a => a.Id == ActiveAccountId) ?? CursorAccounts.FirstOrDefault();
+
+    /// <summary>Cursor accounts only: the ring, alerts and history stay bound to them.</summary>
+    public List<Account> CursorAccounts => Accounts.Where(a => a.IsCursor).ToList();
+    public List<Account> DoubaoAccounts => Accounts.Where(a => a.IsDoubao).ToList();
+    public Account? ActiveDoubaoAccount =>
+        DoubaoAccounts.FirstOrDefault(a => a.Id == ActiveDoubaoAccountId) ?? DoubaoAccounts.FirstOrDefault();
+    public bool HasAnyAccount => Accounts.Count > 0;
 
     public CnySpendSettings SpendSettings(string? membership = null) =>
         new(MonthlyPlanUsd, UsdCnyRate, membership ?? ActiveAccount?.MembershipType ?? "", ActiveAccount?.ActualCny ?? ActualCny);
@@ -174,7 +200,7 @@ public sealed class AppConfig
         if (token.Length == 0) throw new CursorApiException("Token 为空");
         var accountId = Token.AccountId(token);
         if (accountId.Length == 0) throw new CursorApiException("无法从 Token 识别账号");
-        var existing = Accounts.FirstOrDefault(a => a.Id == accountId);
+        var existing = Accounts.FirstOrDefault(a => a.Id == accountId && a.IsCursor);
         var created = existing is null;
         if (existing is null)
         {
@@ -234,6 +260,46 @@ public sealed class AppConfig
     }
 
     /// <summary>
+    /// Adds or updates a Doubao account. The Cookie goes into <c>Token</c> directly,
+    /// bypassing <c>Token.Normalize</c>. <paramref name="existingId"/> lets a re-login
+    /// reuse the previous entry even when no stable user id is available.
+    /// </summary>
+    public (Account acc, bool created) UpsertDoubaoAccount(string rawCookie, string? label = null, string? membershipType = null, double? remaining = null, string? error = null, string? existingId = null, bool activate = true)
+    {
+        var cookie = DoubaoCredentials.Normalize(rawCookie);
+        if (cookie.Length == 0) throw new CursorApiException("豆包 Cookie 为空");
+        var requested = (existingId ?? "").Trim();
+        var accountId = requested.Length == 0 ? DoubaoCredentials.AccountId(cookie) : requested;
+        if (accountId.Length == 0) accountId = DoubaoCredentials.RandomAccountId();
+        if (!DoubaoCredentials.IsValidAccountId(accountId)) throw new CursorApiException("豆包账号标识无效");
+        var existing = Accounts.FirstOrDefault(a => a.Id == accountId && a.IsDoubao);
+        var created = existing is null;
+        if (existing is null)
+        {
+            existing = new Account { Id = accountId, Provider = AccountProvider.Doubao, Token = cookie };
+            Accounts.Add(existing);
+        }
+        existing.Token = cookie;
+        existing.TokenDecryptFailed = false;
+        existing.StoredToken = "";
+        existing.LastError = error ?? "";
+        if (label is not null) existing.Label = label.Trim();
+        if (membershipType is not null) existing.MembershipType = membershipType.Trim();
+        if (remaining is not null) existing.LastRemaining = Numbers.Round2(remaining.Value);
+        existing.UpdatedAt = AccountSync.NowIso();
+        if (activate) ActiveDoubaoAccountId = accountId;
+        SyncLegacyFields();
+        return (existing, created);
+    }
+
+    public bool SetActiveDoubaoAccount(string id)
+    {
+        if (!Accounts.Any(a => a.Id == id && a.IsDoubao)) return false;
+        ActiveDoubaoAccountId = id;
+        return true;
+    }
+
+    /// <summary>
     /// Last account the user picked this session. Cloud merge must not revert a
     /// switch that happened while reconcile was in flight.
     /// </summary>
@@ -241,7 +307,7 @@ public sealed class AppConfig
 
     public bool SetActiveAccount(string id)
     {
-        if (!Accounts.Any(a => a.Id == id)) return false;
+        if (!Accounts.Any(a => a.Id == id && a.IsCursor)) return false;
         if (ActiveAccountId != id) AccountSync.TouchActiveAccount(this);
         ActiveAccountId = id;
         SessionActiveAccountId = id;
@@ -283,11 +349,19 @@ public sealed class AppConfig
 
     public bool RemoveAccount(string id)
     {
+        var removed = Accounts.FirstOrDefault(a => a.Id == id);
         var n = Accounts.RemoveAll(a => a.Id == id);
         if (n == 0) return false;
+        if (removed is { IsDoubao: true })
+        {
+            // Doubao never joins cloud sync, so it must not enter deletedAccounts.
+            if (ActiveDoubaoAccountId == id) ActiveDoubaoAccountId = DoubaoAccounts.FirstOrDefault()?.Id ?? "";
+            SyncLegacyFields();
+            return true;
+        }
         if (ActiveAccountId == id)
         {
-            ActiveAccountId = Accounts.FirstOrDefault()?.Id ?? "";
+            ActiveAccountId = CursorAccounts.FirstOrDefault()?.Id ?? "";
             SessionActiveAccountId = ActiveAccountId;
             AccountSync.TouchActiveAccount(this);
         }
@@ -334,11 +408,13 @@ public sealed class AppConfig
 
     public void SyncLegacyFields()
     {
+        if (!DoubaoAccounts.Any(a => a.Id == ActiveDoubaoAccountId))
+            ActiveDoubaoAccountId = DoubaoAccounts.FirstOrDefault()?.Id ?? "";
         var acc = ActiveAccount;
         if (acc is null)
         {
+            // Doubao-only config: clear Cursor legacy fields, never the account list.
             SessionToken = ActiveAccountId = "";
-            Accounts = [];
             AlertNotifiedLevels = [];
             AuthErrorNotified = ExhaustionNotified = LowQuotaNotified = false;
             return;
@@ -666,6 +742,7 @@ public static class ConfigStore
             }
         }
         if (raw.TryGetProperty("active_account_id", out var aid)) cfg.ActiveAccountId = aid.GetString() ?? "";
+        if (raw.TryGetProperty("active_doubao_account_id", out var daid)) cfg.ActiveDoubaoAccountId = (daid.GetString() ?? "").Trim();
         cfg.ActiveAccountUpdatedAt = Str(raw, "active_account_updated_at").Trim();
         cfg.SettingsFieldUpdatedAt = ParseFieldUpdatedAt(raw);
         if (raw.TryGetProperty("refresh_interval_minutes", out var ri) && ri.TryGetInt32(out var riv)) cfg.RefreshIntervalMinutes = Math.Max(1, riv);
@@ -760,16 +837,19 @@ public static class ConfigStore
         var activeId = cfg.ActiveAccountId.Trim();
         if (token.Length > 0)
         {
-            var active = cfg.Accounts.FirstOrDefault(a => a.Id == activeId);
+            // Only Cursor accounts reconcile against session_token; a Doubao Cookie is never a Cursor token.
+            var active = cfg.CursorAccounts.FirstOrDefault(a => a.Id == activeId);
             if (active is null || active.Token != token)
                 cfg.UpsertAccount(token, activate: true);
         }
-        if (cfg.Accounts.Count > 0)
+        if (cfg.CursorAccounts.Count > 0)
         {
-            var ids = cfg.Accounts.Select(a => a.Id).ToHashSet();
-            if (!ids.Contains(cfg.ActiveAccountId)) cfg.ActiveAccountId = cfg.Accounts[0].Id;
+            var ids = cfg.CursorAccounts.Select(a => a.Id).ToHashSet();
+            if (!ids.Contains(cfg.ActiveAccountId)) cfg.ActiveAccountId = cfg.CursorAccounts[0].Id;
         }
         else cfg.ActiveAccountId = "";
+        if (!cfg.DoubaoAccounts.Any(a => a.Id == cfg.ActiveDoubaoAccountId))
+            cfg.ActiveDoubaoAccountId = cfg.DoubaoAccounts.FirstOrDefault()?.Id ?? "";
         cfg.SyncLegacyFields();
         return cfg;
     }
@@ -806,6 +886,10 @@ public static class ConfigStore
 
     static Account? Sanitize(JsonElement raw)
     {
+        // Read provider first: a Doubao Cookie must not go through Token.Normalize,
+        // and its id cannot be derived from a Cursor token.
+        if (AccountProvider.Sanitize(Str(raw, "provider")) == AccountProvider.Doubao)
+            return SanitizeDoubao(raw);
         var stored = Str(raw, "token");
         var decryptFailed = !TokenProtector.TryUnprotect(stored, out var tokenRaw);
         string token;
@@ -870,6 +954,44 @@ public static class ConfigStore
         return acc;
     }
 
+    /// <summary>Doubao account: <c>token</c> is the raw Cookie header, encrypted with TokenProtector.</summary>
+    static Account? SanitizeDoubao(JsonElement raw)
+    {
+        var stored = Str(raw, "token");
+        var decryptFailed = !TokenProtector.TryUnprotect(stored, out var rawCookie);
+        var cookie = decryptFailed ? "" : DoubaoCredentials.Normalize(rawCookie);
+        if (cookie.Length == 0 && !decryptFailed) return null;
+        var id = Str(raw, "id").Trim();
+        if (!DoubaoCredentials.IsValidAccountId(id))
+            id = DoubaoCredentials.AccountId(cookie);
+        if (id.Length == 0) return null;
+        var acc = new Account { Id = id, Provider = AccountProvider.Doubao, Token = cookie };
+        if (decryptFailed)
+        {
+            acc.TokenDecryptFailed = true;
+            acc.StoredToken = stored;
+            acc.LastError = TokenProtector.DecryptFailedMessage;
+        }
+        acc.Label = Str(raw, "label").Trim();
+        var membership = Str(raw, "membership_type");
+        if (membership.Length == 0) membership = Str(raw, "membershipType");
+        acc.MembershipType = membership.Trim();
+        acc.AccountKind = AccountValidity.LongTerm;
+        acc.TempStartAt = "";
+        acc.TempValidDays = 0;
+        acc.TempValidHours = 0;
+        if (!decryptFailed) acc.LastError = Str(raw, "last_error");
+        acc.UpdatedAt = Str(raw, "updated_at");
+        acc.UsageUpdatedAt = Str(raw, "usage_updated_at").Trim();
+        if (raw.TryGetProperty("last_remaining", out var lr) && lr.ValueKind is JsonValueKind.Number)
+            acc.LastRemaining = Numbers.Round2(lr.GetDouble());
+        acc.AlertNotifiedLevels = ParseIntList(raw.TryGetProperty("alert_notified_levels", out var an) ? an : default);
+        acc.AuthErrorNotified = Bool(raw, "auth_error_notified", false);
+        acc.ExhaustionNotified = Bool(raw, "exhaustion_notified", false);
+        acc.LowQuotaNotified = Bool(raw, "low_quota_notified", false);
+        return acc;
+    }
+
     static List<int> ParseIntList(JsonElement el)
     {
         if (el.ValueKind != JsonValueKind.Array) return [];
@@ -915,6 +1037,7 @@ public static class ConfigStore
         accounts = cfg.Accounts.Select(a => new Dictionary<string, object?>
         {
             ["id"] = a.Id,
+            ["provider"] = a.Provider,
             ["label"] = a.Label,
             ["email"] = a.Email,
             ["password"] = TokenProtector.DiskToken(a.Password, a.StoredPassword, a.PasswordDecryptFailed),
@@ -943,6 +1066,7 @@ public static class ConfigStore
         }).ToList(),
         active_account_id = cfg.ActiveAccountId,
         active_account_updated_at = cfg.ActiveAccountUpdatedAt,
+        active_doubao_account_id = cfg.ActiveDoubaoAccountId,
         settings_field_updated_at = cfg.SettingsFieldUpdatedAt,
         refresh_interval_minutes = cfg.RefreshIntervalMinutes,
         low_quota_threshold = cfg.LowQuotaThreshold,

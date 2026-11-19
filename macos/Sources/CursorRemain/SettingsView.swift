@@ -38,6 +38,8 @@ struct SettingsRootView: View {
     @State private var deletePassword = ""
     @State private var showDeleteConfirm = false
     @State private var hint = ""
+    @State private var doubaoCookieText = ""
+    @State private var doubaoLoginRunning = false
     @FocusState private var tokenFocused: Bool
     @State private var fittedBody: CGFloat = 0
     var startImport: Bool = false
@@ -206,12 +208,23 @@ struct SettingsRootView: View {
                 Button("删除") { deleteAccount() }
                     .disabled(store.config.activeAccount == nil)
             }
+            if store.config.doubaoAccounts.isEmpty {
+                HStack(spacing: 6) {
+                    Button("添加豆包账号") { addOpen = true }
+                    Text("豆包额度只在本机读取，Cookie 不参与云同步。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                doubaoAccountsPanel
+            }
             if !store.accountCheckStatus.isEmpty {
                 Text(store.accountCheckStatus)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if !store.config.cursorAccounts.isEmpty {
             let activeLabel = store.config.activeAccount?.displayLabel ?? ""
             Text(activeLabel.isEmpty ? "当前账号配置" : "当前账号配置（\(activeLabel)）")
                 .font(.headline)
@@ -253,10 +266,93 @@ struct SettingsRootView: View {
             Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            }
         }
         .sheet(isPresented: $addOpen) {
             addAccountSheet
         }
+    }
+
+    var doubaoAccountsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("豆包账号").font(.headline)
+                Text("Cookie 只存本机，不参与云同步")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("登录新账号") { loginDoubaoAccount(existing: nil) }
+                    .disabled(doubaoLoginRunning)
+            }
+            ForEach(store.config.doubaoAccounts, id: \.id) { account in
+                HStack(spacing: 8) {
+                    Text(account.displayLabel)
+                        .font(.callout)
+                        .fontWeight(account.id == store.config.activeDoubaoAccountId ? .semibold : .regular)
+                        .lineLimit(1)
+                    if !account.membershipType.isEmpty {
+                        Text(account.membershipType)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(StatusText.formatAccountCheckStatus(account))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    Button("重新登录") { loginDoubaoAccount(existing: account) }
+                        .disabled(doubaoLoginRunning)
+                    Button("删除") { deleteDoubaoAccount(account) }
+                }
+            }
+            TextEditor(text: $doubaoCookieText)
+                .font(.system(.caption, design: .monospaced))
+                .frame(height: 54)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            HStack {
+                Button("用粘贴的 Cookie 更新当前豆包账号") { savePastedDoubaoCookie() }
+                    .disabled(store.config.activeDoubaoAccount == nil)
+                Text("页面侧栏「设置 → 账号」可复制 Cookie；也可以在登录窗口里完成扫码登录。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    func loginDoubaoAccount(existing: Account?) {
+        guard !doubaoLoginRunning else { return }
+        doubaoLoginRunning = true
+        let profileId = existing?.id ?? DoubaoCredentials.randomAccountId()
+        Task {
+            let cookie = await DoubaoLoginController.shared.run(accountId: profileId)
+            doubaoLoginRunning = false
+            guard let cookie, !cookie.isEmpty else { return }
+            let message = store.saveDoubaoAccount(cookie: cookie, existingId: existing?.id)
+            store.importStatus = message.isEmpty ? "已添加豆包账号" : message
+        }
+    }
+
+    func savePastedDoubaoCookie() {
+        let text = doubaoCookieText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let existing = store.config.activeDoubaoAccount
+        let message = store.saveDoubaoAccount(cookie: text, existingId: existing?.id)
+        if message.isEmpty {
+            doubaoCookieText = ""
+            store.importStatus = "已更新豆包账号 Cookie"
+        } else {
+            store.importStatus = message
+        }
+    }
+
+    func deleteDoubaoAccount(_ account: Account) {
+        let alert = NSAlert()
+        alert.messageText = "删除豆包账号"
+        alert.informativeText = "将删除本机保存的「\(account.displayLabel)」Cookie，不影响豆包网站上的账号。"
+        alert.addButton(withTitle: "删除")
+        alert.addButton(withTitle: "取消")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.removeDoubaoAccount(account.id)
     }
 
     var addAccountSheet: some View {
@@ -289,9 +385,40 @@ struct SettingsRootView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider().padding(.vertical, 4)
+            Text("豆包账号").font(.headline)
+            Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
+                .disabled(doubaoLoginRunning)
+            Text("在独立窗口里完成豆包登录，成功后自动保存 Cookie；Cookie 只存本机，不参与云同步。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextEditor(text: $doubaoCookieText)
+                .font(.system(.caption, design: .monospaced))
+                .frame(minHeight: 54, maxHeight: 84)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            HStack {
+                Button("添加豆包账号（粘贴 Cookie）") { addPastedDoubaoAccount() }
+                Spacer()
+                Text("也可以在豆包网页侧栏「设置 → 账号」里复制 Cookie。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(20)
         .frame(width: 440)
+    }
+
+    func addPastedDoubaoAccount() {
+        let text = doubaoCookieText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let message = store.saveDoubaoAccount(cookie: text, existingId: nil)
+        if message.isEmpty {
+            doubaoCookieText = ""
+            store.importStatus = "已添加豆包账号"
+        } else {
+            store.importStatus = message
+        }
     }
 
     var notifyPage: some View {
@@ -489,7 +616,9 @@ struct SettingsRootView: View {
     }
 
     func accountRow(_ account: Account) -> some View {
-        let isActive = account.id == store.config.activeAccountId
+        let isActive = account.isDoubao
+            ? account.id == store.config.activeDoubaoAccountId
+            : account.id == store.config.activeAccountId
         return HStack(spacing: AccountTableLayout.gap) {
             Text(account.displayLabel)
                 .fontWeight(isActive ? .semibold : .regular)
@@ -508,7 +637,7 @@ struct SettingsRootView: View {
                 .lineLimit(1)
                 .frame(width: AccountTableLayout.updated, alignment: .leading)
             AccountColumnLine(visible: false)
-            Text(StatusText.formatAccountKind(account))
+            Text(account.isDoubao ? "豆包" : StatusText.formatAccountKind(account))
                 .lineLimit(1)
                 .frame(width: AccountTableLayout.kind, alignment: .leading)
         }
@@ -519,7 +648,11 @@ struct SettingsRootView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             guard !isActive else { return }
-            activeBinding.wrappedValue = account.id
+            if account.isDoubao {
+                store.switchDoubaoAccount(account.id)
+            } else {
+                activeBinding.wrappedValue = account.id
+            }
         }
         .accessibilityAddTraits(.isButton)
     }

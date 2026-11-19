@@ -207,7 +207,7 @@ sealed partial class TrayContext : ApplicationContext
         UiChrome.ThemeChanged += OnSystemThemeChanged;
         _sync.BeginInvoke(() =>
         {
-            if (string.IsNullOrEmpty(_config.SessionToken))
+            if (!_config.HasAnyAccount)
                 OpenSettings(true, false);
             Task.Run(() => UsageHistory.PruneAll());
             _ = LoopAsync(_cts.Token);
@@ -240,6 +240,7 @@ sealed partial class TrayContext : ApplicationContext
         _menu.Items.Add("用量报表…", null, (_, _) => OpenReport());
         _menu.Items.Add("账号对比…", null, (_, _) => OpenCompare());
         _menu.Items.Add(_switcher);
+        _menu.Items.Add("打开豆包订阅…", null, (_, _) => OpenDoubaoSubscription());
         _menu.Items.Add("让 Cursor 使用此账号…", null, (_, _) => LoginToCursor());
         _menu.Items.Add("添加账号…", null, (_, _) => OpenSettings(true, false));
         _menu.Items.Add("设置…", null, (_, _) => OpenSettings(false, false));
@@ -263,11 +264,11 @@ sealed partial class TrayContext : ApplicationContext
     {
         if (_switcher.DropDown.Visible) return;
         _switcher.DropDownItems.Clear();
-        if (_config.Accounts.Count == 0)
-            _switcher.DropDownItems.Add(new ToolStripMenuItem("暂无账号") { Enabled = false });
+        if (_config.CursorAccounts.Count == 0)
+            _switcher.DropDownItems.Add(new ToolStripMenuItem("暂无 Cursor 账号") { Enabled = false });
         else
         {
-            foreach (var acc in _config.Accounts)
+            foreach (var acc in _config.CursorAccounts)
             {
                 var live = acc.Id == _config.ActiveAccountId ? _usage?.RemainingPercent : null;
                 var title = StatusText.FormatAccountMenuTitle(acc.DisplayLabel, live ?? acc.LastRemaining);
@@ -336,7 +337,8 @@ sealed partial class TrayContext : ApplicationContext
         if (_flyout is { Visible: true, IsDisposed: false })
         {
             var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id, maxPoints: 500);
-            _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
+            _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist),
+                CurrentDoubaoUsage, CurrentDoubaoError, CurrentDoubaoUpdated);
         }
     }
 
@@ -367,7 +369,8 @@ sealed partial class TrayContext : ApplicationContext
                     OpenReport,
                     OpenCompare);
                 var hist = UsageHistory.LoadRecent(7, _config.ActiveAccount?.Id, maxPoints: 500);
-                _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist));
+                _flyout.Render(_usage, _error, _updated, _config, hist, UsageHistory.DailyAvgBurn(hist),
+                    CurrentDoubaoUsage, CurrentDoubaoError, CurrentDoubaoUpdated);
                 _flyout.PopupNear(anchor ?? Cursor.Position);
             }
             catch (Exception ex) { CrashLog.Write(ex); }
@@ -377,6 +380,12 @@ sealed partial class TrayContext : ApplicationContext
     void OpenDashboard()
     {
         var url = UsageParser.DashboardUrl(_usage);
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+    }
+
+    void OpenDoubaoSubscription()
+    {
+        var url = DoubaoClient.SubscriptionUrl;
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
     }
 
@@ -410,7 +419,7 @@ sealed partial class TrayContext : ApplicationContext
                     return;
                 }
                 _compare = new CompareForm(_client, () => new CompareForm.CompareState(
-                    _config.Accounts.ToList(),
+                    _config.CursorAccounts.ToList(),
                     _config.ActiveAccountId,
                     _config.MonthlyPlanUsd,
                     _config.UsdCnyRate,

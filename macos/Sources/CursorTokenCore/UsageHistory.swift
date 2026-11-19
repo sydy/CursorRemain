@@ -199,7 +199,8 @@ public enum AlertLogic {
     public static func evaluate(
         config: AppConfig,
         account: inout Account,
-        snapshot: UsageSnapshot
+        snapshot: UsageSnapshot,
+        exhaustionRisk: Bool = true
     ) -> [Notice] {
         guard config.notifyEnabled else { return [] }
         var notices: [Notice] = []
@@ -222,7 +223,7 @@ public enum AlertLogic {
             newly.forEach { notified.insert($0) }
             changed = true
         }
-        if config.notifyExhaustionRisk {
+        if config.notifyExhaustionRisk && exhaustionRisk {
             let atRisk = isExhaustionRisk(snapshot)
             let was = account.exhaustionNotified
             if atRisk && !was {

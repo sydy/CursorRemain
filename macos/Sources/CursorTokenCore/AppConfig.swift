@@ -119,8 +119,18 @@ public enum AppPaths {
     }
 }
 
+public enum AccountProvider {
+    public static let cursor = "cursor"
+    public static let doubao = "doubao"
+    public static func sanitize(_ raw: String) -> String {
+        RustCore.string("sanitize_provider", ["input": raw])
+    }
+}
+
 public struct Account: Equatable, Sendable, Codable {
     public var id: String
+    /// `cursor`（默认）或 `doubao`。旧配置没有该键时按 cursor 处理。
+    public var provider: String
     public var label: String
     public var email: String
     public var password: String
@@ -181,9 +191,11 @@ public struct Account: Equatable, Sendable, Codable {
         billingCycleStart: String = "",
         billingCycleEnd: String = "",
         reportStartDate: String = "",
-        reportEndDate: String = ""
+        reportEndDate: String = "",
+        provider: String = AccountProvider.cursor
     ) {
         self.id = id
+        self.provider = AccountProvider.sanitize(provider)
         self.label = label
         self.email = CursorPasswordLogin.sanitizeEmail(email)
         self.password = password
@@ -223,10 +235,17 @@ public struct Account: Equatable, Sendable, Codable {
         let memb = membershipType.trimmingCharacters(in: .whitespaces)
         if !memb.isEmpty { return memb }
         let aid = id.trimmingCharacters(in: .whitespaces)
+        if isDoubao { return "豆包账号" }
         if aid.hasPrefix("tok_") { return "未命名账号" }
         if aid.count > 14 { return String(aid.prefix(12)) + "…" }
         return aid.isEmpty ? "未命名账号" : aid
     }
+
+    public var isDoubao: Bool { provider == AccountProvider.doubao }
+    public var isCursor: Bool { !isDoubao }
+
+    /// 豆包账号不参与「临时账号」和「实付金额」这类 Cursor 专属设置。
+    public var isTemporary: Bool { isCursor && AccountValidity.isTemporary(self) }
 
     public func caption(isActive: Bool) -> String {
         var parts = [displayLabel]
@@ -234,7 +253,7 @@ public struct Account: Equatable, Sendable, Codable {
         if !memb.isEmpty, memb.lowercased() != displayLabel.lowercased() {
             parts.append(memb)
         }
-        if AccountValidity.isTemporary(self) {
+        if isTemporary {
             parts.append("临时")
         }
         if let remaining = lastRemaining {
@@ -255,6 +274,8 @@ public struct AppConfig: Equatable, Sendable {
     public var accounts: [Account]
     public var activeAccountId: String
     public var activeAccountUpdatedAt: String
+    /// 浮窗展示哪个豆包账号。不属于 Cursor 会话，也不参与云同步。
+    public var activeDoubaoAccountId: String
     public var settingsFieldUpdatedAt: [String: String]
     public var refreshIntervalMinutes: Int
     public var lowQuotaThreshold: Int
@@ -312,6 +333,7 @@ public struct AppConfig: Equatable, Sendable {
         accounts: [],
         activeAccountId: "",
         activeAccountUpdatedAt: "",
+        activeDoubaoAccountId: "",
         settingsFieldUpdatedAt: [:],
         refreshIntervalMinutes: 10,
         lowQuotaThreshold: 20,
@@ -360,9 +382,26 @@ public struct AppConfig: Equatable, Sendable {
     }
 
     public var activeAccount: Account? {
-        if let found = accounts.first(where: { $0.id == activeAccountId }) { return found }
-        return accounts.first
+        if let found = cursorAccounts.first(where: { $0.id == activeAccountId }) { return found }
+        return cursorAccounts.first
     }
+
+    /// 「当前账号」永远是 Cursor 账号：菜单栏圆环、告警和历史只认它。
+    public var cursorAccounts: [Account] {
+        accounts.filter(\.isCursor)
+    }
+
+    public var doubaoAccounts: [Account] {
+        accounts.filter(\.isDoubao)
+    }
+
+    public var activeDoubaoAccount: Account? {
+        if let found = doubaoAccounts.first(where: { $0.id == activeDoubaoAccountId }) { return found }
+        return doubaoAccounts.first
+    }
+
+    /// 至少有一个账号（Cursor 或豆包）就不要再弹出设置页。
+    public var hasAnyAccount: Bool { !accounts.isEmpty }
 
     public func spendSettings(membership: String? = nil) -> CnySpendSettings {
         CnySpendSettings(
@@ -420,7 +459,7 @@ public struct AppConfig: Equatable, Sendable {
         if token.isEmpty { throw CursorAPIError("Token 为空") }
         let accountId = Token.accountId(from: token)
         if accountId.isEmpty { throw CursorAPIError("无法从 Token 识别账号") }
-        if let idx = accounts.firstIndex(where: { $0.id == accountId }) {
+        if let idx = accounts.firstIndex(where: { $0.id == accountId && $0.isCursor }) {
             var identityChanged = accounts[idx].token != token
             accounts[idx].token = token
             if let email {
@@ -490,8 +529,58 @@ public struct AppConfig: Equatable, Sendable {
         return (acc, true)
     }
 
+    /// 添加或原地更新豆包账号。Cookie 直接放 `token`，绕开 `Token.normalize`。
+    /// `existingId` 用于「重新登录」：拿不到稳定用户标识时也复用原条目。
+    @discardableResult
+    public mutating func upsertDoubaoAccount(
+        cookie rawCookie: String,
+        label: String? = nil,
+        membershipType: String? = nil,
+        remaining: Double? = nil,
+        error: String? = nil,
+        existingId: String? = nil,
+        activate: Bool = true
+    ) throws -> (Account, Bool) {
+        let cookie = DoubaoCredentials.normalize(rawCookie)
+        if cookie.isEmpty { throw CursorAPIError("豆包 Cookie 为空") }
+        let requested = (existingId ?? "").trimmingCharacters(in: .whitespaces)
+        var accountId = requested.isEmpty ? DoubaoCredentials.accountId(cookie: cookie) : requested
+        if accountId.isEmpty { accountId = DoubaoCredentials.randomAccountId() }
+        if !DoubaoCredentials.isValidAccountId(accountId) { throw CursorAPIError("豆包账号标识无效") }
+        if let idx = accounts.firstIndex(where: { $0.id == accountId && $0.isDoubao }) {
+            accounts[idx].token = cookie
+            accounts[idx].tokenDecryptFailed = false
+            accounts[idx].storedToken = ""
+            accounts[idx].lastError = ""
+            if let label { accounts[idx].label = label.trimmingCharacters(in: .whitespaces) }
+            if let membershipType { accounts[idx].membershipType = membershipType.trimmingCharacters(in: .whitespaces) }
+            if let remaining { accounts[idx].lastRemaining = round2(remaining) }
+            if let error { accounts[idx].lastError = error }
+            accounts[idx].updatedAt = AccountSync.nowIso()
+            if activate { activeDoubaoAccountId = accountId }
+            syncLegacyFields()
+            return (accounts[idx], false)
+        }
+        var acc = Account(id: accountId, token: cookie, provider: AccountProvider.doubao)
+        if let label { acc.label = label.trimmingCharacters(in: .whitespaces) }
+        if let membershipType { acc.membershipType = membershipType.trimmingCharacters(in: .whitespaces) }
+        if let remaining { acc.lastRemaining = round2(remaining) }
+        if let error { acc.lastError = error }
+        acc.updatedAt = AccountSync.nowIso()
+        accounts.append(acc)
+        if activate { activeDoubaoAccountId = accountId }
+        syncLegacyFields()
+        return (acc, true)
+    }
+
+    public mutating func setActiveDoubaoAccount(_ accountId: String) -> Bool {
+        guard doubaoAccounts.contains(where: { $0.id == accountId }) else { return false }
+        activeDoubaoAccountId = accountId
+        return true
+    }
+
     public mutating func setActiveAccount(_ accountId: String) -> Bool {
-        guard accounts.contains(where: { $0.id == accountId }) else { return false }
+        guard cursorAccounts.contains(where: { $0.id == accountId }) else { return false }
         if activeAccountId != accountId { AccountSync.touchActiveAccount(&self) }
         activeAccountId = accountId
         syncLegacyFields()
@@ -536,11 +625,18 @@ public struct AppConfig: Equatable, Sendable {
     }
 
     public mutating func removeAccount(_ accountId: String) -> Bool {
+        let removed = accounts.first { $0.id == accountId }
         let before = accounts.count
         accounts.removeAll { $0.id == accountId }
         if accounts.count == before { return false }
+        if removed?.isDoubao == true {
+            // 豆包账号不参与云同步，不能进 deletedAccounts。
+            if activeDoubaoAccountId == accountId { activeDoubaoAccountId = doubaoAccounts.first?.id ?? "" }
+            syncLegacyFields()
+            return true
+        }
         if activeAccountId == accountId {
-            activeAccountId = accounts.first?.id ?? ""
+            activeAccountId = cursorAccounts.first?.id ?? ""
             AccountSync.touchActiveAccount(&self)
         }
         AccountSync.rememberDeleted(&self, accountId: accountId)
@@ -595,10 +691,14 @@ public struct AppConfig: Equatable, Sendable {
     }
 
     public mutating func syncLegacyFields() {
+        // `active_doubao_account_id` 始终指向一个豆包账号，没有豆包账号时为空。
+        if !doubaoAccounts.contains(where: { $0.id == activeDoubaoAccountId }) {
+            activeDoubaoAccountId = doubaoAccounts.first?.id ?? ""
+        }
         guard let acc = activeAccount else {
+            // 只有豆包账号时会走到这里：只清 Cursor 相关旧字段，不删账号。
             sessionToken = ""
             activeAccountId = ""
-            accounts = []
             alertNotifiedLevels = []
             authErrorNotified = false
             exhaustionNotified = false
@@ -784,6 +884,7 @@ public enum ConfigStore {
             }
         }
         if let v = raw["active_account_id"] as? String { cfg.activeAccountId = v }
+        if let v = raw["active_doubao_account_id"] as? String { cfg.activeDoubaoAccountId = v.trimmingCharacters(in: .whitespaces) }
         if let v = raw["active_account_updated_at"] as? String { cfg.activeAccountUpdatedAt = v.trimmingCharacters(in: .whitespaces) }
         if let rawFields = raw["settings_field_updated_at"] as? [String: Any] {
             var fields: [String: String] = [:]
@@ -878,9 +979,10 @@ public enum ConfigStore {
         let token = (try? Token.normalize(cfg.sessionToken)) ?? cfg.sessionToken.trimmingCharacters(in: .whitespaces)
         var activeId = cfg.activeAccountId.trimmingCharacters(in: .whitespaces)
         if !token.isEmpty {
-            let active = accounts.first(where: { $0.id == activeId })
+            let active = accounts.first(where: { $0.id == activeId && $0.isCursor })
+            // 只有 Cursor 账号参与 session_token 对账：豆包 Cookie 永远不是 Cursor Token。
             if active == nil || active?.token != token {
-                let createdEmpty = accounts.isEmpty
+                let createdEmpty = cfg.cursorAccounts.isEmpty
                 if let result = try? cfg.upsertAccount(token: token, activate: true) {
                     if createdEmpty {
                         // flags already copied inside upsert when accounts was empty
@@ -891,12 +993,17 @@ public enum ConfigStore {
             }
         }
         accounts = cfg.accounts
-        if !accounts.isEmpty {
-            let ids = Set(accounts.map(\.id))
-            if !ids.contains(activeId) { activeId = accounts[0].id }
+        let cursor = cfg.cursorAccounts
+        if !cursor.isEmpty {
+            let ids = Set(cursor.map(\.id))
+            if !ids.contains(activeId) { activeId = cursor[0].id }
             cfg.activeAccountId = activeId
         } else {
             cfg.activeAccountId = ""
+        }
+        let doubao = cfg.doubaoAccounts
+        if !doubao.contains(where: { $0.id == cfg.activeDoubaoAccountId }) {
+            cfg.activeDoubaoAccountId = doubao.first?.id ?? ""
         }
         cfg.syncLegacyFields()
         return cfg
@@ -921,6 +1028,11 @@ public enum ConfigStore {
     }
 
     static func sanitizeAccount(_ raw: [String: Any]) -> Account? {
+        // 先读 provider，再决定 token 怎么处理：豆包 Cookie 不能走 JWT 规范化，
+        // 也不能从 token 推导 id。
+        if AccountProvider.sanitize(raw["provider"] as? String ?? "") == AccountProvider.doubao {
+            return sanitizeDoubaoAccount(raw)
+        }
         let stored = (raw["token"] as? String ?? "").trimmingCharacters(in: .whitespaces)
         let unpacked = TokenProtector.tryUnprotect(stored)
         let decryptFailed = !unpacked.ok
@@ -986,6 +1098,50 @@ public enum ConfigStore {
         return acc
     }
 
+    /// 豆包账号：`token` 是 Cookie 头的原值，落盘复用 TokenProtector。
+    static func sanitizeDoubaoAccount(_ raw: [String: Any]) -> Account? {
+        let stored = (raw["token"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        let unpacked = TokenProtector.tryUnprotect(stored)
+        let decryptFailed = !unpacked.ok
+        let cookie = decryptFailed ? "" : DoubaoCredentials.normalize(unpacked.value)
+        if cookie.isEmpty && !decryptFailed { return nil }
+        var accountId = (raw["id"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        if !DoubaoCredentials.isValidAccountId(accountId) {
+            accountId = DoubaoCredentials.accountId(cookie: cookie)
+        }
+        if accountId.isEmpty { return nil }
+        var acc = Account(id: accountId, token: cookie, provider: AccountProvider.doubao)
+        if decryptFailed {
+            acc.tokenDecryptFailed = true
+            acc.storedToken = stored
+            acc.lastError = TokenProtector.decryptFailedMessage
+        }
+        acc.label = (raw["label"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        acc.membershipType = (raw["membershipType"] as? String ?? raw["membership_type"] as? String ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        acc.accountKind = AccountValidity.longTerm
+        acc.tempStartAt = ""
+        acc.tempValidDays = 0
+        acc.tempValidHours = 0
+        if !decryptFailed { acc.lastError = raw["last_error"] as? String ?? "" }
+        acc.updatedAt = raw["updated_at"] as? String ?? ""
+        acc.usageUpdatedAt = (raw["usage_updated_at"] as? String ?? "").trimmingCharacters(in: .whitespaces)
+        if let remaining = raw["last_remaining"] {
+            if remaining is NSNull {
+                acc.lastRemaining = nil
+            } else if let n = remaining as? NSNumber {
+                acc.lastRemaining = round2(n.doubleValue)
+            } else if let s = remaining as? String, let d = Double(s) {
+                acc.lastRemaining = round2(d)
+            }
+        }
+        acc.alertNotifiedLevels = parseIntList(raw["alert_notified_levels"])
+        acc.authErrorNotified = boolValue(raw["auth_error_notified"])
+        acc.exhaustionNotified = boolValue(raw["exhaustion_notified"])
+        acc.lowQuotaNotified = boolValue(raw["low_quota_notified"])
+        return acc
+    }
+
     public static func parseThresholds(_ value: Any?) -> [Int] {
         let res = RustCore.call("parse_thresholds", ["value": value ?? NSNull()])
         if let arr = res as? [Int] { return arr }
@@ -1031,6 +1187,7 @@ public enum ConfigStore {
             "accounts": try cfg.accounts.map { acc -> [String: Any] in
                 var d: [String: Any] = [
                     "id": acc.id,
+                    "provider": acc.provider,
                     "label": acc.label,
                     "email": acc.email,
                     "password": try TokenProtector.diskToken(
@@ -1069,6 +1226,7 @@ public enum ConfigStore {
             },
             "active_account_id": cfg.activeAccountId,
             "active_account_updated_at": cfg.activeAccountUpdatedAt,
+            "active_doubao_account_id": cfg.activeDoubaoAccountId,
             "settings_field_updated_at": cfg.settingsFieldUpdatedAt,
             "refresh_interval_minutes": cfg.refreshIntervalMinutes,
             "low_quota_threshold": cfg.lowQuotaThreshold,

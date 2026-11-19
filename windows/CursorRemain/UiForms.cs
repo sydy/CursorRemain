@@ -98,6 +98,18 @@ sealed class SettingsForm : Form
     readonly Button _accountDelete = ActionButton("删除", UiButtonKind.Danger);
     readonly Label _accountSectionHeading = UiChrome.Heading("当前账号配置");
     readonly Button _loginNew = ActionButton("登录新账号", UiButtonKind.Primary);
+    readonly Label _doubaoHeading = UiChrome.Heading("豆包账号");
+    readonly Label _doubaoHint = new()
+    {
+        AutoSize = true,
+        ForeColor = Color.DimGray,
+        Margin = new Padding(0, 2, 0, 4),
+        Text = "豆包额度只在本机显示，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。",
+    };
+    readonly Button _doubaoAdd = ActionButton("登录豆包账号", UiButtonKind.Primary);
+    readonly Button _doubaoPaste = ActionButton("粘贴 Cookie");
+    readonly Button _doubaoRelogin = ActionButton("重新登录");
+    readonly Button _doubaoDelete = ActionButton("删除豆包账号", UiButtonKind.Danger);
     readonly Label _loginNote = new()
     {
         AutoSize = true,
@@ -204,6 +216,22 @@ sealed class SettingsForm : Form
         _tokenFrame.MinimumSize = new Size(0, 88);
         _tokenFrame.Margin = new Padding(0, 2, 0, SettingsLayout.StackGap);
         _loginNew.Click += (_, _) => LoginNewAccount();
+        _doubaoAdd.Click += (_, _) => LoginDoubao(null);
+        _doubaoPaste.Click += (_, _) => PasteDoubaoCookie(null);
+        _doubaoRelogin.Click += (_, _) =>
+        {
+            var acc = _cfg.ActiveDoubaoAccount;
+            if (acc is null) { MessageBox.Show(this, "还没有豆包账号，请先登录。", "豆包账号"); return; }
+            LoginDoubao(acc.Id);
+        };
+        _doubaoDelete.Click += (_, _) =>
+        {
+            var acc = _cfg.ActiveDoubaoAccount;
+            if (acc is null) return;
+            if (MessageBox.Show($"确定删除豆包账号「{acc.DisplayLabel}」？", "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            _cfg.RemoveAccount(acc.Id);
+            LoadFrom(_cfg); NotifySaved();
+        };
         var addStack = MakeStack(
             FollowRow(_loginNew),
             _loginNote,
@@ -230,7 +258,10 @@ sealed class SettingsForm : Form
             FieldRow("渠道", _channel, FormTone.FieldWidthCombo),
             FieldRow("实际成本（人民币）", _actualCny, FormTone.FieldWidthMedium),
             _actualHint,
-            FollowRow(_pageStatus)));
+            FollowRow(_pageStatus),
+            _doubaoHeading,
+            FollowRow(_doubaoHint),
+            FollowRow(ImportRow(_doubaoAdd, _doubaoPaste, _doubaoRelogin, _doubaoDelete))));
         _tabs.AddPage(SettingsLayout.NotifyTab, MakeTab(
             UiChrome.Heading("刷新与通知", first: true),
             FieldRow("刷新间隔（分钟）", _interval, FormTone.FieldWidthShort),
@@ -289,7 +320,15 @@ sealed class SettingsForm : Form
         _accounts.SelectionChanged += (_, _) =>
         {
             if (_loading) return;
-            if (_accounts.CurrentRow?.Tag is not string id || id.Length == 0 || id == _cfg.ActiveAccountId) return;
+            if (_accounts.CurrentRow?.Tag is not string id || id.Length == 0) return;
+            if (_cfg.DoubaoAccounts.Any(a => a.Id == id))
+            {
+                if (id == _cfg.ActiveDoubaoAccountId) return;
+                _cfg.SetActiveDoubaoAccount(id);
+                NotifySaved();
+                return;
+            }
+            if (id == _cfg.ActiveAccountId) return;
             ReadKindInto(_cfg.ActiveAccount);
             ReadActualCnyInto(_cfg.ActiveAccount);
             ReadChannelInto(_cfg.ActiveAccount);
@@ -302,7 +341,7 @@ sealed class SettingsForm : Form
         };
         _accountCheck.Click += (_, _) =>
         {
-            if (_cfg.Accounts.Count == 0) return;
+            if (_cfg.CursorAccounts.Count == 0) return;
             _pageStatus.Text = "正在检查账号状态…";
             _accountCheck.Enabled = false;
             _requestRefresh();
@@ -927,7 +966,7 @@ sealed class SettingsForm : Form
         _accountRename.Enabled = hasAccount;
         _accountDelete.Enabled = hasAccount;
         _accountLogin.Enabled = hasAccount;
-        _accountCheck.Enabled = _cfg.Accounts.Count > 0;
+        _accountCheck.Enabled = _cfg.CursorAccounts.Count > 0;
         _kind.Enabled = hasAccount;
         _channel.Enabled = hasAccount;
         _actualCny.Enabled = hasAccount;
@@ -952,14 +991,14 @@ sealed class SettingsForm : Form
     {
         _accounts.Rows.Clear();
         DataGridViewRow? activeRow = null;
-        foreach (var a in _cfg.Accounts)
+        foreach (var a in _cfg.Accounts.Where(a => !a.IsDoubao).Concat(_cfg.DoubaoAccounts))
         {
             var index = _accounts.Rows.Add(
                 a.DisplayLabel,
                 StatusText.FormatAccountPlan(a),
                 StatusText.FormatAccountCheckStatus(a),
                 StatusText.FormatAccountCheckTime(a),
-                StatusText.FormatAccountKind(a));
+                a.IsDoubao ? "豆包" : StatusText.FormatAccountKind(a));
             var row = _accounts.Rows[index];
             row.Tag = a.Id;
             if (a.Id == _cfg.ActiveAccountId)
@@ -1195,6 +1234,53 @@ sealed class SettingsForm : Form
         if (decrypt.Length > 0) return decrypt;
         if (text.Length > 0) return text;
         return cfg.CloudLoggedIn ? "尚未同步" : "";
+    }
+
+    void LoginDoubao(string? existingId)
+    {
+        if (_importing) return;
+        _importing = true;
+        try
+        {
+            using var dlg = new DoubaoLoginForm(existingId);
+            if (dlg.ShowDialog(AddOwner()) != DialogResult.OK || dlg.Cookie.Length == 0)
+            {
+                if (!IsDisposed) _status.Text = "豆包登录未完成";
+                return;
+            }
+            SaveDoubaoCookie(dlg.Cookie, existingId);
+        }
+        finally { _importing = false; }
+    }
+
+    void PasteDoubaoCookie(string? existingId)
+    {
+        if (!PromptText("粘贴豆包 Cookie", "粘贴完整 Cookie（需含 sessionid 或 uid_tt）", out var raw)) return;
+        var cookie = DoubaoCredentials.Normalize(raw);
+        if (cookie.Length == 0) { _status.Text = "Cookie 为空"; return; }
+        if (!DoubaoCredentials.LooksLoggedIn(cookie))
+        {
+            MessageBox.Show(this, "这段 Cookie 里没有有效登录态，请重新复制完整 Cookie。", "豆包 Cookie", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        SaveDoubaoCookie(cookie, existingId);
+    }
+
+    void SaveDoubaoCookie(string cookie, string? existingId)
+    {
+        try
+        {
+            var (acc, _) = _cfg.UpsertDoubaoAccount(cookie, existingId: existingId, activate: true);
+            _cfg.SetActiveDoubaoAccount(acc.Id);
+            NotifySaved();
+            Persist(false);
+            LoadFrom(_cfg);
+            if (!IsDisposed) _status.Text = "已添加豆包账号，稍后自动刷新额度";
+        }
+        catch (Exception ex)
+        {
+            if (!IsDisposed) _status.Text = "豆包账号未写入：" + ex.Message;
+        }
     }
 
     void LoginNewAccount()

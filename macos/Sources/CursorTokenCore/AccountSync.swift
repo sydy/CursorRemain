@@ -586,6 +586,9 @@ public enum AccountSync {
     public static func snapshotFromConfig(_ cfg: AppConfig) -> SyncSnapshot {
         var accounts: [SyncAccount] = []
         for acc in cfg.accounts {
+            // 豆包账号本期不参与云同步：旧客户端不认识 provider，会把 Cookie
+            // 当成 Cursor Token 发给 cursor.com。
+            guard acc.isCursor else { continue }
             let row = snapshotAccount(acc)
             if row.id.isEmpty || row.token.isEmpty { continue }
             accounts.append(row)
@@ -734,7 +737,9 @@ public enum AccountSync {
                 merged.append(acc)
             }
         }
-        cfg.accounts = merged
+        // 不参与同步的本地账号（豆包）原样保留，不能被整体替换删掉。
+        let localOnly = cfg.accounts.filter { !$0.isCursor }
+        cfg.accounts = merged + localOnly
         cfg.deletedAccounts = sanitizeDeleted(snap.deleted)
         let ids = Set(merged.map(\.id))
         if ids.contains(snap.activeAccountId) { cfg.activeAccountId = snap.activeAccountId }
@@ -753,7 +758,8 @@ public enum AccountSync {
     /// caller can upload the accounts the in-flight request never saw.
     @discardableResult
     public static func adoptReconciled(_ live: inout AppConfig, _ reconciled: AppConfig) -> Bool {
-        let reconciledIds = Set(reconciled.accounts.map(\.id))
+        // 只比较 Cursor 账号：豆包账号不参与同步，不能被当成「同步后多出来的账号」。
+        let reconciledIds = Set(reconciled.cursorAccounts.map(\.id))
         let combined = mergeSnapshots(snapshotFromConfig(live), snapshotFromConfig(reconciled))
         _ = applySnapshotToConfig(&live, combined)
         live.syncLastAt = reconciled.syncLastAt
@@ -770,7 +776,7 @@ public enum AccountSync {
         live.cloudAccessDecryptFailed = reconciled.cloudAccessDecryptFailed
         live.cloudRefreshDecryptFailed = reconciled.cloudRefreshDecryptFailed
         live.decryptError = reconciled.decryptError
-        return Set(live.accounts.map(\.id)) != reconciledIds
+        return Set(live.cursorAccounts.map(\.id)) != reconciledIds
     }
 
     /// Restore the account the user picked while a merge was applying the snapshot.
@@ -781,7 +787,7 @@ public enum AccountSync {
         let started = startedActive.trimmingCharacters(in: .whitespaces)
         let live = liveActive.trimmingCharacters(in: .whitespaces)
         if live.isEmpty || live == started { return false }
-        guard cfg.accounts.contains(where: { $0.id == live }) else { return false }
+        guard cfg.cursorAccounts.contains(where: { $0.id == live }) else { return false }
         if cfg.activeAccountId == live { return false }
         cfg.activeAccountId = live
         cfg.syncLegacyFields()

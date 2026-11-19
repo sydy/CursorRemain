@@ -19,11 +19,34 @@ enum FlyoutLayout {
     static let barHeight: CGFloat = 5
     static let toolButtonHeight: CGFloat = 28
     static let toolButtonGap: CGFloat = 6
+    static let doubaoBlockGap: CGFloat = 8
+    static let doubaoTitleHeight: CGFloat = 18
+    static let doubaoRowHeight: CGFloat = 28
+
+    /// 豆包区块按窗口数长高，列表与错误文案共用一套高度。
+    static func doubaoHeight(rows: Int) -> CGFloat {
+        cardPadding * 2 + doubaoTitleHeight + CGFloat(max(1, rows)) * doubaoRowHeight
+    }
+
+    static func panelHeight(showsDoubao: Bool, rows: Int) -> CGFloat {
+        guard showsDoubao else { return height }
+        return height + doubaoBlockGap + doubaoHeight(rows: rows)
+    }
+
+    static func panelSize(showsDoubao: Bool, rows: Int) -> CGSize {
+        CGSize(width: width, height: panelHeight(showsDoubao: showsDoubao, rows: rows))
+    }
 }
 
 struct FlyoutView: View {
     @ObservedObject var store: AppStore
     @Environment(\.colorScheme) private var colorScheme
+
+    var showsDoubao: Bool { store.config.activeDoubaoAccount != nil }
+    var doubaoRows: [UsageWindow] { store.doubaoUsage?.windows ?? [] }
+    var contentHeight: CGFloat {
+        FlyoutLayout.panelHeight(showsDoubao: showsDoubao, rows: doubaoRows.count)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,10 +55,14 @@ struct FlyoutView: View {
                 rightColumn
             }
             .frame(maxHeight: .infinity, alignment: .top)
+            if showsDoubao {
+                doubaoSection
+                    .padding(.top, FlyoutLayout.doubaoBlockGap)
+            }
             toolBar
         }
         .padding(FlyoutLayout.padding)
-        .frame(width: FlyoutLayout.width, height: FlyoutLayout.height)
+        .frame(width: FlyoutLayout.width, height: contentHeight)
         .background {
             RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous)
                 .fill(panelFill)
@@ -187,6 +214,107 @@ struct FlyoutView: View {
         if text.contains("撑到") || text.contains("可撑过") { return Color(red: 48 / 255, green: 209 / 255, blue: 88 / 255) }
         if text.contains("耗尽") || text.contains("紧张") { return Color(red: 231 / 255, green: 76 / 255, blue: 60 / 255) }
         return .secondary
+    }
+
+    /// 豆包区块：只展窗口行，不复用 Cursor 的「本期 / 按需 / API」三行。
+    var doubaoSection: some View {
+        card {
+            HStack(spacing: 6) {
+                Text("豆包").font(.caption).fontWeight(.semibold)
+                if let membership = store.config.activeDoubaoAccount?.membershipType, !membership.isEmpty {
+                    Text("· \(membership)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let updated = store.doubaoUpdatedAt {
+                    Text("· 更新 \(shortClock(updated))")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+                if store.doubaoError != nil {
+                    Button("重新登录") {
+                        FlyoutWindowController.shared.close()
+                        store.openSettings(focusToken: false)
+                    }
+                    .font(.caption2)
+                    .buttonStyle(.link)
+                } else {
+                    Text(store.config.activeDoubaoAccount?.displayLabel ?? "")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(height: FlyoutLayout.doubaoTitleHeight)
+            if let error = store.doubaoError {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, minHeight: FlyoutLayout.doubaoRowHeight, alignment: .leading)
+            } else if doubaoRows.isEmpty {
+                Text("等待刷新…")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(height: FlyoutLayout.doubaoRowHeight)
+            } else {
+                ForEach(doubaoRows, id: \.key) { window in
+                    doubaoRow(window)
+                }
+            }
+        }
+    }
+
+    func doubaoRow(_ window: UsageWindow) -> some View {
+        let remaining = window.unlimited ? 100 : 100 - window.usedPercent
+        let tone = RemainingTone.color(remaining: remaining, error: false)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(tone).frame(width: 6, height: 6)
+                Text(doubaoWindowLabel(window)).font(.caption).foregroundStyle(.secondary)
+                if window.isCurrentPeriod {
+                    Text(doubaoResetCaption(window))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                Spacer(minLength: 0)
+                Text(doubaoWindowValue(window))
+                    .font(.caption.monospacedDigit())
+            }
+            bar(window.unlimited ? 1 : window.usedPercent / 100, color: tone)
+        }
+        .frame(height: FlyoutLayout.doubaoRowHeight, alignment: .top)
+    }
+
+    /// 活动赠送额度标注条目数与剩余，会员三档保持原标签。
+    func doubaoWindowLabel(_ window: UsageWindow) -> String {
+        guard let count = window.count, count > 1 else { return window.label }
+        return "\(window.label)（\(count) 项）"
+    }
+
+    func doubaoWindowValue(_ window: UsageWindow) -> String {
+        let text = UsageParser.doubaoWindowText(window)
+        guard window.key == "incentive", !window.unlimited, !window.exhausted else { return text }
+        let remaining = max(0, min(100, 100 - window.usedPercent))
+        return text + " · 剩 " + percentText(remaining)
+    }
+
+    func percentText(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        return rounded == rounded.rounded() ? "\(Int(rounded))%" : String(format: "%.1f%%", rounded)
+    }
+
+    func doubaoResetCaption(_ window: UsageWindow) -> String {
+        let text = UsageParser.doubaoResetText(window)
+        return text.isEmpty ? "开始使用后计时" : text
+    }
+
+    func shortClock(_ iso: String) -> String {
+        guard let date = AccountSync.parseIso(iso) else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
     }
 
     func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -346,6 +474,14 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
     private var monitor: Any?
     private var keyMonitor: Any?
     private weak var store: AppStore?
+    private weak var statusButton: NSStatusBarButton?
+    private var renderedHeight: CGFloat = 0
+
+    /// 豆包区块可能让浮窗变高：窗口尺寸与 SwiftUI 根视图必须一起更新。
+    func contentSize(store: AppStore) -> NSSize {
+        let rows = store.doubaoUsage?.windows.count ?? 0
+        return FlyoutLayout.panelSize(showsDoubao: store.config.activeDoubaoAccount != nil, rows: rows)
+    }
 
     func applyAppearance(_ mode: String) {
         ColorModeAppearance.apply(to: window, mode: mode)
@@ -364,13 +500,16 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
 
     func show(store: AppStore, statusButton: NSStatusBarButton?) {
         self.store = store
+        self.statusButton = statusButton
         store.flyoutVisible = true
         if NSApp.isHidden {
             NSApp.unhideWithoutActivation()
         }
+        let size = contentSize(store: store)
+        renderedHeight = size.height
         if window == nil {
             let panel = NSPanel(
-                contentRect: NSRect(origin: .zero, size: FlyoutLayout.size),
+                contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel],
                 backing: .buffered,
                 defer: false
@@ -385,6 +524,7 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             window = panel
         }
+        window?.setContentSize(size)
         window?.contentView = hostedView(store: store)
         position(statusButton: statusButton)
         window?.makeKeyAndOrderFront(nil)
@@ -393,6 +533,14 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
 
     func update(store: AppStore) {
         self.store = store
+        guard let window, window.isVisible else { return }
+        let size = contentSize(store: store)
+        if abs(size.height - renderedHeight) > 0.5 {
+            renderedHeight = size.height
+            window.setContentSize(size)
+            window.contentView = hostedView(store: store)
+            position(statusButton: statusButton)
+        }
     }
 
     func hostedView(store: AppStore) -> NSView {
@@ -411,7 +559,7 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
 
     func position(statusButton: NSStatusBarButton?) {
         guard let window else { return }
-        let size = FlyoutLayout.size
+        let size = store.map(contentSize(store:)) ?? FlyoutLayout.size
         var icon = NSRect(x: 0, y: 0, width: 22, height: 22)
         if let button = statusButton, let win = button.window {
             icon = win.convertToScreen(button.convert(button.bounds, to: nil))

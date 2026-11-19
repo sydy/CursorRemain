@@ -1,4 +1,5 @@
 pub mod config;
+pub mod doubao;
 pub mod events;
 pub mod ffi;
 pub mod jsonutil;
@@ -18,3 +19,4 @@ pub use usage::{
     format_membership_type, format_spend_range, format_token_count, format_usd_cents, parse_aggregated_usage,
     parse_sand_usage_status, parse_usage_summary,
 };
+pub use doubao::{account_id as doubao_account_id, identity as doubao_identity, normalize_cookie as doubao_normalize_cookie, parse_doubao_quota, reset_text as doubao_reset_text, window_text as doubao_window_text};

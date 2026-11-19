@@ -17,7 +17,7 @@ final class CompareStore: ObservableObject {
     func loadCache() {
         report = buildReport()
         if report.rows.isEmpty {
-            status = app.config.accounts.isEmpty
+            status = app.config.cursorAccounts.isEmpty
                 ? "还没有账号。请先在设置里导入。"
                 : "本地还没有明细。点「同步」按各账号最新周期拉取。"
         }
@@ -30,7 +30,7 @@ final class CompareStore: ObservableObject {
 
     func sync() async {
         if syncing { return }
-        if app.config.accounts.isEmpty {
+        if app.config.cursorAccounts.isEmpty {
             status = "还没有账号。请先在设置里导入。"
             return
         }
@@ -40,7 +40,7 @@ final class CompareStore: ObservableObject {
         let client = app.client
         let directory = app.settingsDirectory
         let activeId = app.config.activeAccountId
-        let accounts = RefreshGeneration.prioritize(app.config.accounts) { $0.id == activeId }
+        let accounts = RefreshGeneration.prioritize(app.config.cursorAccounts) { $0.id == activeId }
         let total = accounts.count
         let sink = CompareStatusSink { [weak self] text in
             self?.status = text
@@ -94,7 +94,7 @@ final class CompareStore: ObservableObject {
     }
 
     func buildReport() -> AccountCompareReport {
-        let items = app.config.accounts.map { acc in
+        let items = app.config.cursorAccounts.map { acc in
             UsageEvents.compareInput(
                 from: acc,
                 events: UsageEvents.load(accountId: acc.id, teamScope: false, directory: app.settingsDirectory),
@@ -216,7 +216,7 @@ struct CompareRootView: View {
         .onChange(of: store.app.config.activeAccountId) { _ in store.reloadFromConfig() }
         .onChange(of: store.app.config.monthlyPlanUsd) { _ in store.reloadFromConfig() }
         .onChange(of: store.app.config.usdCnyRate) { _ in store.reloadFromConfig() }
-        .onChange(of: store.app.config.accounts.count) { _ in store.reloadFromConfig() }
+        .onChange(of: store.app.config.cursorAccounts.count) { _ in store.reloadFromConfig() }
     }
 
     var table: some View {
@@ -276,7 +276,7 @@ struct CompareRootView: View {
             ))
             for row in group.rows {
                 let name = accountName(row)
-                let acc = store.app.config.accounts.first { $0.id == row.accountId }
+                let acc = store.app.config.cursorAccounts.first { $0.id == row.accountId }
                 let note = UsageEvents.compareRowNote(
                     row,
                     hasToken: acc == nil || !(acc?.token.trimmingCharacters(in: .whitespaces).isEmpty ?? true),
@@ -422,7 +422,7 @@ struct CompareRootView: View {
     }
 
     func accountName(_ row: AccountCompareRow) -> String {
-        if let acc = store.app.config.accounts.first(where: { $0.id == row.accountId }) {
+        if let acc = store.app.config.cursorAccounts.first(where: { $0.id == row.accountId }) {
             let custom = acc.label.trimmingCharacters(in: .whitespaces)
             if !custom.isEmpty { return custom }
             return compactAccountId(acc.id)

@@ -49,7 +49,27 @@ public sealed class UsageSnapshot
     public bool IsXSubscription { get; set; }
     public string? UsageResetAt { get; set; }
     public double? PrepaidRemainingCents { get; set; }
+    /// <summary>Doubao quota windows. Empty for Cursor snapshots.</summary>
+    public List<UsageWindow> Windows { get; set; } = [];
     public bool IsTeamAccount => !IsXSubscription && !UsageParser.IsXMembership(MembershipType) && UsageParser.IsTeamMembership(MembershipType, LimitType);
+}
+
+public sealed class UsageWindow
+{
+    public string Key { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double UsedPercent { get; set; }
+    public bool LessThanOnePercent { get; set; }
+    public bool Exhausted { get; set; }
+    public bool Unlimited { get; set; }
+    public string? UsedAmount { get; set; }
+    public string? TotalAmount { get; set; }
+    public string? ResetAt { get; set; }
+    /// <summary>Entry count for the activity reward (server <c>entitlement_count</c>).</summary>
+    public int? Count { get; set; }
+
+    /// <summary>"5h" is the only window with a reset countdown.</summary>
+    public bool IsCurrentPeriod => Key == "5h";
 }
 
 public sealed record GrokBotUsage(
@@ -225,6 +245,7 @@ public static class UsageParser
         to.GrokBotPeriodStart = from.GrokBotPeriodStart;
         to.GrokBotResetAt = from.GrokBotResetAt;
         to.GrokBotDaysRemaining = from.GrokBotDaysRemaining;
+        to.Windows = from.Windows;
     }
 
     public static GrokBotUsage? ParseSandUsageStatus(JsonBag payload, DateTimeOffset? now = null)
@@ -291,9 +312,75 @@ public static class UsageParser
             GrokBotPeriodStart = NullStr(result, "grok_bot_period_start"),
             GrokBotResetAt = NullStr(result, "grok_bot_reset_at"),
             GrokBotDaysRemaining = IntOrNull(result, "grok_bot_days_remaining"),
+            Windows = WindowListFromRust(result),
         };
         return snap;
     }
+
+    static List<UsageWindow> WindowListFromRust(JsonElement result)
+    {
+        var rows = new List<UsageWindow>();
+        if (!result.TryGetProperty("windows", out var windows) || windows.ValueKind != JsonValueKind.Array) return rows;
+        foreach (var row in windows.EnumerateArray())
+        {
+            rows.Add(new UsageWindow
+            {
+                Key = Str(row, "key"),
+                Label = Str(row, "label"),
+                UsedPercent = Num(row, "used_percent") ?? 0,
+                LessThanOnePercent = row.TryGetProperty("less_than_one_percent", out var low) && low.ValueKind == JsonValueKind.True,
+                Exhausted = row.TryGetProperty("exhausted", out var used_) && used_.ValueKind == JsonValueKind.True,
+                Unlimited = row.TryGetProperty("unlimited", out var unl) && unl.ValueKind == JsonValueKind.True,
+                UsedAmount = NullStr(row, "used_amount"),
+                TotalAmount = NullStr(row, "total_amount"),
+                ResetAt = NullStr(row, "reset_at"),
+                Count = IntOrNull(row, "count"),
+            });
+        }
+        return rows;
+    }
+
+    public static string DoubaoWindowText(UsageWindow window) =>
+        RustCore.String("doubao_window_text", new { window = WindowInput(window) });
+
+    public static string DoubaoResetText(UsageWindow window, DateTimeOffset? now = null) =>
+        RustCore.String("doubao_reset_text", new { window = WindowInput(window), now = Iso(now) });
+
+    public static object WindowInput(UsageWindow window) => new
+    {
+        key = window.Key,
+        label = window.Label,
+        used_percent = window.UsedPercent,
+        less_than_one_percent = window.LessThanOnePercent,
+        exhausted = window.Exhausted,
+        unlimited = window.Unlimited,
+        used_amount = window.UsedAmount,
+        total_amount = window.TotalAmount,
+        reset_at = window.ResetAt,
+        count = window.Count,
+    };
+
+    /// <summary>Doubao quota. A non-zero business code returns an error, never a fake 0%.</summary>
+    public static DoubaoQuotaResult ParseDoubaoQuota(JsonBag payload, DateTimeOffset? now = null)
+    {
+        var result = RustCore.Call("parse_doubao_quota", new
+        {
+            payload = payload.RawElement,
+            now = Iso(now),
+        });
+        var error = Str(result, "error");
+        if (error.Length > 0)
+        {
+            return new DoubaoQuotaResult(null, error,
+                result.TryGetProperty("auth_error", out var auth) && auth.ValueKind == JsonValueKind.True);
+        }
+        var snap = SnapshotFromRust(result);
+        snap.Raw = payload;
+        return new DoubaoQuotaResult(snap, null, false);
+    }
+
+    static string? Iso(DateTimeOffset? now) =>
+        now?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture);
 
     static double? Num(JsonElement el, string key) =>
         el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : null;

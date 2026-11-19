@@ -310,6 +310,16 @@ public static class FlyoutLayout
     public const int ToolButtonPadY = 5;
     public const int ToolButtonIcon = 16;
     public const int ToolButtonIconGap = 4;
+    public const int DoubaoBlockGap = 8;
+    public const int DoubaoTitleHeight = 18;
+    public const int DoubaoRowHeight = 26;
+
+    /// <summary>Doubao block grows with its window rows; shared by layout, paint and hit tests.</summary>
+    public static int DoubaoHeight(int rows) =>
+        CardPadding * 2 + DoubaoTitleHeight + Math.Max(1, rows) * DoubaoRowHeight;
+
+    public static int HeightWithDoubao(bool showsDoubao, int rows) =>
+        showsDoubao ? Height + DoubaoBlockGap + DoubaoHeight(rows) : Height;
 
     /// <summary>
     /// Ellipse diameter for GDI <c>CreateRoundRectRgn</c>. A GraphicsPath region
