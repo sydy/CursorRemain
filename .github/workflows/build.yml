@@ -104,15 +104,20 @@ jobs:
         run: |
           set -euo pipefail
           deleted=0
-          while :; do
+          # 并发 run（例如同时推 main 和 tag）会删除同一批 artifact，
+          # 已删掉的再删会 404，不能让 set -e 把整个 job 判失败。
+          for _ in $(seq 1 50); do
             mapfile -t ids < <(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts?per_page=100" --jq ".artifacts[] | select(.workflow_run.id != ${GITHUB_RUN_ID}) | select(.name == \"CursorRemain-windows\" or .name == \"CursorRemain-macos\" or .name == \"CursorTokenTray-windows\" or .name == \"CursorTokenTray-macos\") | .id")
             if [ "${#ids[@]}" -eq 0 ] || [ -z "${ids[0]:-}" ]; then
               break
             fi
             for id in "${ids[@]}"; do
               [ -z "$id" ] && continue
-              gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" >/dev/null
-              deleted=$((deleted + 1))
+              if gh api -X DELETE "/repos/${GITHUB_REPOSITORY}/actions/artifacts/${id}" >/dev/null 2>&1; then
+                deleted=$((deleted + 1))
+              else
+                echo "artifact ${id} already deleted by another run"
+              fi
             done
           done
           echo "Deleted ${deleted} old artifacts (Actions storage quota)."
