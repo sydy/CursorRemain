@@ -107,6 +107,23 @@ fn membership_name(payload: &Value) -> String {
             }
         }
     }
+    // 免费/个人订阅的 member_info 只有布尔位，套餐名在 current_subscription.display。
+    subscription_display_name(data)
+}
+
+/// `current_subscription.display.product_name` 优先，`short_name` 兜底。
+fn subscription_display_name(data: &Value) -> String {
+    let subscription = child(data, "current_subscription");
+    for container in [child(subscription, "display"), subscription] {
+        for key in ["product_name", "productName", "short_name", "shortName"] {
+            if let Some(text) = as_string(get(container, key)) {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    return trimmed.to_string();
+                }
+            }
+        }
+    }
     String::new()
 }
 

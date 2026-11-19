@@ -617,7 +617,7 @@
     "expected": {
       "used_percent": 10,
       "remaining_percent": 90,
-      "membership_type": "",
+      "membership_type": "个人订阅",
       "windows": [
         {
           "key": "incentive",
@@ -647,6 +647,94 @@
     "expected": {
       "error_contains": "登录已失效",
       "auth_error": true
+    }
+  },
+  {
+    "name": "display_short_name_only",
+    "now": "2026-11-19T00:00:00Z",
+    "source": "real response, 2026-11-19, 个人订阅/免费体验",
+    "payload": {
+      "data": {
+        "current_subscription": {
+          "agreement_price": 0,
+          "agreement_status": 0,
+          "agreement_type": 1,
+          "display": {
+            "short_name": "免费体验"
+          },
+          "effective_time": 0,
+          "end_time": 0,
+          "has_switched": false,
+          "is_gift": false,
+          "next_deduct_time": 0,
+          "period_type": 0,
+          "product_line": "",
+          "sku_key": "",
+          "source_type": 0,
+          "start_time": 0,
+          "status": 0,
+          "subscription_id": 0,
+          "subscription_type": 0,
+          "timezone": 0
+        },
+        "enterprise_package_entitlement_groups": [],
+        "enterprise_subscription": {
+          "sku_key": ""
+        },
+        "enterprise_window_limit_section": {
+          "entitlement_count": 0,
+          "usage_exhausted": false,
+          "window_limit_groups": []
+        },
+        "incentive_quota_section": {
+          "entitlement_count": 24,
+          "usage_exhausted": false,
+          "window_limit_groups": [
+            {
+              "feature_group": "doubao_activity_reward_quota",
+              "feature_group_name": "活动赠送额度",
+              "window_limits": [
+                {
+                  "end_time": 1795347718376,
+                  "item_type": 0,
+                  "less_than_one_percent": false,
+                  "start_time": 0,
+                  "used_percent": 10,
+                  "window_type": 3
+                }
+              ]
+            }
+          ]
+        },
+        "member_info": {
+          "hasActiveSubscription": false,
+          "hasEnterpriseSubscription": false,
+          "has_business_subscription": false,
+          "has_team_subscription": false,
+          "usr_type": 0
+        },
+        "switch_data": {
+          "show_consumption": false
+        },
+        "window_limit_section": {}
+      },
+      "code": 0,
+      "msg": "",
+      "message": ""
+    },
+    "expected": {
+      "used_percent": 10,
+      "remaining_percent": 90,
+      "membership_type": "免费体验",
+      "windows": [
+        {
+          "key": "incentive",
+          "label": "活动赠送额度",
+          "used_percent": 10,
+          "reset_at": "2026-11-22T11:41:58.376Z",
+          "count": 24
+        }
+      ]
     }
   }
 ]
