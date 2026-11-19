@@ -337,18 +337,40 @@ public enum UsageParser {
         return formatter.string(from: now)
     }
 
+    /// Full-fidelity snapshot passed to Rust when merging extra payloads
+    /// (Grok Bot / unified weekly). Must carry every field `snapshotFromRust`
+    /// reads back, otherwise `copySnapshot` overwrites them with nil.
     static func snapshotJSON(_ snapshot: UsageSnapshot) -> [String: Any] {
         [
             "used_percent": snapshot.usedPercent,
             "remaining_percent": snapshot.remainingPercent,
-            "is_x_subscription": snapshot.isXSubscription,
+            "auto_percent_used": snapshot.autoPercentUsed as Any,
+            "api_percent_used": snapshot.apiPercentUsed as Any,
+            "total_percent_used": snapshot.totalPercentUsed as Any,
             "membership_type": snapshot.membershipType,
-            "billing_mode": snapshot.billingMode,
-            "usage_reset_at": snapshot.usageResetAt as Any,
+            "billing_cycle_start": snapshot.billingCycleStart as Any,
+            "billing_cycle_end": snapshot.billingCycleEnd as Any,
             "days_remaining": snapshot.daysRemaining as Any,
             "days_elapsed": snapshot.daysElapsed as Any,
             "estimated_usable_days": snapshot.estimatedUsableDays as Any,
+            "billing_mode": snapshot.billingMode,
+            "used_cents": snapshot.usedCents as Any,
+            "limit_cents": snapshot.limitCents as Any,
+            "remaining_cents": snapshot.remainingCents as Any,
+            "on_demand_used_cents": snapshot.onDemandUsedCents as Any,
+            "on_demand_limit_cents": snapshot.onDemandLimitCents as Any,
+            "pooled_used_cents": snapshot.pooledUsedCents as Any,
+            "pooled_limit_cents": snapshot.pooledLimitCents as Any,
+            "limit_type": snapshot.limitType,
+            "is_unlimited": snapshot.isUnlimited,
+            "is_x_subscription": snapshot.isXSubscription,
+            "usage_reset_at": snapshot.usageResetAt as Any,
+            "prepaid_remaining_cents": snapshot.prepaidRemainingCents as Any,
             "grok_bot_percent_used": snapshot.grokBotPercentUsed as Any,
+            "grok_bot_remaining_percent": snapshot.grokBotRemainingPercent as Any,
+            "grok_bot_period_start": snapshot.grokBotPeriodStart as Any,
+            "grok_bot_reset_at": snapshot.grokBotResetAt as Any,
+            "grok_bot_days_remaining": snapshot.grokBotDaysRemaining as Any,
         ]
     }
 

@@ -93,6 +93,24 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn("#filePath", manifest)
         self.assertNotIn('.linkedLibrary("cursor_core"', manifest)
 
+    def test_snapshot_json_round_trips_quota_fields(self) -> None:
+        # Grok Bot 合并会经 Rust 往返一次快照；回传 JSON 缺字段就会把
+        # auto/api/cents 清成 nil，悬浮窗只剩一条 Grok Bot 进度条。
+        parser = (ROOT / "macos" / "Sources" / "CursorTokenCore" / "UsageParser.swift").read_text(encoding="utf-8")
+        for key in (
+            "auto_percent_used",
+            "api_percent_used",
+            "total_percent_used",
+            "used_cents",
+            "limit_cents",
+            "remaining_cents",
+            "billing_cycle_start",
+            "billing_cycle_end",
+            "limit_type",
+            "prepaid_remaining_cents",
+        ):
+            self.assertIn(f'"{key}"', parser)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -166,6 +166,36 @@ final class UsageParserFixtureTests: XCTestCase {
         }
     }
 
+    func testSandMergeKeepsQuotaFields() throws {
+        // Grok Bot 合并会把快照经 Rust 往返一次：回传的 JSON 必须带上
+        // auto/api/cents 等字段，否则会被清成 nil，悬浮窗只剩一条 Grok 进度条。
+        let payload = try JSONValue.parse(JSONSerialization.data(withJSONObject: [
+            "currentPeriodStart": "2026-08-17T07:57:50.647Z",
+            "nextResetTimestampUtc": "2026-08-24T07:57:50.647Z",
+            "usagePercent": 0,
+            "hasAvailableUsage": true,
+            "hasNonZeroIncludedLimit": true,
+        ]))
+        var snap = UsageSnapshot(usedPercent: 25.4, remainingPercent: 74.6, membershipType: "Pro")
+        snap.autoPercentUsed = 28.0
+        snap.apiPercentUsed = 0.0
+        snap.totalPercentUsed = 25.4
+        snap.billingMode = "percent"
+        snap.usedCents = 2000
+        snap.limitCents = 2000
+        snap.remainingCents = 0
+        snap.limitType = "user"
+        UsageParser.applySandUsage(&snap, payload, now: AccountSync.parseIso("2026-08-19T00:00:00Z") ?? Date())
+        XCTAssertEqual(snap.autoPercentUsed, 28.0)
+        XCTAssertEqual(snap.apiPercentUsed, 0.0)
+        XCTAssertEqual(snap.totalPercentUsed, 25.4)
+        XCTAssertEqual(snap.usedCents, 2000)
+        XCTAssertEqual(snap.limitCents, 2000)
+        XCTAssertEqual(snap.limitType, "user")
+        XCTAssertEqual(snap.grokBotPercentUsed, 0.0)
+        XCTAssertEqual(snap.remainingPercent, 74.6)
+    }
+
     func testSandUsageCases() throws {
         let root = try XCTUnwrap(try json("sand_usage_cases.json") as? [[String: Any]])
         for cse in root {
