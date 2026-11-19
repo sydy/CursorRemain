@@ -453,58 +453,75 @@ struct SettingsRootView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
             } else {
-                Table(store.config.accounts, selection: accountSelection) {
-                    TableColumn("账号") { account in
-                        Text(account.displayLabel)
-                            .fontWeight(account.id == store.config.activeAccountId ? .semibold : .regular)
-                            .lineLimit(1)
+                // 自绘行，不再用 NSTableView：账号少的时候系统表格会同时冒出
+                // 横竖两条滚动条，把最后一行盖住。
+                VStack(alignment: .leading, spacing: 0) {
+                    accountHeaderRow
+                    AccountRowLine()
+                    ForEach(Array(store.config.accounts.enumerated()), id: \.element.id) { pair in
+                        accountRow(pair.element)
+                        if pair.offset < store.config.accounts.count - 1 {
+                            AccountRowLine()
+                        }
                     }
-                    .width(
-                        min: AccountTableLayout.nameIdeal,
-                        ideal: AccountTableLayout.nameIdeal,
-                        max: AccountTableLayout.nameIdeal
-                    )
-                    TableColumn("套餐") { account in
-                        Text(StatusText.formatAccountPlan(account)).lineLimit(1)
-                    }
-                    .width(min: AccountTableLayout.plan, ideal: AccountTableLayout.plan, max: AccountTableLayout.plan)
-                    TableColumn("状态") { account in
-                        Text(StatusText.formatAccountCheckStatus(account)).lineLimit(1)
-                    }
-                    .width(min: AccountTableLayout.status, ideal: AccountTableLayout.status, max: AccountTableLayout.status)
-                    TableColumn("更新时间") { account in
-                        Text(StatusText.formatAccountCheckTime(account)).lineLimit(1)
-                    }
-                    .width(min: AccountTableLayout.updated, ideal: AccountTableLayout.updated, max: AccountTableLayout.updated)
-                    TableColumn("类型") { account in
-                        Text(StatusText.formatAccountKind(account)).lineLimit(1)
-                    }
-                    .width(min: AccountTableLayout.kind, ideal: AccountTableLayout.kind, max: AccountTableLayout.kind)
                 }
-                .frame(width: AccountTableLayout.viewportWidth, height: accountTableHeight)
-                .background(AccountTableColumnFit())
             }
         }
         .accessibilityLabel("当前账号")
     }
 
-    var accountTableHeight: CGFloat {
-        let rows = CGFloat(max(store.config.accounts.count, 1))
-        return min(32 + rows * 28, 32 + 5 * 28)
+    var accountHeaderRow: some View {
+        HStack(spacing: AccountTableLayout.gap) {
+            Text("账号").frame(maxWidth: .infinity, alignment: .leading)
+            AccountColumnLine()
+            Text("套餐").frame(width: AccountTableLayout.plan, alignment: .leading)
+            AccountColumnLine()
+            Text("状态").frame(width: AccountTableLayout.status, alignment: .leading)
+            AccountColumnLine()
+            Text("更新时间").frame(width: AccountTableLayout.updated, alignment: .leading)
+            AccountColumnLine()
+            Text("类型").frame(width: AccountTableLayout.kind, alignment: .leading)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, AccountTableLayout.horizontalPadding)
+        .frame(height: AccountTableLayout.headerHeight)
     }
 
-    var accountSelection: Binding<Set<Account.ID>> {
-        Binding(
-            get: {
-                let id = store.config.activeAccountId
-                return id.isEmpty ? [] : [id]
-            },
-            set: { ids in
-                guard let id = ids.first, id != store.config.activeAccountId else { return }
-                guard store.config.accounts.contains(where: { $0.id == id }) else { return }
-                activeBinding.wrappedValue = id
-            }
-        )
+    func accountRow(_ account: Account) -> some View {
+        let isActive = account.id == store.config.activeAccountId
+        return HStack(spacing: AccountTableLayout.gap) {
+            Text(account.displayLabel)
+                .fontWeight(isActive ? .semibold : .regular)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            AccountColumnLine(visible: false)
+            Text(StatusText.formatAccountPlan(account))
+                .lineLimit(1)
+                .frame(width: AccountTableLayout.plan, alignment: .leading)
+            AccountColumnLine(visible: false)
+            Text(StatusText.formatAccountCheckStatus(account))
+                .lineLimit(1)
+                .frame(width: AccountTableLayout.status, alignment: .leading)
+            AccountColumnLine(visible: false)
+            Text(StatusText.formatAccountCheckTime(account))
+                .lineLimit(1)
+                .frame(width: AccountTableLayout.updated, alignment: .leading)
+            AccountColumnLine(visible: false)
+            Text(StatusText.formatAccountKind(account))
+                .lineLimit(1)
+                .frame(width: AccountTableLayout.kind, alignment: .leading)
+        }
+        .padding(.horizontal, AccountTableLayout.horizontalPadding)
+        .frame(height: AccountTableLayout.rowHeight)
+        .background(isActive ? Color.accentColor : Color.clear)
+        .foregroundStyle(isActive ? Color.white : Color.primary)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !isActive else { return }
+            activeBinding.wrappedValue = account.id
+        }
+        .accessibilityAddTraits(.isButton)
     }
 
     var activeBinding: Binding<String> {
@@ -1339,113 +1356,34 @@ private struct AppearanceSegment: View {
 
 extension Account: Identifiable {}
 
-/// The account table kept every column at its ideal width. With SwiftUI's
-/// column gaps that row was 568pt, wider than the 500pt settings page, so a
-/// horizontal scroller covered the last account and a vertical one appeared
-/// with it. The name column is the one that can shrink; the other four stay
-/// wide enough for their text. Leftover overflow is trimmed at runtime.
+/// 账号表格用固定列宽自绘：5 列不会超出 500pt 页面宽度，
+/// 行数再多也不会出现横向滚动条，页面本身负责纵向滚动。
 private enum AccountTableLayout {
-    static let viewportWidth = SettingsMetrics.width - SettingsMetrics.padding * 2
-    static let maxVisibleRows = 5
-    static let nameMin: CGFloat = 64
-    /// 148pt made the row 568pt wide after SwiftUI's 100pt of insets and
-    /// column gaps. 72pt keeps the row inside the 500pt page.
-    static let nameIdeal: CGFloat = 72
+    static let rowHeight: CGFloat = 28
+    static let headerHeight: CGFloat = 28
+    static let gap: CGFloat = 6
+    static let horizontalPadding: CGFloat = 8
     static let plan: CGFloat = 72
     static let status: CGFloat = 88
     static let updated: CGFloat = 108
     static let kind: CGFloat = 52
 }
 
-private struct AccountTableColumnFit: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        AccountTableFitView()
-    }
+private struct AccountColumnLine: View {
+    var visible: Bool = true
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? AccountTableFitView)?.schedule()
+    var body: some View {
+        Rectangle()
+            .fill(visible ? Color.primary.opacity(0.12) : Color.clear)
+            .frame(width: 1, height: 16)
     }
 }
 
-private final class AccountTableFitView: NSView {
-    private var scheduled = false
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func layout() {
-        super.layout()
-        schedule()
-    }
-
-    func schedule() {
-        guard !scheduled else { return }
-        scheduled = true
-        DispatchQueue.main.async { [weak self] in
-            self?.scheduled = false
-            self?.fit()
-        }
-    }
-
-    private func fit() {
-        guard let scroll = Self.findTableScroll(from: self),
-              let table = scroll.documentView as? NSTableView else { return }
-        let columns = table.tableColumns
-        guard columns.count == 5 else { return }
-
-        if scroll.hasHorizontalScroller { scroll.hasHorizontalScroller = false }
-        if scroll.horizontalScrollElasticity != .none { scroll.horizontalScrollElasticity = .none }
-        let needsVertical = table.numberOfRows > AccountTableLayout.maxVisibleRows
-        if scroll.hasVerticalScroller != needsVertical { scroll.hasVerticalScroller = needsVertical }
-        let elasticity: NSScrollView.Elasticity = needsVertical ? .automatic : .none
-        if scroll.verticalScrollElasticity != elasticity { scroll.verticalScrollElasticity = elasticity }
-
-        let clip = scroll.contentView.bounds.width
-        guard clip > 40 else { return }
-        let content = table.frame.width
-        guard content > 1 else { return }
-        let delta = content - clip
-        // Only shrink. Growing the name column back toward the old ideal
-        // is what made the horizontal scroller cover the last row.
-        guard delta > 1 else { return }
-
-        let name = columns[0]
-        let fitted = (name.width - delta).rounded(.down)
-        if fitted >= AccountTableLayout.nameMin {
-            guard abs(name.width - fitted) > 0.5 else { return }
-            name.minWidth = AccountTableLayout.nameMin
-            name.maxWidth = fitted
-            name.width = fitted
-            return
-        }
-
-        let scale = clip / content
-        for column in columns {
-            let width = max(36, (column.width * scale).rounded(.down))
-            column.minWidth = 36
-            column.maxWidth = 4000
-            column.width = width
-        }
-    }
-
-    private static func findTableScroll(from view: NSView) -> NSScrollView? {
-        var node = view.superview
-        var depth = 0
-        while let current = node, depth < 12 {
-            if let found = search(current) { return found }
-            node = current.superview
-            depth += 1
-        }
-        return nil
-    }
-
-    private static func search(_ view: NSView) -> NSScrollView? {
-        if let scroll = view as? NSScrollView, scroll.documentView is NSTableView {
-            return scroll
-        }
-        for subview in view.subviews {
-            if let found = search(subview) { return found }
-        }
-        return nil
+private struct AccountRowLine: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.08))
+            .frame(height: 1)
     }
 }
 
