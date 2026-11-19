@@ -277,6 +277,10 @@ struct FlyoutView: View {
                     Text(doubaoResetCaption(window))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                } else if window.key == "incentive", let reset = window.resetAt, !reset.isEmpty {
+                    Text(doubaoExpiryCaption(reset))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
                 Spacer(minLength: 0)
                 Text(doubaoWindowValue(window))
@@ -308,6 +312,15 @@ struct FlyoutView: View {
     func doubaoResetCaption(_ window: UsageWindow) -> String {
         let text = UsageParser.doubaoResetText(window)
         return text.isEmpty ? "开始使用后计时" : text
+    }
+
+    /// 活动赠送额度的到期日：同年只显示「11-22 到期」，跨年带年份。
+    func doubaoExpiryCaption(_ iso: String) -> String {
+        guard let date = AccountSync.parseIso(iso) else { return "" }
+        let formatter = DateFormatter()
+        let sameYear = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: Date())
+        formatter.dateFormat = sameYear ? "M-d" : "yyyy-M-d"
+        return "· \(formatter.string(from: date)) 到期"
     }
 
     func shortClock(_ iso: String) -> String {

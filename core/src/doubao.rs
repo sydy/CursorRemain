@@ -148,7 +148,7 @@ fn window_rows(section: &Value, mode: SectionMode) -> Vec<Value> {
             let Some(kind) = kind else { continue };
             let used = clamp_percent(as_f64(get(limit, "used_percent")).unwrap_or(0.0));
             let mut row = build_row(kind, limit, used);
-            if let Some(count) = count {
+            if let Some(count) = count.filter(|_| rows.is_empty()) {
                 row["count"] = json!(count);
             }
             merge_row(&mut rows, &mut row);
@@ -378,7 +378,17 @@ pub fn window_text(window: &Value) -> String {
         return format!("已用 {used}/{total}");
     }
     let percent = clamp_percent(as_f64(get(window, "used_percent")).unwrap_or(0.0));
-    format!("已用 {:.1}%", round1(percent))
+    format!("已用 {}", percent_text(percent))
+}
+
+/// 整数百分比不带小数点（10 → `10%`），其余保留一位（12.5 → `12.5%`）。
+fn percent_text(percent: f64) -> String {
+    let value = round1(percent);
+    if (value - value.round()).abs() < 0.05 {
+        format!("{}%", value.round() as i64)
+    } else {
+        format!("{value:.1}%")
+    }
 }
 
 /// 「当前时段」的重置倒计时。没有 `end_time` 时返回空串，界面显示「开始使用后计时」。

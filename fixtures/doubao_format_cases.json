@@ -1,51 +1,168 @@
 {
   "window_text": [
-    { "window": { "unlimited": true }, "output": "暂无限制" },
-    { "window": { "exhausted": true, "used_percent": 100 }, "output": "已用完" },
-    { "window": { "less_than_one_percent": true, "used_percent": 0.3 }, "output": "已用 <1%" },
-    { "window": { "used_percent": 12.5, "used_amount": "12.5", "total_amount": "100" }, "output": "已用 12.5/100" },
-    { "window": { "used_percent": 33.34 }, "output": "已用 33.3%" },
-    { "window": { "used_percent": "0" }, "output": "已用 0.0%" }
+    {
+      "window": {
+        "unlimited": true
+      },
+      "output": "暂无限制"
+    },
+    {
+      "window": {
+        "exhausted": true,
+        "used_percent": 100
+      },
+      "output": "已用完"
+    },
+    {
+      "window": {
+        "less_than_one_percent": true,
+        "used_percent": 0.3
+      },
+      "output": "已用 <1%"
+    },
+    {
+      "window": {
+        "used_percent": 12.5,
+        "used_amount": "12.5",
+        "total_amount": "100"
+      },
+      "output": "已用 12.5/100"
+    },
+    {
+      "window": {
+        "used_percent": 33.34
+      },
+      "output": "已用 33.3%"
+    },
+    {
+      "window": {
+        "used_percent": "0"
+      },
+      "output": "已用 0%"
+    },
+    {
+      "window": {
+        "used_percent": 10
+      },
+      "output": "已用 10%"
+    },
+    {
+      "window": {
+        "used_percent": 90.04
+      },
+      "output": "已用 90%"
+    }
   ],
   "reset_text": [
-    { "now": "2025-11-20T00:00:00Z", "window": { "reset_at": "2025-11-21T04:40:00Z" }, "output": "28 小时 40 分后重置" },
-    { "now": "2025-11-20T00:00:00Z", "window": { "reset_at": "2025-11-20T03:00:00Z" }, "output": "3 小时后重置" },
-    { "now": "2025-11-20T00:00:00Z", "window": { "reset_at": "2025-11-20T00:20:00Z" }, "output": "20 分后重置" },
-    { "now": "2025-11-20T00:00:00Z", "window": { "reset_at": null }, "output": "" },
-    { "now": "2025-11-20T00:00:00Z", "window": { "reset_at": "2025-11-19T23:00:00Z" }, "output": "即将重置" }
+    {
+      "now": "2025-11-20T00:00:00Z",
+      "window": {
+        "reset_at": "2025-11-21T04:40:00Z"
+      },
+      "output": "28 小时 40 分后重置"
+    },
+    {
+      "now": "2025-11-20T00:00:00Z",
+      "window": {
+        "reset_at": "2025-11-20T03:00:00Z"
+      },
+      "output": "3 小时后重置"
+    },
+    {
+      "now": "2025-11-20T00:00:00Z",
+      "window": {
+        "reset_at": "2025-11-20T00:20:00Z"
+      },
+      "output": "20 分后重置"
+    },
+    {
+      "now": "2025-11-20T00:00:00Z",
+      "window": {
+        "reset_at": null
+      },
+      "output": ""
+    },
+    {
+      "now": "2025-11-20T00:00:00Z",
+      "window": {
+        "reset_at": "2025-11-19T23:00:00Z"
+      },
+      "output": "即将重置"
+    }
   ],
   "identity": [
     {
       "name": "member_info_user_id",
-      "payload": { "code": 0, "data": { "member_info": { "user_id": "12345678" } } },
+      "payload": {
+        "code": 0,
+        "data": {
+          "member_info": {
+            "user_id": "12345678"
+          }
+        }
+      },
       "source": "member_info",
       "account_id": "doubao_20677720c132da75"
     },
     {
       "name": "cookie_uid",
-      "payload": { "code": 0, "data": { "member_info": {} } },
+      "payload": {
+        "code": 0,
+        "data": {
+          "member_info": {}
+        }
+      },
       "cookie": "sessionid=abc; uid_tt=87654321; passport_csrf_token=zzz",
       "source": "cookie",
       "account_id": "doubao_99963802b3136bdd"
     },
     {
       "name": "no_identity",
-      "payload": { "code": 0, "data": { "member_info": {} } },
+      "payload": {
+        "code": 0,
+        "data": {
+          "member_info": {}
+        }
+      },
       "cookie": "sessionid=abc; passport_csrf_token=zzz",
       "source": "",
       "account_id": ""
     }
   ],
   "cookie_normalize": [
-    { "input": "Cookie: sessionid=abc;  odin_tt=def\nuid_tt=ghi", "output": "sessionid=abc; odin_tt=def; uid_tt=ghi" },
-    { "input": "  sessionid=abc ;; novalue ; a=1 ", "output": "sessionid=abc; a=1" },
-    { "input": "", "output": "" }
+    {
+      "input": "Cookie: sessionid=abc;  odin_tt=def\nuid_tt=ghi",
+      "output": "sessionid=abc; odin_tt=def; uid_tt=ghi"
+    },
+    {
+      "input": "  sessionid=abc ;; novalue ; a=1 ",
+      "output": "sessionid=abc; a=1"
+    },
+    {
+      "input": "",
+      "output": ""
+    }
   ],
   "provider": [
-    { "input": "doubao", "output": "doubao" },
-    { "input": "Doubao", "output": "doubao" },
-    { "input": "cursor", "output": "cursor" },
-    { "input": "", "output": "cursor" },
-    { "input": "unknown", "output": "cursor" }
+    {
+      "input": "doubao",
+      "output": "doubao"
+    },
+    {
+      "input": "Doubao",
+      "output": "doubao"
+    },
+    {
+      "input": "cursor",
+      "output": "cursor"
+    },
+    {
+      "input": "",
+      "output": "cursor"
+    },
+    {
+      "input": "unknown",
+      "output": "cursor"
+    }
   ]
 }

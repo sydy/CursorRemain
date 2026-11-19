@@ -426,6 +426,11 @@ sealed class FlyoutForm : Form
                     var reset = UsageParser.DoubaoResetText(window);
                     label += " · " + (reset.Length == 0 ? "开始使用后计时" : reset);
                 }
+                else if (window.Key == "incentive" && !string.IsNullOrWhiteSpace(window.ResetAt))
+                {
+                    var expiry = ExpiryCaption(window.ResetAt!);
+                    if (expiry.Length > 0) label += " · " + expiry;
+                }
                 using (var dot = new SolidBrush(tone))
                     g.FillEllipse(dot, row.X, row.Y + 4 * s, 6 * s, 6 * s);
                 DrawString(g, label, capFont, pal.Secondary, new RectangleF(row.X + 12 * s, row.Y, row.Width * 0.7f, 16 * s));
@@ -439,6 +444,13 @@ sealed class FlyoutForm : Form
                 row.Y += rowH;
             }
         });
+    }
+
+    static string ExpiryCaption(string iso)
+    {
+        if (!DateTime.TryParse(iso, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var date)) return "";
+        return (date.Year == DateTime.Now.Year ? $"{date.Month}-{date.Day}" : $"{date.Year}-{date.Month}-{date.Day}") + " 到期";
     }
 
     static string PercentText(double value)
