@@ -226,15 +226,28 @@ sealed class SettingsForm : Form
         };
         _doubaoDelete.Click += (_, _) =>
         {
-            var acc = _cfg.ActiveDoubaoAccount;
-            if (acc is null || !acc.IsDoubao) { MessageBox.Show(this, "当前没有可删除的豆包账号。", "删除豆包账号"); return; }
-            if (MessageBox.Show(this, $"确定删除豆包账号「{acc.DisplayLabel}」？", "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            // 以列表里选中的豆包行为准；没有选中豆包行时退回「当前豆包账号」。
+            var acc = DoubaoTarget();
+            if (acc is null || !acc.IsDoubao)
+            {
+                MessageBox.Show(this, "列表里没有可删除的豆包账号。请先选中要删除的豆包行。", "删除豆包账号");
+                return;
+            }
+            var name = string.IsNullOrWhiteSpace(acc.Label) ? "豆包账号（登录已失效）" : acc.DisplayLabel;
+            var confirm = string.Join(Environment.NewLine,
+                $"确定删除豆包账号「{name}」？",
+                "",
+                $"账号：{acc.Id}",
+                "删除后本机保存的 Cookie 一并清除，之后仍可用「登录豆包账号」重新添加。");
+            if (MessageBox.Show(this, confirm, "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
             if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Doubao))
             {
                 MessageBox.Show(this, "删除失败：目标不是豆包账号，未做任何修改。", "删除豆包账号");
                 return;
             }
-            LoadFrom(_cfg); NotifySaved();
+            LoadFrom(_cfg);
+            _pageStatus.Text = $"已删除豆包账号「{name}」";
+            NotifySaved();
         };
         var addStack = MakeStack(
             FollowRow(_loginNew),
@@ -329,6 +342,7 @@ sealed class SettingsForm : Form
             {
                 if (id == _cfg.ActiveDoubaoAccountId) return;
                 _cfg.SetActiveDoubaoAccount(id);
+                UpdateDoubaoTargetUi();
                 NotifySaved();
                 return;
             }
@@ -354,10 +368,16 @@ sealed class SettingsForm : Form
         _accountLogin.Click += async (_, _) => await LoginToCursor();
         _accountDelete.Click += (_, _) =>
         {
-            // 以列表里选中的行作为删除目标，不再盲删「当前账号」。
+            // 只删列表里明确选中的那一行；没有选中行就什么都不做，绝不用「当前账号」兜底。
             var selected = _accounts.CurrentRow?.Tag as string;
-            var acc = _cfg.Accounts.FirstOrDefault(a => a.Id == selected) ?? _cfg.ActiveAccount;
-            if (acc is null) return;
+            var acc = string.IsNullOrEmpty(selected)
+                ? null
+                : _cfg.Accounts.FirstOrDefault(a => a.Id == selected);
+            if (acc is null)
+            {
+                MessageBox.Show(this, "请先在列表里选中要删除的账号。", "删除账号");
+                return;
+            }
             if (!acc.IsCursor)
             {
                 MessageBox.Show(this, "选中的是豆包账号，请使用下方「删除豆包账号」。", "删除账号");
@@ -369,7 +389,10 @@ sealed class SettingsForm : Form
                 MessageBox.Show(this, "删除失败：目标不是 Cursor 账号，未做任何修改。", "删除账号");
                 return;
             }
-            LoadFrom(_cfg); NotifySaved();
+            var name = acc.DisplayLabel;
+            LoadFrom(_cfg);
+            _pageStatus.Text = $"已删除账号「{name}」";
+            NotifySaved();
         };
         _kind.SelectedIndexChanged += (_, _) =>
         {
@@ -967,6 +990,27 @@ sealed class SettingsForm : Form
         UpdateAccountButtons();
     }
 
+    /// <summary>删除豆包账号的目标：优先列表选中行，其次当前豆包账号。</summary>
+    Account? DoubaoTarget()
+    {
+        var selected = _accounts.CurrentRow?.Tag as string;
+        var byRow = string.IsNullOrEmpty(selected)
+            ? null
+            : _cfg.Accounts.FirstOrDefault(a => a.Id == selected && a.IsDoubao);
+        return byRow ?? _cfg.ActiveDoubaoAccount;
+    }
+
+    void UpdateDoubaoTargetUi()
+    {
+        var acc = _cfg.ActiveDoubaoAccount;
+        var who = acc is null
+            ? "当前没有豆包账号。"
+            : $"当前豆包账号：{(string.IsNullOrWhiteSpace(acc.Label) ? "豆包账号（登录已失效）" : acc.DisplayLabel)}；「删除豆包账号」只删这一行。";
+        _doubaoHint.Text = "豆包额度只在本机显示，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。"
+            + Environment.NewLine + who;
+        _doubaoDelete.Enabled = _cfg.DoubaoAccounts.Count > 0;
+    }
+
     void UpdateAccountSectionHeading()
     {
         var label = _cfg.ActiveAccount?.DisplayLabel;
@@ -1005,8 +1049,11 @@ sealed class SettingsForm : Form
 
     void FillAccountRows()
     {
+        // 刷新时保留用户选中的行，避免视线和选中行被「当前 Cursor 账号」抢走。
+        var keep = _accounts.CurrentRow?.Tag as string;
         _accounts.Rows.Clear();
         DataGridViewRow? activeRow = null;
+        DataGridViewRow? keepRow = null;
         foreach (var a in _cfg.Accounts.Where(a => !a.IsDoubao).Concat(_cfg.DoubaoAccounts))
         {
             var index = _accounts.Rows.Add(
@@ -1021,11 +1068,16 @@ sealed class SettingsForm : Form
             {
                 activeRow = row;
             }
+            if (!string.IsNullOrEmpty(keep) && a.Id == keep)
+            {
+                keepRow = row;
+            }
         }
-        if (activeRow != null)
+        var target = keepRow ?? activeRow;
+        if (target != null)
         {
-            _accounts.CurrentCell = activeRow.Cells[0];
-            activeRow.Selected = true;
+            _accounts.CurrentCell = target.Cells[0];
+            target.Selected = true;
         }
         else if (_accounts.Rows.Count == 0)
         {
@@ -1041,6 +1093,7 @@ sealed class SettingsForm : Form
         {
             _cfg = cfg;
             FillAccountRows();
+            UpdateDoubaoTargetUi();
             _token.Text = "";
             _token.PlaceholderText = "每行一个 Token";
             _interval.Text = cfg.RefreshIntervalMinutes.ToString();
