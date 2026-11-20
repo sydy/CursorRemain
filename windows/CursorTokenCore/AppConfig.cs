@@ -347,9 +347,12 @@ public sealed class AppConfig
         return true;
     }
 
-    public bool RemoveAccount(string id)
+    public bool RemoveAccount(string id, string? expectedProvider = null)
     {
         var removed = Accounts.FirstOrDefault(a => a.Id == id);
+        if (removed is null) return false;
+        // 防止「删除豆包账号」误落到 Cursor 账号：调用方声明类型时必须严格匹配。
+        if (expectedProvider is not null && removed.Provider != expectedProvider) return false;
         var n = Accounts.RemoveAll(a => a.Id == id);
         if (n == 0) return false;
         if (removed is { IsDoubao: true })

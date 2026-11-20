@@ -227,9 +227,13 @@ sealed class SettingsForm : Form
         _doubaoDelete.Click += (_, _) =>
         {
             var acc = _cfg.ActiveDoubaoAccount;
-            if (acc is null) return;
-            if (MessageBox.Show($"确定删除豆包账号「{acc.DisplayLabel}」？", "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            _cfg.RemoveAccount(acc.Id);
+            if (acc is null || !acc.IsDoubao) { MessageBox.Show(this, "当前没有可删除的豆包账号。", "删除豆包账号"); return; }
+            if (MessageBox.Show(this, $"确定删除豆包账号「{acc.DisplayLabel}」？", "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Doubao))
+            {
+                MessageBox.Show(this, "删除失败：目标不是豆包账号，未做任何修改。", "删除豆包账号");
+                return;
+            }
             LoadFrom(_cfg); NotifySaved();
         };
         var addStack = MakeStack(
@@ -350,9 +354,21 @@ sealed class SettingsForm : Form
         _accountLogin.Click += async (_, _) => await LoginToCursor();
         _accountDelete.Click += (_, _) =>
         {
-            if (_cfg.ActiveAccount is null) return;
-            if (MessageBox.Show($"确定删除「{_cfg.ActiveAccount.DisplayLabel}」？", "删除账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            _cfg.RemoveAccount(_cfg.ActiveAccount.Id);
+            // 以列表里选中的行作为删除目标，不再盲删「当前账号」。
+            var selected = _accounts.CurrentRow?.Tag as string;
+            var acc = _cfg.Accounts.FirstOrDefault(a => a.Id == selected) ?? _cfg.ActiveAccount;
+            if (acc is null) return;
+            if (!acc.IsCursor)
+            {
+                MessageBox.Show(this, "选中的是豆包账号，请使用下方「删除豆包账号」。", "删除账号");
+                return;
+            }
+            if (MessageBox.Show($"确定删除「{acc.DisplayLabel}」？", "删除账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+            if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Cursor))
+            {
+                MessageBox.Show(this, "删除失败：目标不是 Cursor 账号，未做任何修改。", "删除账号");
+                return;
+            }
             LoadFrom(_cfg); NotifySaved();
         };
         _kind.SelectedIndexChanged += (_, _) =>

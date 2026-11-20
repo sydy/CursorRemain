@@ -116,6 +116,23 @@ public class DoubaoFixtureTests
     }
 
     [Fact]
+    public void RemoveAccountRequiresMatchingProvider()
+    {
+        var cfg = new AppConfig();
+        cfg.Accounts.Add(new Account { Id = "user_test_keep", Provider = AccountProvider.Cursor, Token = "tok" });
+        var (doubao, _) = cfg.UpsertDoubaoAccount("sessionid=abc; uid_tt=87654321");
+        // 用 Cursor 身份去删豆包账号必须失败，且不能误删 Cursor 账号。
+        Assert.False(cfg.RemoveAccount(doubao.Id, AccountProvider.Cursor));
+        Assert.Single(cfg.CursorAccounts);
+        Assert.Single(cfg.DoubaoAccounts);
+        // 反过来用豆包身份删 Cursor 账号也必须失败。
+        Assert.False(cfg.RemoveAccount("user_test_keep", AccountProvider.Doubao));
+        Assert.Single(cfg.CursorAccounts);
+        Assert.True(cfg.RemoveAccount(doubao.Id, AccountProvider.Doubao));
+        Assert.Single(cfg.CursorAccounts);
+    }
+
+    [Fact]
     public void LooksLoggedInRequiresScanSession()
     {
         // 页面刚加载只有访客 Cookie，不能当成登录成功。
