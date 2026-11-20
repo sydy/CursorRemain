@@ -1,7 +1,7 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
-pyjwt>=2.9.0
-argon2-cffi>=23.1.0
-httpx>=0.27.0
-pytest>=8.0.0
-cryptography>=42.0.0
+fastapi>=0.163.1
+uvicorn[standard]>=0.54.0
+pyjwt>=2.15.1
+argon2-cffi>=25.1.0
+httpx>=0.28.1
+pytest>=9.2.0
+cryptography>=50.0.2
