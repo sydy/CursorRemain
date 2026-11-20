@@ -61,19 +61,29 @@ jobs:
     - uses: actions/setup-python@v6
       with:
         python-version: "3.12"
-    - name: Install server test deps
-      run: python -m pip install -r server/requirements.txt
+    - name: Install server deps (locked)
+      run: python -m pip install -r server/requirements.lock
+    - name: Check requirements lock is up to date
+      run: |
+        python -m pip install --quiet uv
+        uv pip compile server/requirements.txt --no-header --no-annotate --quiet -o /tmp/requirements.lock
+        diff -u server/requirements.lock /tmp/requirements.lock
+    - name: Lint server with ruff
+      run: |
+        python -m pip install --quiet ruff
+        ruff check server
     - name: Run packaging and version tests
       run: python -m unittest tests.test_windows_packaging tests.test_version -v
     - name: Run sync server tests
       working-directory: server
       run: PYTHONPATH=. python -m unittest tests.test_api -v
-    - uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: "8.0.x"
     - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
     - name: Run Rust core tests
       run: cargo test --manifest-path core/Cargo.toml
+    - name: Lint Rust core with clippy
+      run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
 
   build-server-image:
     name: Build server image

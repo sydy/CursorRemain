@@ -5,8 +5,14 @@ use std::os::raw::c_char;
 
 /// Run one pure operation. `op` names the operation and `input` is UTF-8 JSON.
 /// The returned string is owned by Rust until [cr_free].
+///
+/// # Safety
+/// `op` and `input` must be null or point to valid NUL-terminated C strings.
 #[no_mangle]
-pub extern "C" fn cr_call(op: *const c_char, input: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn cr_call(op: *const c_char, input: *const c_char) -> *mut c_char {
+    if op.is_null() || input.is_null() {
+        return own(&json!({"error": "null argument", "kind": "parse"}));
+    }
     let op = unsafe { CStr::from_ptr(op) }.to_string_lossy();
     let input = unsafe { CStr::from_ptr(input) }.to_string_lossy();
     let value = match serde_json::from_str::<Value>(&input) {
@@ -16,8 +22,14 @@ pub extern "C" fn cr_call(op: *const c_char, input: *const c_char) -> *mut c_cha
     own(&dispatch(&op, &value))
 }
 
+/// Free a string returned by [cr_call]. Passing any other pointer, or the same
+/// pointer twice, is undefined behaviour.
+///
+/// # Safety
+/// `ptr` must be null or a pointer previously returned by [cr_call] that has
+/// not yet been freed.
 #[no_mangle]
-pub extern "C" fn cr_free(ptr: *mut c_char) {
+pub unsafe extern "C" fn cr_free(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
@@ -275,4 +287,43 @@ fn remembered_of(value: Option<&Value>) -> Option<update::RememberedInstall> {
 
 fn own(value: &Value) -> *mut c_char {
     CString::new(value.to_string()).unwrap_or_else(|_| CString::new("").unwrap()).into_raw()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn read_and_free(ptr: *mut c_char) -> String {
+        assert!(!ptr.is_null());
+        let text = unsafe { CStr::from_ptr(ptr) }.to_string_lossy().into_owned();
+        unsafe { cr_free(ptr) };
+        text
+    }
+
+    #[test]
+    fn null_arguments_return_error_instead_of_crashing() {
+        let out = unsafe { cr_call(std::ptr::null(), std::ptr::null()) };
+        assert!(read_and_free(out).contains("null argument"));
+    }
+
+    #[test]
+    fn dispatch_roundtrip_through_ffi() {
+        let op = CString::new("now_iso").unwrap();
+        let input = CString::new(r#"{"unix":1700000000}"#).unwrap();
+        let out = unsafe { cr_call(op.as_ptr(), input.as_ptr()) };
+        assert_eq!(read_and_free(out), json!(update::now_iso(1700000000)).to_string());
+    }
+
+    #[test]
+    fn invalid_json_reports_parse_error() {
+        let op = CString::new("now_iso").unwrap();
+        let input = CString::new("{").unwrap();
+        let out = unsafe { cr_call(op.as_ptr(), input.as_ptr()) };
+        assert!(read_and_free(out).contains("\"kind\":\"parse\""));
+    }
+
+    #[test]
+    fn free_accepts_null() {
+        unsafe { cr_free(std::ptr::null_mut()) };
+    }
 }

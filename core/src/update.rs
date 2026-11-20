@@ -138,7 +138,7 @@ pub fn product_version_from_release(tag: Option<&str>, body: Option<&str>) -> St
 }
 
 pub fn compare_product_versions(left: Option<&str>, right: Option<&str>) -> i32 {
-    let (Ok(a), Ok(b)) = (try_parse_product_version(left), try_parse_product_version(right)) else {
+    let (Some(a), Some(b)) = (try_parse_product_version(left), try_parse_product_version(right)) else {
         return 0;
     };
     match a[0].cmp(&b[0]).then(a[1].cmp(&b[1])).then(a[2].cmp(&b[2])) {
@@ -148,24 +148,24 @@ pub fn compare_product_versions(left: Option<&str>, right: Option<&str>) -> i32 
     }
 }
 
-pub fn try_parse_product_version(raw: Option<&str>) -> Result<[i32; 3], ()> {
+pub fn try_parse_product_version(raw: Option<&str>) -> Option<[i32; 3]> {
     let version = normalize_product_version(raw);
     if version.is_empty() {
-        return Err(());
+        return None;
     }
     let core = version.split_once('-').map(|(head, _)| head).unwrap_or(version.as_str());
     let bits: Vec<&str> = core.split('.').collect();
     if bits.len() != 3 {
-        return Err(());
+        return None;
     }
     let mut parts = [0; 3];
     for (i, bit) in bits.iter().enumerate() {
         if bit.is_empty() || !bit.bytes().all(|b| b.is_ascii_digit()) {
-            return Err(());
+            return None;
         }
-        parts[i] = bit.parse::<i32>().map_err(|_| ())?;
+        parts[i] = bit.parse::<i32>().ok()?;
     }
-    Ok(parts)
+    Some(parts)
 }
 
 pub fn format_release_label(version: Option<&str>, sha: Option<&str>) -> String {
@@ -867,7 +867,7 @@ fn parse_digits(bytes: &[u8]) -> Option<u32> {
 
 fn days_from_civil(year: u32, month: u32, day: u32) -> Option<i64> {
     let dim = [0u32, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let leap = year.is_multiple_of(4) && (!year.is_multiple_of(100) || year.is_multiple_of(400));
     let max = if month == 2 && leap { 29 } else { *dim.get(month as usize)? };
     if day == 0 || day > max || year == 0 {
         return None;

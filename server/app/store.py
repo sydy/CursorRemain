@@ -1,4 +1,4 @@
-"""明文明细：账号、删除记录、设置和用量各自一行。"""
+"""加密明细：账号、删除记录、设置和用量各自一行，敏感字段落库前做 AES-GCM 加密。"""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import json
 
 from fastapi import HTTPException
 
+from . import atrest
 from .auth import now_iso
 from .db import get_conn, lock
 from .settings import MAX_STORE_BODY_BYTES
@@ -91,7 +92,7 @@ def write_snapshot(user_id: str, revision: int, snapshot: dict) -> dict:
         for account_id, body in accounts:
             conn.execute(
                 "INSERT INTO sync_store_accounts (user_id, account_id, payload) VALUES (?, ?, ?)",
-                (user_id, account_id, json.dumps(body, ensure_ascii=False, separators=(",", ":"))),
+                (user_id, account_id, atrest.seal(json.dumps(body, ensure_ascii=False, separators=(",", ":")))),
             )
         for account_id, deleted_at in deleted:
             conn.execute(
@@ -101,9 +102,9 @@ def write_snapshot(user_id: str, revision: int, snapshot: dict) -> dict:
         for account_id, body in usage:
             conn.execute(
                 "INSERT INTO sync_store_usage (user_id, account_id, payload) VALUES (?, ?, ?)",
-                (user_id, account_id, json.dumps(body, ensure_ascii=False, separators=(",", ":"))),
+                (user_id, account_id, atrest.seal(json.dumps(body, ensure_ascii=False, separators=(",", ":")))),
             )
-        settings_json = json.dumps(settings, ensure_ascii=False, separators=(",", ":")) if settings else ""
+        settings_json = atrest.seal(json.dumps(settings, ensure_ascii=False, separators=(",", ":"))) if settings else ""
         values = (
             next_rev,
             stamp,
@@ -134,7 +135,11 @@ def write_snapshot(user_id: str, revision: int, snapshot: dict) -> dict:
 
 def _load_json(raw: str):
     try:
-        return json.loads(raw)
+        text = atrest.unseal(raw)
+    except atrest.DecryptError as exc:
+        raise HTTPException(status_code=500, detail="云端同步数据损坏") from exc
+    try:
+        return json.loads(text)
     except json.JSONDecodeError:
         return None
 

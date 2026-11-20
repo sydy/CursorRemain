@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     email_verified INTEGER NOT NULL DEFAULT 1,
-    sync_storage TEXT NOT NULL DEFAULT 'envelope',
+    sync_storage TEXT NOT NULL DEFAULT 'server',
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sync_store (
@@ -134,6 +134,8 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    # 删除/覆盖的页立即清零，避免旧的明文行残留可被恢复。
+    conn.execute("PRAGMA secure_delete=ON")
     conn.executescript(SCHEMA)
     # Keep existing installations working: accounts created before email
     # verification was introduced are treated as verified.
@@ -141,7 +143,7 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     if "email_verified" not in columns:
         conn.execute("ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1")
     if "sync_storage" not in columns:
-        conn.execute("ALTER TABLE users ADD COLUMN sync_storage TEXT NOT NULL DEFAULT 'envelope'")
+        conn.execute("ALTER TABLE users ADD COLUMN sync_storage TEXT NOT NULL DEFAULT 'server'")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_email_codes_user_purpose ON email_codes(user_id, purpose)")
     conn.commit()
     try:

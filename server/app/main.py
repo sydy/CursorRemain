@@ -124,7 +124,7 @@ def register(body: AuthBody, request: Request):
     code = create_email_code(user["id"], "verify")
     try:
         send_code(user["email"], code, "verify")
-    except Exception as exc:
+    except Exception:
         discard_email_code(user["id"], "verify")
         raise HTTPException(status_code=503, detail="无法发送验证邮件，请稍后重试") from None
     return {"ok": True, "message": "验证邮件已发送"}
@@ -219,7 +219,7 @@ def logout(body: LogoutBody, request: Request):
 @app.get("/v1/me")
 def me(request: Request):
     user = bearer_user(request)
-    return {"id": user["id"], "email": user["email"], "sync_storage": user.get("sync_storage") or "envelope"}
+    return {"id": user["id"], "email": user["email"], "sync_storage": user.get("sync_storage") or "server"}
 
 
 class StorageBody(BaseModel):

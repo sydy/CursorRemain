@@ -376,8 +376,8 @@ pub fn parse_aggregated_usage(payload: &Value, auto_percent: Option<f64>, api_pe
     let mut grok = allocate(rows.iter().filter(|m| m["grok"].as_bool().unwrap_or(false)), None);
     let mut cursor = allocate(rows.iter().filter(|m| m["cursor"].as_bool().unwrap_or(false) && !m["grok"].as_bool().unwrap_or(false)), auto_percent);
     let mut other = allocate(rows.iter().filter(|m| !m["cursor"].as_bool().unwrap_or(false) && !m["grok"].as_bool().unwrap_or(false)), api_percent);
-    cursor.sort_by(|a, b| cmp_usage_then_tokens(a, b));
-    other.sort_by(|a, b| cmp_usage_then_tokens(a, b));
+    cursor.sort_by(cmp_usage_then_tokens);
+    other.sort_by(cmp_usage_then_tokens);
     grok.sort_by(|a, b| b["tokens"].as_i64().unwrap_or(0).cmp(&a["tokens"].as_i64().unwrap_or(0)));
     let mut models = cursor;
     models.append(&mut other);

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,10 +19,11 @@ if str(SERVER_DIR) not in sys.path:
 
 os.environ.setdefault("JWT_SECRET", "test-secret-for-sync-please-use-32b+")
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app import settings
-from app.auth import LIMITER
+from app.auth import LIMITER, RateLimiter
 from app.db import close_for_tests, reset_for_tests
 from app.main import app
 from app.settings import DEV_JWT_FALLBACK, JWT_SECRET_MIN_LEN, resolve_jwt_secret
@@ -414,6 +419,134 @@ class ApiTests(unittest.TestCase):
         self.assertIsNone(blob.json()["envelope"])
         rows = self.client.get("/v1/store", headers=headers)
         self.assertEqual(rows.json()["snapshot"]["accounts"][0]["label"], "明细")
+
+
+    # ---- 落库加密 ----
+
+    def _sql(self, statement: str, params: tuple = ()) -> None:
+        conn = sqlite3.connect(str(settings.DATABASE_PATH))
+        try:
+            conn.execute(statement, params)
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _rows(self, table: str, user_id: str) -> list[sqlite3.Row]:
+        conn = sqlite3.connect(str(settings.DATABASE_PATH))
+        conn.row_factory = sqlite3.Row
+        try:
+            return conn.execute(f"SELECT * FROM {table} WHERE user_id = ?", (user_id,)).fetchall()
+        finally:
+            conn.close()
+
+    def _db_bytes(self) -> bytes:
+        path = Path(settings.DATABASE_PATH)
+        data = path.read_bytes()
+        wal = path.with_name(path.name + "-wal")
+        if wal.exists():
+            data += wal.read_bytes()
+        return data
+
+    def _store_user(self, email: str) -> tuple[str, dict, str]:
+        access = self._register(email)
+        headers = {"Authorization": f"Bearer {access}"}
+        user_id = self.client.get("/v1/me", headers=headers).json()["id"]
+        return access, headers, user_id
+
+    def _snapshot(self) -> dict:
+        return {
+            "version": 1,
+            "device_id": "dev",
+            "active_account_id": "acc",
+            "accounts": [{"id": "acc", "label": "明细", "token": "secret-token"}],
+            "settings": {"refresh_interval_minutes": 12},
+            "usage": [{"account_id": "acc", "events": [{"at": "2026-01-02T00:00:00Z"}]}],
+        }
+
+    def test_store_payload_is_encrypted_at_rest(self) -> None:
+        _, headers, user_id = self._store_user("cipher@harker.cn")
+        put = self.client.put("/v1/store", headers=headers, json={"revision": 0, "snapshot": self._snapshot()})
+        self.assertEqual(put.status_code, 200, put.text)
+
+        accounts = self._rows("sync_store_accounts", user_id)
+        self.assertEqual(len(accounts), 1)
+        self.assertTrue(accounts[0]["payload"].startswith("enc1:"))
+        self.assertNotIn("secret-token", accounts[0]["payload"])
+
+        usage = self._rows("sync_store_usage", user_id)
+        self.assertTrue(usage[0]["payload"].startswith("enc1:"))
+        self.assertNotIn("2026-01-02", usage[0]["payload"])
+
+        meta = self._rows("sync_store", user_id)
+        self.assertTrue(meta[0]["settings_json"].startswith("enc1:"))
+        self.assertNotIn("refresh_interval_minutes", meta[0]["settings_json"])
+
+        self.assertNotIn(b"secret-token", self._db_bytes())
+
+        got = self.client.get("/v1/store", headers=headers).json()["snapshot"]
+        self.assertEqual(got["accounts"][0]["token"], "secret-token")
+        self.assertEqual(got["settings"]["refresh_interval_minutes"], 12)
+        self.assertEqual(got["usage"][0]["account_id"], "acc")
+
+    def test_legacy_plaintext_rows_readable_then_encrypted(self) -> None:
+        _, headers, user_id = self._store_user("legacy@harker.cn")
+        self._sql(
+            "INSERT INTO sync_store (user_id, revision, updated_at, settings_json) VALUES (?, 0, ?, ?)",
+            (user_id, "2026-01-01T00:00:00Z", json.dumps({"refresh_interval_minutes": 5})),
+        )
+        self._sql(
+            "INSERT INTO sync_store_accounts (user_id, account_id, payload) VALUES (?, ?, ?)",
+            (user_id, "acc", json.dumps({"id": "acc", "label": "旧", "token": "legacy-token"})),
+        )
+
+        got = self.client.get("/v1/store", headers=headers)
+        self.assertEqual(got.status_code, 200, got.text)
+        self.assertEqual(got.json()["snapshot"]["accounts"][0]["token"], "legacy-token")
+        self.assertEqual(got.json()["snapshot"]["settings"]["refresh_interval_minutes"], 5)
+
+        again = self.client.put("/v1/store", headers=headers, json={"revision": 0, "snapshot": got.json()["snapshot"]})
+        self.assertEqual(again.status_code, 200, again.text)
+        row = self._rows("sync_store_accounts", user_id)[0]
+        self.assertTrue(row["payload"].startswith("enc1:"))
+        self.assertNotIn("legacy-token", row["payload"])
+        self.assertEqual(
+            self.client.get("/v1/store", headers=headers).json()["snapshot"]["accounts"][0]["token"],
+            "legacy-token",
+        )
+
+    def test_tampered_ciphertext_surfaces_error(self) -> None:
+        _, headers, user_id = self._store_user("tamper@harker.cn")
+        put = self.client.put("/v1/store", headers=headers, json={"revision": 0, "snapshot": self._snapshot()})
+        self.assertEqual(put.status_code, 200, put.text)
+        bad = "enc1:" + base64.urlsafe_b64encode(b"\x00" * 12 + b"garbage").decode("ascii")
+        self._sql("UPDATE sync_store_accounts SET payload = ? WHERE user_id = ?", (bad, user_id))
+        res = self.client.get("/v1/store", headers=headers)
+        self.assertEqual(res.status_code, 500)
+        self.assertIn("损坏", res.text)
+
+
+class RateLimiterTests(unittest.TestCase):
+    def test_sweep_drops_stale_and_empty_buckets(self) -> None:
+        limiter = RateLimiter()
+        base = 1_700_000_000.0
+        limiter._hits = {"fresh": [base + 90], "stale": [base - 30], "empty": []}
+        with patch("app.auth.now") as fake:
+            fake.return_value = datetime.fromtimestamp(base + 120, timezone.utc)
+            limiter._sweep()
+        self.assertEqual(set(limiter._hits), {"fresh"})
+
+    def test_key_table_stays_bounded_and_still_limits(self) -> None:
+        limiter = RateLimiter()
+        limiter.MAX_KEYS = 2
+        limiter._hits = {"a": [1.0], "b": [1.0]}
+        limiter.check("c", 5)
+        self.assertIn("c", limiter._hits)
+        self.assertLessEqual(len(limiter._hits), 2)
+        limiter.reset()
+        with self.assertRaises(HTTPException):
+            limiter.check("c", 1)
+            limiter.check("c", 1)
+        limiter.reset()
 
 
 if __name__ == "__main__":

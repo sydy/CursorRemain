@@ -53,6 +53,9 @@ SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM = os.environ.get("SMTP_FROM", "").strip()
 SMTP_STARTTLS = _flag("SMTP_STARTTLS") if "SMTP_STARTTLS" in os.environ else SMTP_PORT != 465
 DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", "data/sync.db")).expanduser()
+# 明细落库加密密钥（Base64 的 32 字节）。留空时从 JWT_SECRET 经 HKDF 派生。
+# 单独配置可让轮换 JWT_SECRET 不影响已加密的存量数据。
+DATA_ENCRYPTION_KEY = os.environ.get("DATA_ENCRYPTION_KEY", "").strip()
 TRUST_PROXY = _flag("TRUST_PROXY")
 AUTH_RATE_PER_MIN = max(3, _int("AUTH_RATE_PER_MIN", 20))
 SYNC_RATE_PER_MIN = max(10, _int("SYNC_RATE_PER_MIN", 60))

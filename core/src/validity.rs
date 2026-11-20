@@ -25,6 +25,7 @@ pub fn clamp_hours(value: &Value) -> i64 {
     json_num(value).clamp(0, 23)
 }
 
+#[allow(clippy::too_many_arguments)] // 逐字段镜像客户端的校验签名
 pub fn validity_equals(
     a_kind: Option<&str>,
     a_start: Option<&str>,

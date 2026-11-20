@@ -108,8 +108,9 @@ pub fn parse_money_cents(value: &Value) -> Option<f64> {
     let lower = text.to_ascii_lowercase();
     if matches!(lower.as_str(), "included" | "free" | "n/a" | "—" | "-" | "none") { return None; }
     if !lower.contains("us$") && !text.contains('$') { return None; }
-    let cleaned = text.replace("US$", "").replace("us$", "").replace('$', "").replace(',', "").replace("Included", "").replace("Free", "");
-    cleaned.trim().parse::<f64>().ok().map(|dollars| dollars * 100.0)
+    // 只保留数字和小数点，等价于依次剥掉货币符号、千分位逗号和 Included/Free 文案。
+    let cleaned: String = text.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect();
+    cleaned.parse::<f64>().ok().map(|dollars| dollars * 100.0)
 }
 
 pub fn merge(existing: &[Value], incoming: &[Value]) -> Vec<Value> {
@@ -530,7 +531,8 @@ pub fn build_chart(events: &[Value], hourly: bool, hidden: &[String]) -> Value {
     let visible: Vec<String> = models.iter().filter(|name| !hidden.iter().any(|item| item == *name)).cloned().collect();
     if events.is_empty() { return json!({"hourly": hourly, "caption": chart_caption(hourly, &[]), "models": models, "buckets": []}); }
     let keys = if hourly { hour_keys(events) } else { day_keys(events) };
-    let mut cells: Vec<((String, String), (i64, f64, i64))> = Vec::new();
+    type ChartCell = ((String, String), (i64, f64, i64));
+    let mut cells: Vec<ChartCell> = Vec::new();
     for ev in events {
         let key = if hourly { event_hour(ev["timestamp_ms"].as_i64().unwrap_or(0)) } else { event_date(ev["timestamp_ms"].as_i64().unwrap_or(0)) };
         if key.as_str() < keys[0].as_str() || key.as_str() > keys.last().map(String::as_str).unwrap_or("") { continue; }

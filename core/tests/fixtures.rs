@@ -11,7 +11,7 @@ fn normalize_events(events: &[Value]) -> Vec<Value> {
     events.iter().map(|ev| {
         let mut copy = ev.clone();
         if copy.get("timestamp_ms").is_none() {
-            if let Some(ms) = copy["timestamp"].as_str().and_then(|text| cursor_core::events::event_timestamp_ms(text)) { copy["timestamp_ms"] = json!(ms); }
+            if let Some(ms) = copy["timestamp"].as_str().and_then(cursor_core::events::event_timestamp_ms) { copy["timestamp_ms"] = json!(ms); }
             else if let Some(ms) = copy["timestamp"].as_i64() { copy["timestamp_ms"] = json!(ms); }
         }
         if copy.get("charged_cents").is_none() { if let Some(cents) = copy.get("chargedCents") { copy["charged_cents"] = cents.clone(); } }

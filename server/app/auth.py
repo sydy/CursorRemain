@@ -71,6 +71,9 @@ def client_ip(request: Request) -> str:
 
 
 class RateLimiter:
+    # 单进程内存表，键是客户端 IP；攻击者换 IP 会不断新增键，需要上限与清理。
+    MAX_KEYS = 20_000
+
     def __init__(self) -> None:
         self._hits: dict[str, list[float]] = {}
 
@@ -79,10 +82,24 @@ class RateLimiter:
         cutoff = window - 60
         bucket = [t for t in self._hits.get(key, []) if t > cutoff]
         if len(bucket) >= limit:
-            self._hits[key] = bucket
+            self._store(key, bucket)
             raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
         bucket.append(window)
-        self._hits[key] = bucket
+        self._store(key, bucket)
+
+    def _store(self, key: str, bucket: list[float]) -> None:
+        if bucket:
+            self._hits[key] = bucket
+        else:
+            self._hits.pop(key, None)
+        if len(self._hits) > self.MAX_KEYS:
+            self._sweep()
+
+    def _sweep(self) -> None:
+        """丢掉一分钟内没有新请求的空桶/过期桶，控制键数量。"""
+        cutoff = now().timestamp() - 60
+        for key in [k for k, v in self._hits.items() if not v or v[-1] <= cutoff]:
+            self._hits.pop(key, None)
 
     def reset(self) -> None:
         self._hits.clear()
@@ -355,6 +372,6 @@ def token_payload(user: dict, refresh: str) -> dict:
         "access_token": create_access_token(user["id"], user["email"]),
         "refresh_token": refresh,
         "email": user["email"],
-        "sync_storage": user.get("sync_storage") or "envelope",
+        "sync_storage": user.get("sync_storage") or "server",
         "expires_in": settings.ACCESS_MINUTES * 60,
     }
