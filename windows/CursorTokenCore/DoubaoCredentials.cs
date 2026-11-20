@@ -71,12 +71,12 @@ public static class DoubaoCredentials
         return $"{hex[..8]}-{hex[8..12]}-{hex[12..16]}-{hex[16..20]}-{hex[20..]}";
     }
 
-    /// <summary>Only a cookie that already contains a session is worth validating.</summary>
+    /// <summary>Only a real login session counts. Visitor cookies such as uid_tt/odin_tt appear before the QR scan finishes.</summary>
     public static bool LooksLoggedIn(string cookie)
     {
         if (UserId(null, cookie).Length == 0) return false;
         var normalized = Normalize(cookie);
-        return new[] { "sessionid", "sessionid_ss", "sid_tt", "odin_tt", "uid_tt" }
+        return new[] { "sessionid", "sessionid_ss" }
             .Any(name => normalized.Contains(name + "=", StringComparison.Ordinal));
     }
 }

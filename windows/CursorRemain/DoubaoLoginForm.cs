@@ -24,6 +24,8 @@ sealed class DoubaoLoginForm : Form
     readonly System.Windows.Forms.Timer _poll = new() { Interval = 1500 };
     DateTime _deadline;
     bool _done;
+    bool _validating;
+    DateTime _nextValidate = DateTime.MinValue;
 
     /// <summary>Full Doubao Cookie header, only set when <see cref="LooksLoggedIn"/> passes.</summary>
     public string Cookie { get; private set; } = "";
@@ -111,8 +113,19 @@ sealed class DoubaoLoginForm : Form
             if (pairs.Count == 0) return;
             var cookie = DoubaoCredentials.Normalize(string.Join("; ", pairs.Select(p => p.Name + "=" + p.Value)));
             if (!DoubaoCredentials.LooksLoggedIn(cookie)) return;
-            Cookie = cookie;
-            Finish(true, "已获取豆包 Cookie");
+            // 有会话 Cookie 也不代表扫码已完成：先请求一次额度接口确认 code=0，
+            // 否则会在二维码还没扫完时关窗，随后立刻报「登录已失效」。
+            if (_validating || DateTime.UtcNow < _nextValidate) return;
+            _nextValidate = DateTime.UtcNow.AddSeconds(4);
+            _validating = true;
+            try
+            {
+                _status.Text = "已读取登录态，正在确认…";
+                if (!await DoubaoClient.CookieIsLoggedIn(cookie)) return;
+                Cookie = cookie;
+                Finish(true, "已获取豆包 Cookie");
+            }
+            finally { _validating = false; }
         }
         catch
         {

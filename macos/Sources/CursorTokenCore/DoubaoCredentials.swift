@@ -61,7 +61,7 @@ public enum DoubaoCredentials {
 
     /// 浏览器里取到的 Cookie 是否看起来已登录（有会话 Cookie 才值得拿去验证）。
     public static func looksLoggedIn(_ cookie: String) -> Bool {
-        let names = ["sessionid", "sessionid_ss", "sid_tt", "odin_tt", "uid_tt"]
+        let names = ["sessionid", "sessionid_ss"]
         let pairs = RustCore.object("doubao_identity", ["payload": [:], "cookie": cookie])
         if (pairs["user_id"] as? String ?? "").isEmpty { return false }
         let normalized = normalize(cookie)

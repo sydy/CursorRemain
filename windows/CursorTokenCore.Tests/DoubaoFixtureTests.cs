@@ -116,6 +116,14 @@ public class DoubaoFixtureTests
     }
 
     [Fact]
+    public void LooksLoggedInRequiresScanSession()
+    {
+        // 页面刚加载只有访客 Cookie，不能当成登录成功。
+        Assert.False(DoubaoCredentials.LooksLoggedIn("uid_tt=87654321; odin_tt=abc"));
+        Assert.True(DoubaoCredentials.LooksLoggedIn("sessionid=abc123; uid_tt=87654321"));
+    }
+
+    [Fact]
     public void DoubaoAccountsStayLocalAndOffCursorPaths()
     {
         var cfg = new AppConfig();
