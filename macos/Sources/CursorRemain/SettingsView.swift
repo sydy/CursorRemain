@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct SettingsRootView: View {
     @ObservedObject var store: AppStore
     @State private var addOpen = false
+    @State private var accountEditorOpen = true
     @State private var tab = "account"
     @State private var importing = false
     @State private var tokenText = ""
@@ -194,83 +195,84 @@ struct SettingsRootView: View {
 
     var accountPage: some View {
         settingsPage(spacing: 10) {
-            fieldCaption("账号")
+            accountPageHeader
             accountTable
-            HStack {
-                Button("添加账号") { addOpen = true }
-                    .buttonStyle(.borderedProminent)
-                Button("检查状态") { store.requestRefresh() }
-                    .disabled(store.config.accounts.isEmpty || !store.accountCheckStatus.isEmpty)
-                Button("让 Cursor 使用此账号") { Task { await loginToCursor() } }
-                    .disabled(importing || store.config.activeAccount == nil)
-                Button("重命名") { rename() }
-                    .disabled(store.config.activeAccount == nil)
-                Button("删除") { deleteAccount() }
-                    .disabled(store.config.activeAccount == nil)
-            }
-            if store.config.doubaoAccounts.isEmpty {
-                HStack(spacing: 6) {
-                    Button("添加豆包账号") { addOpen = true }
-                    Text("豆包额度只在本机读取，Cookie 不参与云同步。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                doubaoAccountsPanel
-            }
+            doubaoCard
             if !store.accountCheckStatus.isEmpty {
                 Text(store.accountCheckStatus)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if !store.config.cursorAccounts.isEmpty {
-            let activeLabel = store.config.activeAccount?.displayLabel ?? ""
-            Text(activeLabel.isEmpty ? "当前账号配置" : "当前账号配置（\(activeLabel)）")
-                .font(.headline)
-                .padding(.top, 6)
-            fieldCaption("账号类型")
-            settingsMenuPicker(
-                selection: kindBinding,
-                current: isTemporaryAccount ? "临时账号" : "长期账号",
-                options: [
-                    (AccountValidity.longTerm, "长期账号"),
-                    (AccountValidity.temporary, "临时账号"),
-                ]
-            )
-            .disabled(store.config.activeAccount == nil)
-            if isTemporaryAccount {
-                fieldCaption("开始时间")
-                settingsDateTimeField(selection: startBinding)
-                fieldCaption("有效时间")
-                settingsDurationField(days: daysBinding, hours: hoursBinding)
-                Text(endCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            fieldCaption("渠道")
-            settingsMenuPicker(
-                selection: $channel,
-                current: UsageEvents.channelLabel(channel),
-                options: [
-                    ("", "未标"),
-                    (UsageEvents.channelSelfPay, "自费"),
-                    (UsageEvents.channelThirdParty, "第三方"),
-                ]
-            )
-            .disabled(store.config.activeAccount == nil)
-            fieldCaption("实际成本（人民币）")
-            fieldWidth(TextField("0", text: $actualCnyText).textFieldStyle(.plain), max: 160)
-                .disabled(store.config.activeAccount == nil)
-            Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
         }
         .sheet(isPresented: $addOpen) {
             addAccountSheet
         }
+    }
+
+    var accountPageHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("账号").font(.title3).fontWeight(.semibold)
+            Text(accountSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Button("检查状态") { store.requestRefresh() }
+                .controlSize(.small)
+                .disabled(store.config.accounts.isEmpty || !store.accountCheckStatus.isEmpty)
+            Button("添加账号") { addOpen = true }
+                .controlSize(.small)
+                .buttonStyle(.borderedProminent)
+        }
+    }
+
+    var accountSummary: String {
+        let total = store.config.accounts.count
+        guard total > 0 else { return "还没有账号" }
+        let inUse = store.config.accounts.filter { account in
+            account.isDoubao ? account.id == store.config.activeDoubaoAccountId : account.id == store.config.activeAccountId
+        }.count
+        let stamp = store.config.accounts
+            .map { StatusText.formatAccountCheckTime($0) }
+            .filter { $0 != "—" }
+            .max() ?? "—"
+        return "\(total) 个 · \(inUse) 个使用中 · 已同步 \(stamp)"
+    }
+
+    var doubaoCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("豆包账号").font(.callout).fontWeight(.semibold)
+                if let first = store.config.doubaoAccounts.first {
+                    Text(StatusText.formatAccountCheckStatus(first))
+                        .font(.caption)
+                        .foregroundStyle(first.lastError.isEmpty ? Color.secondary : Color.red)
+                }
+                Spacer()
+                Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(doubaoLoginRunning)
+            }
+            if store.config.doubaoAccounts.isEmpty {
+                Text("豆包额度只在本机读取，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                doubaoAccountsPanel
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
     }
 
     var doubaoAccountsPanel: some View {
@@ -586,43 +588,48 @@ struct SettingsRootView: View {
     }
 
     var accountTable: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
             if store.config.accounts.isEmpty {
-                Text("还没有账号")
+                Text("还没有账号，点右上角「添加账号」开始。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                    .padding(.horizontal, 12)
             } else {
-                // 自绘行，不再用 NSTableView：账号少的时候系统表格会同时冒出
-                // 横竖两条滚动条，把最后一行盖住。
-                VStack(alignment: .leading, spacing: 0) {
-                    accountHeaderRow
-                    AccountRowLine()
-                    ForEach(Array(store.config.accounts.enumerated()), id: \.element.id) { pair in
-                        accountRow(pair.element)
-                        if pair.offset < store.config.accounts.count - 1 {
-                            AccountRowLine()
-                        }
+                accountHeaderRow
+                AccountRowLine()
+                ForEach(Array(store.config.accounts.enumerated()), id: \.element.id) { pair in
+                    accountRow(pair.element)
+                    if pair.element.id == store.config.activeAccountId && accountEditorOpen {
+                        accountEditor
+                        AccountRowLine()
+                    }
+                    if pair.offset < store.config.accounts.count - 1 {
+                        AccountRowLine()
                     }
                 }
             }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.10), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .accessibilityLabel("当前账号")
     }
 
     var accountHeaderRow: some View {
-        HStack(spacing: AccountTableLayout.gap) {
+        HStack(spacing: 10) {
             Text("账号").frame(maxWidth: .infinity, alignment: .leading)
-            AccountColumnLine()
-            Text("套餐").frame(width: AccountTableLayout.plan, alignment: .leading)
-            AccountColumnLine()
+            Text("额度").frame(width: AccountTableLayout.quota, alignment: .leading)
             Text("状态").frame(width: AccountTableLayout.status, alignment: .leading)
-            AccountColumnLine()
-            Text("更新时间").frame(width: AccountTableLayout.updated, alignment: .leading)
-            AccountColumnLine()
-            Text("类型").frame(width: AccountTableLayout.kind, alignment: .leading)
+            Text("操作").frame(width: AccountTableLayout.action, alignment: .trailing)
         }
-        .font(.callout)
+        .font(.caption)
         .foregroundStyle(.secondary)
         .padding(.horizontal, AccountTableLayout.horizontalPadding)
         .frame(height: AccountTableLayout.headerHeight)
@@ -632,42 +639,138 @@ struct SettingsRootView: View {
         let isActive = account.isDoubao
             ? account.id == store.config.activeDoubaoAccountId
             : account.id == store.config.activeAccountId
-        return HStack(spacing: AccountTableLayout.gap) {
-            Text(account.displayLabel)
-                .fontWeight(isActive ? .semibold : .regular)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            AccountColumnLine(visible: false)
-            Text(StatusText.formatAccountPlan(account))
-                .lineLimit(1)
-                .frame(width: AccountTableLayout.plan, alignment: .leading)
-            AccountColumnLine(visible: false)
-            Text(StatusText.formatAccountCheckStatus(account))
-                .lineLimit(1)
+        let isEditing = isActive && accountEditorOpen && !account.isDoubao
+        return HStack(spacing: 10) {
+            AccountAvatar(account: account, active: isActive)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(account.displayLabel)
+                        .font(.callout)
+                        .fontWeight(isActive ? .semibold : .regular)
+                        .lineLimit(1)
+                    AccountChip(text: account.isDoubao ? "豆包" : StatusText.formatAccountPlan(account))
+                    AccountChip(text: account.accountKind == AccountValidity.temporary ? "临时" : "长期")
+                }
+                Text("\(StatusText.formatAccountCheckTime(account)) 更新")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            AccountQuotaCell(account: account)
+                .frame(width: AccountTableLayout.quota, alignment: .leading)
+            AccountStatusCell(account: account, active: isActive)
                 .frame(width: AccountTableLayout.status, alignment: .leading)
-            AccountColumnLine(visible: false)
-            Text(StatusText.formatAccountCheckTime(account))
-                .lineLimit(1)
-                .frame(width: AccountTableLayout.updated, alignment: .leading)
-            AccountColumnLine(visible: false)
-            Text(account.isDoubao ? "豆包" : StatusText.formatAccountKind(account))
-                .lineLimit(1)
-                .frame(width: AccountTableLayout.kind, alignment: .leading)
+            Button(isEditing ? "收起" : "编辑") {
+                if !isActive {
+                    if account.isDoubao { store.switchDoubaoAccount(account.id) } else { activeBinding.wrappedValue = account.id }
+                }
+                accountEditorOpen = isEditing ? false : true
+            }
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(Color.accentColor)
+            .frame(width: AccountTableLayout.action, alignment: .trailing)
+            .disabled(account.isDoubao)
+            .opacity(account.isDoubao ? 0.3 : 1)
         }
         .padding(.horizontal, AccountTableLayout.horizontalPadding)
         .frame(height: AccountTableLayout.rowHeight)
-        .background(isActive ? Color.accentColor : Color.clear)
-        .foregroundStyle(isActive ? Color.white : Color.primary)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard !isActive else { return }
-            if account.isDoubao {
-                store.switchDoubaoAccount(account.id)
-            } else {
-                activeBinding.wrappedValue = account.id
+        .background(alignment: .leading) {
+            if isActive {
+                Rectangle()
+                    .fill(Color.accentColor.opacity(0.10))
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(Color.accentColor).frame(width: 3)
+                    }
             }
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if account.isDoubao {
+                if !isActive { store.switchDoubaoAccount(account.id) }
+                return
+            }
+            if !isActive { activeBinding.wrappedValue = account.id }
+            accountEditorOpen = true
+        }
         .accessibilityAddTraits(.isButton)
+    }
+
+    var accountEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text("编辑").font(.callout).fontWeight(.semibold)
+                Text(store.config.activeAccount?.displayLabel ?? "")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("重命名") { rename() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(Color.accentColor)
+                    .disabled(store.config.activeAccount == nil)
+                Button("删除账号") { deleteAccount() }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(Color.red)
+                    .disabled(store.config.activeAccount == nil)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    fieldCaption("账号类型")
+                    settingsMenuPicker(
+                        selection: kindBinding,
+                        current: isTemporaryAccount ? "临时账号" : "长期账号",
+                        options: [
+                            (AccountValidity.longTerm, "长期账号"),
+                            (AccountValidity.temporary, "临时账号"),
+                        ]
+                    )
+                    .disabled(store.config.activeAccount == nil)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    fieldCaption("渠道")
+                    settingsMenuPicker(
+                        selection: $channel,
+                        current: UsageEvents.channelLabel(channel),
+                        options: [
+                            ("", "未标"),
+                            (UsageEvents.channelSelfPay, "自费"),
+                            (UsageEvents.channelThirdParty, "第三方"),
+                        ]
+                    )
+                    .disabled(store.config.activeAccount == nil)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    fieldCaption("实际成本（¥）")
+                    fieldWidth(TextField("0", text: $actualCnyText).textFieldStyle(.plain), max: 120)
+                        .disabled(store.config.activeAccount == nil)
+                }
+            }
+            if isTemporaryAccount {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        fieldCaption("开始时间")
+                        settingsDateTimeField(selection: startBinding)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        fieldCaption("有效时间")
+                        settingsDurationField(days: daysBinding, hours: hoursBinding)
+                    }
+                }
+                Text(endCaption)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费。")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, AccountTableLayout.horizontalPadding)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     var activeBinding: Binding<String> {
@@ -1504,15 +1607,102 @@ extension Account: Identifiable {}
 
 /// 账号表格用固定列宽自绘：5 列不会超出 500pt 页面宽度，
 /// 行数再多也不会出现横向滚动条，页面本身负责纵向滚动。
+/// C1 版账号表：账号 / 额度 / 状态 / 操作 四列固定列宽自绘，
+/// 选中行的编辑区插在该行下方，行数再多也不会出现横向滚动条。
 private enum AccountTableLayout {
-    static let rowHeight: CGFloat = 28
+    static let rowHeight: CGFloat = 46
     static let headerHeight: CGFloat = 28
-    static let gap: CGFloat = 6
-    static let horizontalPadding: CGFloat = 8
-    static let plan: CGFloat = 72
-    static let status: CGFloat = 88
-    static let updated: CGFloat = 108
-    static let kind: CGFloat = 52
+    static let horizontalPadding: CGFloat = 12
+    static let quota: CGFloat = 132
+    static let status: CGFloat = 64
+    static let action: CGFloat = 44
+}
+
+/// 额度分档：≥70 绿、≥35 琥珀、<35 红。
+private enum QuotaTone {
+    static func color(_ percent: Double) -> Color {
+        if percent >= 70 { return Color(red: 0.13, green: 0.77, blue: 0.37) }
+        if percent >= 35 { return Color(red: 0.96, green: 0.62, blue: 0.04) }
+        return Color(red: 0.94, green: 0.32, blue: 0.32)
+    }
+}
+
+private struct AccountAvatar: View {
+    let account: Account
+    let active: Bool
+
+    var body: some View {
+        let text = account.isDoubao ? "豆" : String(account.displayLabel.prefix(1))
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(active ? Color.accentColor : Color.secondary)
+            .frame(width: 24, height: 24)
+            .background(
+                Circle().fill(active ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.06))
+            )
+    }
+}
+
+private struct AccountChip: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9))
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.07)))
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct AccountQuotaCell: View {
+    let account: Account
+
+    var body: some View {
+        if let remaining = account.lastRemaining, remaining >= 0 {
+            let percent = min(100, max(0, remaining))
+            HStack(spacing: 6) {
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.primary.opacity(0.10))
+                        Capsule()
+                            .fill(QuotaTone.color(percent))
+                            .frame(width: max(2, geo.size.width * percent / 100))
+                    }
+                    .frame(height: 4)
+                }
+                .frame(height: 4)
+                Text("\(Int(percent.rounded()))%")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(QuotaTone.color(percent))
+                    .frame(width: 30, alignment: .trailing)
+                    .monospacedDigit()
+            }
+        } else {
+            Text("—")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct AccountStatusCell: View {
+    let account: Account
+    let active: Bool
+
+    var body: some View {
+        let tone: Color = active ? Color.accentColor : (account.lastError.isEmpty ? Color.secondary : Color.red)
+        let text = active ? "使用中" : (account.lastError.isEmpty ? "待用" : "异常")
+        HStack(spacing: 4) {
+            Circle().fill(tone).frame(width: 5, height: 5)
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(tone)
+                .lineLimit(1)
+        }
+    }
 }
 
 private struct AccountColumnLine: View {
