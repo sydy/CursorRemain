@@ -3,7 +3,7 @@ annotated-types==0.8.0
 anyio==4.16.0
 argon2-cffi==25.1.0
 argon2-cffi-bindings==26.2.0
-certifi==2026.10.23
+certifi==2026.11.20
 cffi==2.1.1
 click==8.5.1
 cryptography==50.0.2
@@ -24,7 +24,7 @@ pygments==2.21.0
 pyjwt==2.15.1
 pytest==9.2.0
 python-dotenv==1.2.4
-pyyaml==6.0.3
+pyyaml==6.0.4
 starlette==1.10.0
 typing-extensions==4.16.0
 typing-inspection==0.4.5
