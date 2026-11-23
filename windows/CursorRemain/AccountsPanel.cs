@@ -138,40 +138,64 @@ sealed class AccountsCard : Panel
 
     public void SetContent(IEnumerable<AccountRowModel> models, Control? editor)
     {
+        var list = models as IList<AccountRowModel> ?? models.ToList();
+        // 行数/顺序不变时只换数据，不再销毁重建控件。
+        var reusable = _rows.Count == list.Count;
+        if (reusable)
+        {
+            for (var i = 0; i < list.Count; i++)
+            {
+                if (_rows[i].AccountId != list[i].Account.Id) { reusable = false; break; }
+            }
+        }
+        NativeTheme.SetRedraw(this, false);
         SuspendLayout();
         try
         {
-            foreach (var row in _rows)
+            if (_editor != editor)
             {
-                Controls.Remove(row);
-                row.Dispose();
+                if (_editor is not null)
+                {
+                    _editor.SizeChanged -= OnEditorSizeChanged;
+                    if (_editor.Parent == this) Controls.Remove(_editor);
+                }
+                _editor = editor;
+                if (_editor is not null)
+                {
+                    _editor.SizeChanged += OnEditorSizeChanged;
+                    Controls.Add(_editor);
+                }
             }
-            _rows.Clear();
-            if (_editor is not null)
+            if (reusable)
             {
-                _editor.SizeChanged -= OnEditorSizeChanged;
-                if (_editor.Parent == this) Controls.Remove(_editor);
+                for (var i = 0; i < list.Count; i++)
+                    _rows[i].Update(list[i]);
             }
-            _editor = editor;
-            if (_editor is not null)
+            else
             {
-                _editor.SizeChanged += OnEditorSizeChanged;
-                Controls.Add(_editor);
-            }
-            foreach (var model in models)
-            {
-                var row = new AccountRow(model, HandleSelect, HandleToggle) { Height = RowHeight };
-                _rows.Add(row);
-                Controls.Add(row);
+                foreach (var row in _rows)
+                {
+                    Controls.Remove(row);
+                    row.Dispose();
+                }
+                _rows.Clear();
+                foreach (var model in list)
+                {
+                    var row = new AccountRow(model, HandleSelect, HandleToggle) { Height = RowHeight };
+                    _rows.Add(row);
+                    Controls.Add(row);
+                }
             }
         }
         finally
         {
-            ResumeLayout(true);
+            ResumeLayout(false);
+            NativeTheme.SetRedraw(this, true);
         }
-        PerformLayout();
-        Invalidate();
+        Invalidate(true);
     }
+
+    public bool EditorMounted => _editor is not null;
 
     void HandleSelect(Account account) => RowSelected?.Invoke(account);
     void HandleToggle(Account account) => RowToggleClicked?.Invoke(account);
@@ -266,12 +290,23 @@ sealed class AccountsCard : Panel
 /// <summary>One account line: avatar, name + kind pill, plan/time meta, quota bar, status, and the edit action.</summary>
 sealed class AccountRow : Control
 {
-    readonly AccountRowModel _model;
+    AccountRowModel _model;
     readonly Action<Account> _select;
     readonly Action<Account> _toggle;
     bool _hover;
 
+    public string AccountId => _model.Account.Id;
+
     public bool Expanded => _model.Expanded;
+
+    /// <summary>原地换一行的数据，避免每次切换账号都销毁重建控件（切一次要重建 N 个窗口，肉眼可见卡顿）。</summary>
+    public void Update(AccountRowModel model)
+    {
+        if (model.Account.Id != _model.Account.Id)
+            throw new InvalidOperationException("row id mismatch");
+        _model = model;
+        Invalidate();
+    }
 
     public AccountRow(AccountRowModel model, Action<Account> select, Action<Account> toggle)
     {

@@ -1100,6 +1100,8 @@ sealed class SettingsForm : Form
             a.Id == selected?.Id, a.Id == selected?.Id && _expanded, status, tone);
     }
 
+    string _rowSignature = "";
+
     void FillAccountRows()
     {
         // 刷新时保留用户选中的行，避免视线和选中行被「当前 Cursor 账号」抢走。
@@ -1111,7 +1113,18 @@ sealed class SettingsForm : Form
             .Concat(_cfg.DoubaoAccounts)
             .Select(a => RowModel(a, selected))
             .ToList();
-        _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+        // 同样的行状态反复刷新（保存回调会再来一遍）时别再重建一遍控件。
+        var signature = string.Join("|", rows.Select(r =>
+            $"{r.Account.Id}:{r.Percent}:{r.Selected}:{r.Expanded}:{r.StatusText}")) + "#" + (_expanded ? 1 : 0);
+        if (signature != _rowSignature || _accountCard.Controls.Count == 0)
+        {
+            _rowSignature = signature;
+            _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+        }
+        else if (_accountCard.EditorMounted != (_expanded && selected is not null))
+        {
+            _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+        }
         if (selected is not null)
         {
             _accountEditor.SetAccount(selected, selected.IsDoubao);
