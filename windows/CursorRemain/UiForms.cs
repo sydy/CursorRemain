@@ -1067,6 +1067,11 @@ sealed class SettingsForm : Form
         _startAt.Enabled = hasAccount;
         _days.Enabled = hasAccount;
         _hours.Enabled = hasAccount;
+        // 没有豆包账号时，粘贴/重登/删除都是空操作，别让它们看起来可点。
+        var hasDoubao = _cfg.DoubaoAccounts.Count > 0;
+        _doubaoPaste.Enabled = hasDoubao;
+        _doubaoRelogin.Enabled = hasDoubao;
+        _doubaoDelete.Enabled = hasDoubao;
     }
 
     void ApplyAccountMetrics()

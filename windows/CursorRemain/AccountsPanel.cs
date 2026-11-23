@@ -199,22 +199,30 @@ sealed class AccountsCard : Panel
         {
             var y = HeaderHeight;
             var rowH = RowHeight;
+            var editorPlaced = false;
+            // 编辑区必须贴在“被展开的那一行”下面，而不是整张表的末尾。
             foreach (var row in _rows)
             {
                 row.SetBounds(0, y, width, rowH);
                 y += rowH;
+                if (!editorPlaced && row.Expanded && _editor is { } inline)
+                {
+                    inline.Width = width;
+                    inline.PerformLayout();
+                    inline.SetBounds(0, y, width, inline.Height);
+                    y += inline.Height + S(4);
+                    editorPlaced = true;
+                }
             }
-            if (_editor is { } editor)
+            if (!editorPlaced && _editor is { } tail)
             {
-                editor.Width = width;
-                editor.PerformLayout();
-                editor.SetBounds(0, y, width, editor.Height);
-                y += editor.Height + S(4);
+                tail.Width = width;
+                tail.PerformLayout();
+                tail.SetBounds(0, y, width, tail.Height);
+                y += tail.Height + S(4);
             }
-            else
-            {
+            if (!editorPlaced)
                 y += S(6);
-            }
             var want = Math.Max(S(70), y);
             if (Height != want)
                 Height = want;
@@ -262,6 +270,8 @@ sealed class AccountRow : Control
     readonly Action<Account> _select;
     readonly Action<Account> _toggle;
     bool _hover;
+
+    public bool Expanded => _model.Expanded;
 
     public AccountRow(AccountRowModel model, Action<Account> select, Action<Account> toggle)
     {
