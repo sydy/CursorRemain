@@ -241,20 +241,15 @@ struct SettingsRootView: View {
 
     var doubaoCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text("豆包账号").font(.callout).fontWeight(.semibold)
-                if let first = store.config.doubaoAccounts.first {
-                    Text(StatusText.formatAccountCheckStatus(first))
-                        .font(.caption)
-                        .foregroundStyle(first.lastError.isEmpty ? Color.secondary : Color.red)
-                }
-                Spacer()
-                Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
-                    .controlSize(.small)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(doubaoLoginRunning)
-            }
             if store.config.doubaoAccounts.isEmpty {
+                HStack(spacing: 8) {
+                    Text("豆包账号").font(.callout).fontWeight(.semibold)
+                    Spacer()
+                    Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(doubaoLoginRunning)
+                }
                 Text("豆包额度只在本机读取，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -598,13 +593,14 @@ struct SettingsRootView: View {
             } else {
                 accountHeaderRow
                 AccountRowLine()
-                ForEach(Array(store.config.accounts.enumerated()), id: \.element.id) { pair in
+                let rows = store.config.accounts.filter { !$0.isDoubao }
+                ForEach(Array(rows.enumerated()), id: \.element.id) { pair in
                     accountRow(pair.element)
                     if pair.element.id == store.config.activeAccountId && accountEditorOpen {
                         accountEditor
                         AccountRowLine()
                     }
-                    if pair.offset < store.config.accounts.count - 1 {
+                    if pair.offset < rows.count - 1 {
                         AccountRowLine()
                     }
                 }
