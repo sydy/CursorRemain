@@ -27,9 +27,6 @@ sealed class SettingsForm : Form
     readonly HintBlock _spendHint = UiChrome.Hint(
         "月费填 0 则按套餐预填。",
         "月费填 0 则按套餐预填：Plus $8 / Premium $30 / Super $100 / Ultra $200，旧套餐 Pro $20 / Pro+ $60。年付请填折合月费。实际成本在「账户」里按账号填写。");
-    readonly HintBlock _actualHint = UiChrome.Hint(
-        "仅当前账号。短期号请买价÷天数×30。",
-        "仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费，按需不再按官网标价另加。");
     readonly TextBox _thresholds = new() { Width = 180 };
     readonly CheckBox _notify = new FlatCheck { Text = "启用用量通知", Margin = Padding.Empty };
     readonly CheckBox _exhaust = new FlatCheck { Text = "启用耗尽风险通知", Margin = Padding.Empty };
@@ -75,8 +72,16 @@ sealed class SettingsForm : Form
     readonly Button _syncNow = ActionButton("立即同步", UiButtonKind.Primary);
     readonly Button _syncExport = ActionButton("导出…");
     readonly Button _syncImport = ActionButton("导入…");
-    readonly DataGridView _accounts = MakeAccountGrid();
-    readonly Panel _accountHost;
+    readonly AccountsCard _accountCard = new();
+    readonly AccountHeaderRow _accountHeader;
+    readonly AccountEditorPanel _accountEditor;
+    readonly DoubaoCard _doubaoCard;
+    readonly Panel _kindRow;
+    readonly Panel _channelRow;
+    readonly Panel _actualCnyRow;
+    readonly Label _accountHeading = UiChrome.Heading("账号", first: true);
+    readonly Label _accountMeta = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = Padding.Empty };
+    readonly Label _doubaoState = new() { AutoSize = true, ForeColor = Color.DimGray, Margin = Padding.Empty };
     readonly ComboBox _kind = new FlatCombo { Width = 220 };
     readonly FlatDatePicker _startAt = new FlatDatePicker()
     {
@@ -93,12 +98,7 @@ sealed class SettingsForm : Form
     readonly Panel _durationRow;
     readonly Button _addToggle = ActionButton("添加账号", UiButtonKind.Primary);
     readonly Button _accountCheck = ActionButton("检查状态");
-    readonly Button _accountLogin = ActionButton("让 Cursor 使用此账号");
-    readonly Button _accountRename = ActionButton("重命名");
-    readonly Button _accountDelete = ActionButton("删除", UiButtonKind.Danger);
-    readonly Label _accountSectionHeading = UiChrome.Heading("当前账号配置");
     readonly Button _loginNew = ActionButton("登录新账号", UiButtonKind.Primary);
-    readonly Label _doubaoHeading = UiChrome.Heading("豆包账号");
     readonly Label _doubaoHint = new()
     {
         AutoSize = true,
@@ -218,37 +218,8 @@ sealed class SettingsForm : Form
         _loginNew.Click += (_, _) => LoginNewAccount();
         _doubaoAdd.Click += (_, _) => LoginDoubao(null);
         _doubaoPaste.Click += (_, _) => PasteDoubaoCookie(null);
-        _doubaoRelogin.Click += (_, _) =>
-        {
-            var acc = _cfg.ActiveDoubaoAccount;
-            if (acc is null) { MessageBox.Show(this, "还没有豆包账号，请先登录。", "豆包账号"); return; }
-            LoginDoubao(acc.Id);
-        };
-        _doubaoDelete.Click += (_, _) =>
-        {
-            // 以列表里选中的豆包行为准；没有选中豆包行时退回「当前豆包账号」。
-            var acc = DoubaoTarget();
-            if (acc is null || !acc.IsDoubao)
-            {
-                MessageBox.Show(this, "列表里没有可删除的豆包账号。请先选中要删除的豆包行。", "删除豆包账号");
-                return;
-            }
-            var name = string.IsNullOrWhiteSpace(acc.Label) ? "豆包账号（登录已失效）" : acc.DisplayLabel;
-            var confirm = string.Join(Environment.NewLine,
-                $"确定删除豆包账号「{name}」？",
-                "",
-                $"账号：{acc.Id}",
-                "删除后本机保存的 Cookie 一并清除，之后仍可用「登录豆包账号」重新添加。");
-            if (MessageBox.Show(this, confirm, "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Doubao))
-            {
-                MessageBox.Show(this, "删除失败：目标不是豆包账号，未做任何修改。", "删除豆包账号");
-                return;
-            }
-            LoadFrom(_cfg);
-            _pageStatus.Text = $"已删除豆包账号「{name}」";
-            NotifySaved();
-        };
+        _doubaoRelogin.Click += (_, _) => ReloginDoubao();
+        _doubaoDelete.Click += (_, _) => DeleteDoubaoAccount();
         var addStack = MakeStack(
             FollowRow(_loginNew),
             _loginNote,
@@ -260,25 +231,25 @@ sealed class SettingsForm : Form
         addStack.Dock = DockStyle.Fill;
         _addPanel.Controls.Add(addStack);
         _addToggle.Click += (_, _) => ShowAddAccount();
-        _accountHost = new FixedHost(140);
-        _accounts.Dock = DockStyle.Fill;
-        _accountHost.Controls.Add(_accounts);
+        _kindRow = FieldRow("账号类型", _kind, FormTone.FieldWidthCombo);
+        _channelRow = FieldRow("渠道", _channel, FormTone.FieldWidthCombo);
+        _actualCnyRow = FieldRow("实际成本（¥）", _actualCny, FormTone.FieldWidthMedium);
+        _accountEditor = new AccountEditorPanel(_kindRow, _channelRow, _actualCnyRow, _startRow, _durationRow, _endAtRow);
+        _accountEditor.RenameClicked += (_, _) => RenameSelected();
+        _accountEditor.DeleteClicked += (_, _) => DeleteSelected();
+        _accountEditor.ReloginClicked += (_, _) => ReloginDoubao();
+        _accountHeading.Margin = Padding.Empty;
+        _accountMeta.Margin = new Padding(10, 5, 0, 0);
+        _accountHeader = new AccountHeaderRow(_accountHeading, _accountMeta, _accountCheck, _addToggle);
+        _accountCard.RowSelected += SelectAccountRow;
+        _accountCard.RowToggleClicked += ToggleAccountRow;
+        _doubaoCard = new DoubaoCard(UiChrome.Heading("豆包账号"), _doubaoState, _doubaoHint,
+            Flow(_doubaoAdd, _doubaoPaste, _doubaoRelogin, _doubaoDelete));
         _tabs.AddPage(SettingsLayout.AccountTab, MakeTab(
-            UiChrome.Heading("账号", first: true),
-            FollowRow(_accountHost),
-            FollowRow(ImportRow(_addToggle, _accountCheck, _accountLogin, _accountRename, _accountDelete)),
-            _accountSectionHeading,
-            FieldRow("账号类型", _kind, FormTone.FieldWidthCombo),
-            _startRow,
-            _durationRow,
-            _endAtRow,
-            FieldRow("渠道", _channel, FormTone.FieldWidthCombo),
-            FieldRow("实际成本（人民币）", _actualCny, FormTone.FieldWidthMedium),
-            _actualHint,
+            _accountHeader,
+            _accountCard,
             FollowRow(_pageStatus),
-            _doubaoHeading,
-            FollowRow(_doubaoHint),
-            FollowRow(ImportRow(_doubaoAdd, _doubaoPaste, _doubaoRelogin, _doubaoDelete))));
+            _doubaoCard));
         _tabs.AddPage(SettingsLayout.NotifyTab, MakeTab(
             UiChrome.Heading("刷新与通知", first: true),
             FieldRow("刷新间隔（分钟）", _interval, FormTone.FieldWidthShort),
@@ -334,65 +305,12 @@ sealed class SettingsForm : Form
             _cfg.ColorMode = _appearance.Value;
             NotifySaved();
         };
-        _accounts.SelectionChanged += (_, _) =>
-        {
-            if (_loading) return;
-            if (_accounts.CurrentRow?.Tag is not string id || id.Length == 0) return;
-            if (_cfg.DoubaoAccounts.Any(a => a.Id == id))
-            {
-                if (id == _cfg.ActiveDoubaoAccountId) return;
-                _cfg.SetActiveDoubaoAccount(id);
-                UpdateDoubaoTargetUi();
-                NotifySaved();
-                return;
-            }
-            if (id == _cfg.ActiveAccountId) return;
-            ReadKindInto(_cfg.ActiveAccount);
-            ReadActualCnyInto(_cfg.ActiveAccount);
-            ReadChannelInto(_cfg.ActiveAccount);
-            _cfg.SetActiveAccount(id);
-            NotifySaved();
-            WriteKindFrom(_cfg.ActiveAccount);
-            WriteActualCnyFrom(_cfg.ActiveAccount);
-            WriteChannelFrom(_cfg.ActiveAccount);
-            UpdateAccountSectionHeading();
-        };
         _accountCheck.Click += (_, _) =>
         {
             if (_cfg.CursorAccounts.Count == 0) return;
             _pageStatus.Text = "正在检查账号状态…";
             _accountCheck.Enabled = false;
             _requestRefresh();
-        };
-        _accountRename.Click += (_, _) => RenameActive();
-        _accountLogin.Click += async (_, _) => await LoginToCursor();
-        _accountDelete.Click += (_, _) =>
-        {
-            // 只删列表里明确选中的那一行；没有选中行就什么都不做，绝不用「当前账号」兜底。
-            var selected = _accounts.CurrentRow?.Tag as string;
-            var acc = string.IsNullOrEmpty(selected)
-                ? null
-                : _cfg.Accounts.FirstOrDefault(a => a.Id == selected);
-            if (acc is null)
-            {
-                MessageBox.Show(this, "请先在列表里选中要删除的账号。", "删除账号");
-                return;
-            }
-            if (!acc.IsCursor)
-            {
-                MessageBox.Show(this, "选中的是豆包账号，请使用下方「删除豆包账号」。", "删除账号");
-                return;
-            }
-            if (MessageBox.Show($"确定删除「{acc.DisplayLabel}」？", "删除账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
-            if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Cursor))
-            {
-                MessageBox.Show(this, "删除失败：目标不是 Cursor 账号，未做任何修改。", "删除账号");
-                return;
-            }
-            var name = acc.DisplayLabel;
-            LoadFrom(_cfg);
-            _pageStatus.Text = $"已删除账号「{name}」";
-            NotifySaved();
         };
         _kind.SelectedIndexChanged += (_, _) =>
         {
@@ -447,7 +365,7 @@ sealed class SettingsForm : Form
     protected override void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
-        ApplyAccountGridMetrics();
+        ApplyAccountMetrics();
         SizeButtons();
         PadFooter();
         FitOnce();
@@ -459,7 +377,7 @@ sealed class SettingsForm : Form
         BeginInvoke(() =>
         {
             UiChrome.Apply(this);
-            ApplyAccountGridMetrics();
+            ApplyAccountMetrics();
             SizeButtons();
             PadFooter();
             FitOnce();
@@ -555,7 +473,7 @@ sealed class SettingsForm : Form
                     child.PerformLayout();
                 }
             }
-            var bottomCtrl = _pageStatus.Visible ? (Control)_pageStatus : _actualHint;
+            var bottomCtrl = _pageStatus.Visible ? (Control)_pageStatus : _doubaoCard;
             var bodyH = MapBottom(bottomCtrl.Parent ?? bottomCtrl, _tabs.Pages[0]);
             var extra = UiLayout.ScalePx(SettingsLayout.FitExtra, dpi);
             var cap = Math.Max(1, work.Height - margin);
@@ -742,7 +660,7 @@ sealed class SettingsForm : Form
         foreach (var label in new[] { _pageStatus, _syncStatus, _endAt })
             label.MaximumSize = new Size(inner, 0);
         _status.MaximumSize = new Size(addInner, 0);
-        foreach (var hint in new[] { _actualHint, _syncHint, _spendHint, _updateHint })
+        foreach (var hint in new[] { _syncHint, _spendHint, _updateHint })
             hint.SetInnerWidth(inner);
         _hint.SetInnerWidth(addInner);
     }
@@ -857,32 +775,6 @@ sealed class SettingsForm : Form
         return row;
     }
 
-    static DataGridView MakeAccountGrid()
-    {
-        var grid = new DataGridView
-        {
-            ReadOnly = true,
-            AllowUserToAddRows = false,
-            AllowUserToDeleteRows = false,
-            AllowUserToResizeRows = false,
-            AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
-            ColumnHeadersHeight = 28,
-            RowHeadersVisible = false,
-            SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-            MultiSelect = false,
-            BorderStyle = BorderStyle.None,
-            ScrollBars = ScrollBars.Vertical,
-            RowTemplate = { Height = 28 },
-        };
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "name", HeaderText = "账号", FillWeight = 28, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "plan", HeaderText = "套餐", FillWeight = 16, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "status", HeaderText = "状态", FillWeight = 18, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "checked", HeaderText = "更新时间", FillWeight = 22, SortMode = DataGridViewColumnSortMode.NotSortable });
-        grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "kind", HeaderText = "类型", FillWeight = 12, SortMode = DataGridViewColumnSortMode.NotSortable });
-        return grid;
-    }
-
     static Button ActionButton(string text, UiButtonKind kind = UiButtonKind.Secondary)
         => UiChrome.Button(text, kind);
 
@@ -990,19 +882,149 @@ sealed class SettingsForm : Form
         UpdateAccountButtons();
     }
 
-    /// <summary>删除豆包账号的目标：优先列表选中行，其次当前豆包账号。</summary>
+    /// <summary>删除豆包账号的目标：优先列表选中的豆包行，其次当前豆包账号。</summary>
     Account? DoubaoTarget()
     {
-        var selected = _accounts.CurrentRow?.Tag as string;
-        var byRow = string.IsNullOrEmpty(selected)
+        var byRow = _selectedId.Length == 0
             ? null
-            : _cfg.Accounts.FirstOrDefault(a => a.Id == selected && a.IsDoubao);
+            : _cfg.Accounts.FirstOrDefault(a => a.Id == _selectedId && a.IsDoubao);
         return byRow ?? _cfg.ActiveDoubaoAccount;
+    }
+
+    string _selectedId = "";
+    bool _expanded = true;
+
+    Account? DisplaySelection()
+    {
+        if (_selectedId.Length > 0)
+        {
+            var hit = _cfg.Accounts.FirstOrDefault(a => a.Id == _selectedId);
+            if (hit is not null) return hit;
+        }
+        return _cfg.ActiveAccount ?? _cfg.ActiveDoubaoAccount;
+    }
+
+    void SelectAccountRow(Account acc)
+    {
+        if (acc.Id == _selectedId && _expanded) return;
+        _selectedId = acc.Id;
+        _expanded = true;
+        ActivateAccount(acc);
+        FillAccountRows();
+    }
+
+    void ToggleAccountRow(Account acc)
+    {
+        if (acc.Id != _selectedId)
+        {
+            _selectedId = acc.Id;
+            _expanded = true;
+            ActivateAccount(acc);
+        }
+        else
+        {
+            _expanded = !_expanded;
+        }
+        FillAccountRows();
+    }
+
+    /// <summary>行点击 = 选中并切换「当前账号」，和原来的表格选中行为一致。</summary>
+    void ActivateAccount(Account acc)
+    {
+        if (acc.IsDoubao)
+        {
+            if (acc.Id == _cfg.ActiveDoubaoAccountId) return;
+            _cfg.SetActiveDoubaoAccount(acc.Id);
+            UpdateDoubaoTargetUi();
+            NotifySaved();
+            return;
+        }
+        if (acc.Id == _cfg.ActiveAccountId) return;
+        ReadKindInto(_cfg.ActiveAccount);
+        ReadActualCnyInto(_cfg.ActiveAccount);
+        ReadChannelInto(_cfg.ActiveAccount);
+        _cfg.SetActiveAccount(acc.Id);
+        NotifySaved();
+        WriteKindFrom(_cfg.ActiveAccount);
+        WriteActualCnyFrom(_cfg.ActiveAccount);
+        WriteChannelFrom(_cfg.ActiveAccount);
+    }
+
+    void RenameSelected() => RenameActive();
+
+    void DeleteSelected()
+    {
+        var acc = _selectedId.Length == 0
+            ? null
+            : _cfg.Accounts.FirstOrDefault(a => a.Id == _selectedId);
+        if (acc is null)
+        {
+            MessageBox.Show(this, "请先在列表里选中要删除的账号。", "删除账号");
+            return;
+        }
+        if (acc.IsDoubao)
+        {
+            DeleteDoubaoAccount();
+            return;
+        }
+        if (MessageBox.Show($"确定删除「{acc.DisplayLabel}」？", "删除账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+        if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Cursor))
+        {
+            MessageBox.Show(this, "删除失败：目标不是 Cursor 账号，未做任何修改。", "删除账号");
+            return;
+        }
+        var name = acc.DisplayLabel;
+        _selectedId = "";
+        LoadFrom(_cfg);
+        _pageStatus.Text = $"已删除账号「{name}」";
+        NotifySaved();
+    }
+
+    void ReloginDoubao()
+    {
+        var acc = DoubaoTarget();
+        if (acc is null)
+        {
+            MessageBox.Show(this, "还没有豆包账号，请先登录。", "豆包账号");
+            return;
+        }
+        LoginDoubao(acc.Id);
+    }
+
+    void DeleteDoubaoAccount()
+    {
+        var acc = DoubaoTarget();
+        if (acc is null || !acc.IsDoubao)
+        {
+            MessageBox.Show(this, "列表里没有可删除的豆包账号。请先选中要删除的豆包行。", "删除豆包账号");
+            return;
+        }
+        var name = string.IsNullOrWhiteSpace(acc.Label) ? "豆包账号（登录已失效）" : acc.DisplayLabel;
+        var confirm = string.Join(Environment.NewLine,
+            $"确定删除豆包账号「{name}」？",
+            "",
+            $"账号：{acc.Id}",
+            "删除后本机保存的 Cookie 一并清除，之后仍可用「登录豆包账号」重新添加。");
+        if (MessageBox.Show(this, confirm, "删除豆包账号", MessageBoxButtons.OKCancel) != DialogResult.OK) return;
+        if (!_cfg.RemoveAccount(acc.Id, AccountProvider.Doubao))
+        {
+            MessageBox.Show(this, "删除失败：目标不是豆包账号，未做任何修改。", "删除豆包账号");
+            return;
+        }
+        if (_selectedId == acc.Id) _selectedId = "";
+        LoadFrom(_cfg);
+        _pageStatus.Text = $"已删除豆包账号「{name}」";
+        NotifySaved();
     }
 
     void UpdateDoubaoTargetUi()
     {
         var acc = _cfg.ActiveDoubaoAccount;
+        var stale = acc is not null && (string.IsNullOrWhiteSpace(acc.Token) || !string.IsNullOrEmpty(acc.LastError));
+        _doubaoState.Text = acc is null ? "未登录" : stale ? "登录已失效" : "已连接";
+        _doubaoState.ForeColor = acc is null
+            ? UiChrome.SecondaryText()
+            : stale ? UiChrome.ColorOf(UiChrome.Tone.Danger) : UiChrome.GoodText();
         var who = acc is null
             ? "当前没有豆包账号。"
             : $"当前豆包账号：{(string.IsNullOrWhiteSpace(acc.Label) ? "豆包账号（登录已失效）" : acc.DisplayLabel)}；「删除豆包账号」只删这一行。";
@@ -1011,21 +1033,22 @@ sealed class SettingsForm : Form
         _doubaoDelete.Enabled = _cfg.DoubaoAccounts.Count > 0;
     }
 
-    void UpdateAccountSectionHeading()
+    void UpdateAccountMeta()
     {
-        var label = _cfg.ActiveAccount?.DisplayLabel;
-        _accountSectionHeading.Text = string.IsNullOrEmpty(label)
-            ? "当前账号配置"
-            : $"当前账号配置（{label}）";
-        UpdateAccountButtons();
+        var total = _cfg.Accounts.Count;
+        var active = (_cfg.ActiveAccount is null ? 0 : 1) + (_cfg.ActiveDoubaoAccount is null ? 0 : 1);
+        var latest = _cfg.Accounts
+            .Select(a => (a.UpdatedAt ?? "").Trim())
+            .Where(s => s.Length > 0)
+            .DefaultIfEmpty("")
+            .Max(StringComparer.Ordinal) ?? "";
+        var sync = latest.Length == 0 ? "尚未检查" : "已同步 " + AccountSync.FormatLocal(latest, "MM-dd HH:mm");
+        _accountMeta.Text = $"{total} 个 · {active} 个使用中 · {sync}";
     }
 
     void UpdateAccountButtons()
     {
         var hasAccount = _cfg.ActiveAccount is not null;
-        _accountRename.Enabled = hasAccount;
-        _accountDelete.Enabled = hasAccount;
-        _accountLogin.Enabled = hasAccount;
         _accountCheck.Enabled = _cfg.CursorAccounts.Count > 0;
         _kind.Enabled = hasAccount;
         _channel.Enabled = hasAccount;
@@ -1035,55 +1058,48 @@ sealed class SettingsForm : Form
         _hours.Enabled = hasAccount;
     }
 
-    void ApplyAccountGridMetrics()
+    void ApplyAccountMetrics()
     {
-        var dpi = DeviceDpi > 0 ? DeviceDpi : 96;
-        var rowH = UiLayout.ScalePx(28, dpi);
-        _accounts.ColumnHeadersHeight = rowH;
-        _accounts.RowTemplate.Height = rowH;
-        foreach (DataGridViewRow row in _accounts.Rows)
-        {
-            row.Height = rowH;
-        }
+        _accountEditor.PerformLayout();
+        _accountCard.PerformLayout();
+        _accountCard.Invalidate();
+    }
+
+    AccountRowModel RowModel(Account a, Account? selected)
+    {
+        var active = a.IsDoubao ? a.Id == _cfg.ActiveDoubaoAccountId : a.Id == _cfg.ActiveAccountId;
+        var failed = !string.IsNullOrEmpty(a.LastError);
+        var (status, tone) = active ? ("使用中", RowTone.Accent) : failed ? ("异常", RowTone.Danger) : ("待用", RowTone.Muted);
+        var kind = a.IsDoubao ? "豆包" : a.IsTemporary ? "临时" : "长期";
+        var percent = a.LastRemaining is { } remaining
+            ? (int?)Math.Clamp((int)Math.Round(remaining), 0, 100)
+            : null;
+        var plan = a.IsDoubao ? "" : StatusText.FormatAccountPlan(a);
+        if (plan == "—") plan = "";
+        var stamp = StatusText.FormatAccountCheckTime(a);
+        return new AccountRowModel(a, plan, stamp, kind, percent, active,
+            a.Id == selected?.Id, a.Id == selected?.Id && _expanded, status, tone);
     }
 
     void FillAccountRows()
     {
         // 刷新时保留用户选中的行，避免视线和选中行被「当前 Cursor 账号」抢走。
-        var keep = _accounts.CurrentRow?.Tag as string;
-        _accounts.Rows.Clear();
-        DataGridViewRow? activeRow = null;
-        DataGridViewRow? keepRow = null;
-        foreach (var a in _cfg.Accounts.Where(a => !a.IsDoubao).Concat(_cfg.DoubaoAccounts))
+        if (_selectedId.Length > 0 && !_cfg.Accounts.Any(a => a.Id == _selectedId))
+            _selectedId = "";
+        var selected = DisplaySelection();
+        var rows = _cfg.Accounts
+            .Where(a => !a.IsDoubao)
+            .Concat(_cfg.DoubaoAccounts)
+            .Select(a => RowModel(a, selected))
+            .ToList();
+        _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+        if (selected is not null)
         {
-            var index = _accounts.Rows.Add(
-                a.DisplayLabel,
-                StatusText.FormatAccountPlan(a),
-                StatusText.FormatAccountCheckStatus(a),
-                StatusText.FormatAccountCheckTime(a),
-                a.IsDoubao ? "豆包" : StatusText.FormatAccountKind(a));
-            var row = _accounts.Rows[index];
-            row.Tag = a.Id;
-            if (a.Id == _cfg.ActiveAccountId)
-            {
-                activeRow = row;
-            }
-            if (!string.IsNullOrEmpty(keep) && a.Id == keep)
-            {
-                keepRow = row;
-            }
+            _accountEditor.SetAccount(selected, selected.IsDoubao);
+            _accountEditor.SetTemporary(selected.IsTemporary);
         }
-        var target = keepRow ?? activeRow;
-        if (target != null)
-        {
-            _accounts.CurrentCell = target.Cells[0];
-            target.Selected = true;
-        }
-        else if (_accounts.Rows.Count == 0)
-        {
-            _accounts.CurrentCell = null;
-        }
-        ApplyAccountGridMetrics();
+        UpdateAccountMeta();
+        UpdateAccountButtons();
     }
 
     void LoadFrom(AppConfig cfg)
@@ -1146,7 +1162,7 @@ sealed class SettingsForm : Form
             _cloudMore.Visible = cfg.CloudLoggedIn;
             _syncStatus.Text = SyncStatusText(cfg);
             WriteKindFrom(cfg.ActiveAccount);
-            UpdateAccountSectionHeading();
+            UpdateAccountButtons();
         }
         finally { _loading = false; }
     }
@@ -1275,8 +1291,8 @@ sealed class SettingsForm : Form
         var show = _kind.SelectedIndex == 1;
         _startRow.Visible = show;
         _durationRow.Visible = show;
-        _endAtRow.Visible = show;
         _endAt.Visible = show;
+        _accountEditor.SetTemporary(show);
         if (IsHandleCreated)
             BeginInvoke(WrapText);
     }
@@ -1954,16 +1970,4 @@ sealed class SettingsForm : Form
         return double.TryParse(cleaned, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
-    sealed class FixedHost : Panel
-    {
-        public FixedHost(int height)
-        {
-            Height = height;
-            MinimumSize = new Size(0, height);
-            MaximumSize = new Size(int.MaxValue, height);
-        }
-
-        public override Size GetPreferredSize(Size proposedSize) =>
-            new(Math.Max(80, proposedSize.Width), Height);
-    }
 }
