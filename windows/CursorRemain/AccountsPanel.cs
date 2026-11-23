@@ -102,7 +102,7 @@ static class AccountPaint
 }
 
 /// <summary>
-/// The account table: a painted header strip, one <see cref="AccountRow"/> per account, and the
+/// The account table: a painted header strip, one painted row per account, and the
 /// inline editor pinned directly under the selected row. Scrolls with the settings page instead of
 /// owning a scrollbar, so the editor never detaches from the row it belongs to.
 /// </summary>
@@ -114,14 +114,15 @@ sealed class AccountsCard : Panel
     public event Action<Account>? RowSelected;
     public event Action<Account>? RowToggleClicked;
 
-    readonly List<AccountRow> _rows = [];
+    readonly List<AccountRowModel> _models = [];
     Control? _editor;
     bool _laying;
+    int _hover = -1;
 
     public AccountsCard()
     {
         DoubleBuffered = true;
-        SetStyle(ControlStyles.ResizeRedraw, true);
+        SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
         Margin = new Padding(0, 0, 0, 8);
     }
 
@@ -136,80 +137,71 @@ sealed class AccountsCard : Panel
     public int HeaderHeight => S(HeaderDesignHeight);
     public int RowHeight => S(RowDesignHeight);
 
-    public void SetContent(IEnumerable<AccountRowModel> models, Control? editor)
-    {
-        var list = models as IList<AccountRowModel> ?? models.ToList();
-        // 行数/顺序不变时只换数据，不再销毁重建控件。
-        var reusable = _rows.Count == list.Count;
-        if (reusable)
-        {
-            for (var i = 0; i < list.Count; i++)
-            {
-                if (_rows[i].AccountId != list[i].Account.Id) { reusable = false; break; }
-            }
-        }
-        NativeTheme.SetRedraw(this, false);
-        SuspendLayout();
-        try
-        {
-            if (_editor != editor)
-            {
-                if (_editor is not null)
-                {
-                    _editor.SizeChanged -= OnEditorSizeChanged;
-                    if (_editor.Parent == this) Controls.Remove(_editor);
-                }
-                _editor = editor;
-                if (_editor is not null)
-                {
-                    _editor.SizeChanged += OnEditorSizeChanged;
-                    Controls.Add(_editor);
-                }
-            }
-            if (reusable)
-            {
-                for (var i = 0; i < list.Count; i++)
-                    _rows[i].Update(list[i]);
-            }
-            else
-            {
-                foreach (var row in _rows)
-                {
-                    Controls.Remove(row);
-                    row.Dispose();
-                }
-                _rows.Clear();
-                foreach (var model in list)
-                {
-                    var row = new AccountRow(model, HandleSelect, HandleToggle) { Height = RowHeight };
-                    _rows.Add(row);
-                    Controls.Add(row);
-                }
-            }
-        }
-        finally
-        {
-            ResumeLayout(false);
-            NativeTheme.SetRedraw(this, true);
-        }
-        Invalidate(true);
-    }
-
     public bool EditorMounted => _editor is not null;
 
-    void HandleSelect(Account account) => RowSelected?.Invoke(account);
-    void HandleToggle(Account account) => RowToggleClicked?.Invoke(account);
+    public int RowCount => _models.Count;
+
+    public void SetContent(IEnumerable<AccountRowModel> models, Control? editor)
+    {
+        _models.Clear();
+        _models.AddRange(models);
+        if (_editor != editor)
+        {
+            if (_editor is not null)
+            {
+                _editor.SizeChanged -= OnEditorSizeChanged;
+                if (_editor.Parent == this) Controls.Remove(_editor);
+            }
+            _editor = editor;
+            if (_editor is not null)
+            {
+                _editor.SizeChanged += OnEditorSizeChanged;
+                Controls.Add(_editor);
+            }
+        }
+        _hover = -1;
+        PerformLayout();
+        Invalidate();
+    }
 
     void OnEditorSizeChanged(object? sender, EventArgs e)
     {
         if (_laying) return;
         PerformLayout();
+        Invalidate();
     }
 
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
         UiChrome.ApplyRoundRegion(this, S(10));
+    }
+
+    int RowTop(int index)
+    {
+        var y = HeaderHeight;
+        var rowH = RowHeight;
+        for (var i = 0; i < index && i < _models.Count; i++)
+        {
+            y += rowH;
+            if (_models[i].Expanded && _editor is not null)
+                y += _editor.Height + S(4);
+        }
+        return y;
+    }
+
+    Rectangle RowBounds(int index, int width)
+        => new(0, RowTop(index), width, RowHeight);
+
+    int IndexAt(Point p)
+    {
+        if (p.Y < HeaderHeight) return -1;
+        for (var i = 0; i < _models.Count; i++)
+        {
+            var top = RowTop(i);
+            if (p.Y >= top && p.Y < top + RowHeight) return i;
+        }
+        return -1;
     }
 
     protected override void OnLayout(LayoutEventArgs levent)
@@ -223,30 +215,17 @@ sealed class AccountsCard : Panel
         {
             var y = HeaderHeight;
             var rowH = RowHeight;
-            var editorPlaced = false;
-            // 编辑区必须贴在“被展开的那一行”下面，而不是整张表的末尾。
-            foreach (var row in _rows)
+            for (var i = 0; i < _models.Count; i++)
             {
-                row.SetBounds(0, y, width, rowH);
                 y += rowH;
-                if (!editorPlaced && row.Expanded && _editor is { } inline)
+                if (_models[i].Expanded && _editor is { } inline)
                 {
                     inline.Width = width;
                     inline.PerformLayout();
                     inline.SetBounds(0, y, width, inline.Height);
                     y += inline.Height + S(4);
-                    editorPlaced = true;
                 }
             }
-            if (!editorPlaced && _editor is { } tail)
-            {
-                tail.Width = width;
-                tail.PerformLayout();
-                tail.SetBounds(0, y, width, tail.Height);
-                y += tail.Height + S(4);
-            }
-            if (!editorPlaced)
-                y += S(6);
             var want = Math.Max(S(70), y);
             if (Height != want)
                 Height = want;
@@ -256,6 +235,47 @@ sealed class AccountsCard : Panel
             _laying = false;
         }
     }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        var index = IndexAt(e.Location);
+        if (index != _hover)
+        {
+            var width = ClientSize.Width;
+            if (_hover >= 0 && _hover < _models.Count) Invalidate(RowBounds(_hover, width));
+            _hover = index;
+            if (_hover >= 0) Invalidate(RowBounds(_hover, width));
+        }
+        Cursor = index >= 0 ? Cursors.Hand : Cursors.Default;
+    }
+
+    protected override void OnMouseLeave(EventArgs e)
+    {
+        if (_hover >= 0 && _hover < _models.Count)
+        {
+            var width = ClientSize.Width;
+            Invalidate(RowBounds(_hover, width));
+        }
+        _hover = -1;
+        Cursor = Cursors.Default;
+        base.OnMouseLeave(e);
+    }
+
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e);
+        if (e.Button != MouseButtons.Left) return;
+        var index = IndexAt(e.Location);
+        if (index < 0) return;
+        var model = _models[index];
+        var cols = AccountColumns.Compute(ClientSize.Width, Dpi);
+        if (e.X >= cols.OpsX) RowToggleClicked?.Invoke(model.Account);
+        else RowSelected?.Invoke(model.Account);
+    }
+
+    static string InitialOf(string label)
+        => string.IsNullOrWhiteSpace(label) ? "?" : System.Globalization.StringInfo.GetNextTextElement(label.Trim());
 
     protected override void OnPaintBackground(PaintEventArgs e)
     {
@@ -268,12 +288,11 @@ sealed class AccountsCard : Panel
         var pal = UiChrome.Tone;
         var header = HeaderHeight;
         var cols = AccountColumns.Compute(Width, Dpi);
+
         using (var strip = new SolidBrush(UiChrome.ColorOf(pal.Header)))
             g.FillRectangle(strip, 0, 0, Width, header);
-        g.SmoothingMode = SmoothingMode.None;
         using (var line = new SolidBrush(UiChrome.ColorOf(pal.Hairline)))
             g.FillRectangle(line, 0, header - 1, Width, 1);
-        g.SmoothingMode = SmoothingMode.AntiAlias;
 
         var secondary = UiChrome.ColorOf(pal.Secondary);
         var flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
@@ -283,75 +302,23 @@ sealed class AccountsCard : Panel
         TextRenderer.DrawText(g, "操作", AccountFonts.Caption, new Rectangle(cols.OpsX, 0, Width - cols.OpsX - cols.PadRight, header), secondary,
             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-        UiChrome.DrawRoundBorder(g, UiChrome.ColorOf(pal.Hairline), UiChrome.ColorOf(pal.Window), Width, Height, S(10));
-    }
-}
-
-/// <summary>One account line: avatar, name + kind pill, plan/time meta, quota bar, status, and the edit action.</summary>
-sealed class AccountRow : Control
-{
-    AccountRowModel _model;
-    readonly Action<Account> _select;
-    readonly Action<Account> _toggle;
-    bool _hover;
-
-    public string AccountId => _model.Account.Id;
-
-    public bool Expanded => _model.Expanded;
-
-    /// <summary>原地换一行的数据，避免每次切换账号都销毁重建控件（切一次要重建 N 个窗口，肉眼可见卡顿）。</summary>
-    public void Update(AccountRowModel model)
-    {
-        if (model.Account.Id != _model.Account.Id)
-            throw new InvalidOperationException("row id mismatch");
-        _model = model;
-        Invalidate();
-    }
-
-    public AccountRow(AccountRowModel model, Action<Account> select, Action<Account> toggle)
-    {
-        _model = model;
-        _select = select;
-        _toggle = toggle;
-        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Cursor = Cursors.Hand;
-    }
-
-    int Dpi => DeviceDpi > 0 ? DeviceDpi : 96;
-    int S(int px) => UiLayout.ScalePx(px, Dpi);
-
-    protected override void OnMouseMove(MouseEventArgs e)
-    {
-        base.OnMouseMove(e);
-        if (!_hover)
+        // 所有行都画在同一张图上：行不再是独立子窗口，滚动/切换时只重画这一层。
+        var y = header;
+        for (var i = 0; i < _models.Count; i++)
         {
-            _hover = true;
-            Invalidate();
+            DrawRow(g, _models[i], i, y);
+            y += RowHeight;
+            if (_models[i].Expanded && _editor is not null)
+                y += _editor.Height + S(4);
         }
+
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        UiChrome.DrawRoundBorder(g, UiChrome.ColorOf(pal.Hairline), UiChrome.ColorOf(pal.Window), Width, Height, S(10));
+        g.SmoothingMode = SmoothingMode.None;
     }
 
-    protected override void OnMouseLeave(EventArgs e)
+    void DrawRow(Graphics g, AccountRowModel model, int index, int top)
     {
-        _hover = false;
-        Invalidate();
-        base.OnMouseLeave(e);
-    }
-
-    protected override void OnMouseUp(MouseEventArgs e)
-    {
-        base.OnMouseUp(e);
-        if (e.Button != MouseButtons.Left) return;
-        var cols = AccountColumns.Compute(Width, Dpi);
-        if (e.X >= cols.OpsX) _toggle(_model.Account);
-        else _select(_model.Account);
-    }
-
-    static string InitialOf(string label)
-        => string.IsNullOrWhiteSpace(label) ? "?" : System.Globalization.StringInfo.GetNextTextElement(label.Trim());
-
-    protected override void OnPaint(PaintEventArgs e)
-    {
-        var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var pal = UiChrome.Tone;
         var cols = AccountColumns.Compute(Width, Dpi);
@@ -359,67 +326,69 @@ sealed class AccountRow : Control
         var text = UiChrome.ColorOf(pal.Text);
         var secondary = UiChrome.ColorOf(pal.Secondary);
         var accent = UiChrome.ColorOf(pal.Accent);
-        var selected = _model.Selected;
+        var selected = model.Selected;
+        var rowH = RowHeight;
+        var mid = top + rowH / 2;
 
         var bg = selected
             ? AccountPaint.Mix(window, UiChrome.ColorOf(pal.Selection), 0.55)
-            : _hover ? UiChrome.ColorOf(pal.Button) : window;
+            : index == _hover ? UiChrome.ColorOf(pal.Button) : window;
         using (var fill = new SolidBrush(bg))
-            g.FillRectangle(fill, ClientRectangle);
+            g.FillRectangle(fill, 0, top, Width, rowH);
 
         if (selected)
         {
             using var bar = new SolidBrush(accent);
-            g.FillRectangle(bar, 0, 0, S(2), Height);
+            g.FillRectangle(bar, 0, top, S(2), rowH);
         }
 
         // Avatar
         var avatar = S(24);
         var ax = cols.Left;
-        var ay = (Height - avatar) / 2;
+        var ay = mid - avatar / 2;
         using (var path = UiChrome.RoundRect(new Rectangle(ax, ay, avatar, avatar), S(6)))
-        using (var face = new SolidBrush(_model.Active ? AccountPaint.Mix(bg, accent, 0.20) : UiChrome.ColorOf(pal.Button)))
+        using (var face = new SolidBrush(model.Active ? AccountPaint.Mix(bg, accent, 0.20) : UiChrome.ColorOf(pal.Button)))
             g.FillPath(face, path);
-        TextRenderer.DrawText(g, InitialOf(_model.Account.DisplayLabel), AccountFonts.Meta, new Rectangle(ax, ay, avatar, avatar),
-            _model.Active ? accent : secondary,
+        TextRenderer.DrawText(g, InitialOf(model.Account.DisplayLabel), AccountFonts.Meta, new Rectangle(ax, ay, avatar, avatar),
+            model.Active ? accent : secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
         // Name + kind pill: the pill hugs the name instead of floating at the column edge.
         var nameX = ax + avatar + S(9);
-        var pillW = string.IsNullOrEmpty(_model.Pill)
+        var pillW = string.IsNullOrEmpty(model.Pill)
             ? 0
-            : TextRenderer.MeasureText(_model.Pill, AccountFonts.Pill, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width + S(10);
+            : TextRenderer.MeasureText(model.Pill, AccountFonts.Pill, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width + S(10);
         var nameRoom = Math.Max(S(40), cols.QuotaX - S(6) - nameX - (pillW > 0 ? pillW + S(8) : 0));
-        var rawNameW = TextRenderer.MeasureText(_model.Account.DisplayLabel, AccountFonts.Name, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
+        var rawNameW = TextRenderer.MeasureText(model.Account.DisplayLabel, AccountFonts.Name, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.NoPadding).Width;
         var nameW = Math.Max(S(20), Math.Min(rawNameW + S(12), nameRoom));
-        TextRenderer.DrawText(g, _model.Account.DisplayLabel, AccountFonts.Name,
-            new Rectangle(nameX, S(3), nameW, S(20)), text,
+        TextRenderer.DrawText(g, model.Account.DisplayLabel, AccountFonts.Name,
+            new Rectangle(nameX, top + S(3), nameW, S(20)), text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
         if (pillW > 0)
         {
-            var pillRect = new Rectangle(nameX + nameW + S(8), S(6), pillW, S(15));
+            var pillRect = new Rectangle(nameX + nameW + S(8), top + S(6), pillW, S(15));
             using (var path = UiChrome.RoundRect(pillRect, S(4)))
-            using (var face = new SolidBrush(_model.Account.IsDoubao ? AccountPaint.Mix(bg, accent, 0.18) : UiChrome.ColorOf(pal.Hairline)))
+            using (var face = new SolidBrush(model.Account.IsDoubao ? AccountPaint.Mix(bg, accent, 0.18) : UiChrome.ColorOf(pal.Hairline)))
                 g.FillPath(face, path);
-            TextRenderer.DrawText(g, _model.Pill, AccountFonts.Pill, pillRect,
-                _model.Account.IsDoubao ? accent : secondary,
+            TextRenderer.DrawText(g, model.Pill, AccountFonts.Pill, pillRect,
+                model.Account.IsDoubao ? accent : secondary,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         }
 
-        var meta = string.Join("  ·  ", new[] { _model.Plan, _model.Stamp }.Where(s => !string.IsNullOrEmpty(s)));
+        var meta = string.Join("  ·  ", new[] { model.Plan, model.Stamp }.Where(x => !string.IsNullOrEmpty(x)));
         if (meta.Length > 0)
             TextRenderer.DrawText(g, meta, AccountFonts.Meta,
-                new Rectangle(nameX, S(23), Math.Max(S(30), cols.QuotaX - S(6) - nameX), S(16)), secondary,
+                new Rectangle(nameX, top + S(23), Math.Max(S(30), cols.QuotaX - S(6) - nameX), S(16)), secondary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
 
         // Quota bar + percent
         var trackW = Math.Max(S(24), cols.QuotaW - S(42));
         var trackH = S(4);
-        var trackY = Height / 2 - trackH / 2;
+        var trackY = mid - trackH / 2;
         using (var path = UiChrome.RoundRect(new Rectangle(cols.QuotaX, trackY, trackW, trackH), trackH / 2))
         using (var track = new SolidBrush(UiChrome.ColorOf(pal.Hairline)))
             g.FillPath(track, path);
-        var pct = _model.Percent is { } value ? Math.Clamp(value, 0, 100) : (int?)null;
+        var pct = model.Percent is { } value ? Math.Clamp(value, 0, 100) : (int?)null;
         if (pct is { } p && p > 0)
         {
             var tone = AccountPaint.TierOf(p);
@@ -430,37 +399,32 @@ sealed class AccountRow : Control
         }
         var pctText = pct is { } shown ? shown + "%" : "—";
         TextRenderer.DrawText(g, pctText, AccountFonts.Meta,
-            new Rectangle(cols.QuotaX + trackW + S(6), Height / 2 - S(9), S(36), S(18)),
+            new Rectangle(cols.QuotaX + trackW + S(6), mid - S(9), S(36), S(18)),
             pct is { } c ? AccountPaint.Of(AccountPaint.TierOf(c)) : secondary,
             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
         // Status dot + label
         var dot = S(6);
-        using (var brush = new SolidBrush(AccountPaint.Of(_model.StatusTone)))
-            g.FillEllipse(brush, cols.StatusX, Height / 2 - dot / 2, dot, dot);
-        TextRenderer.DrawText(g, _model.StatusText, AccountFonts.Meta,
-            new Rectangle(cols.StatusX + S(10), Height / 2 - S(9), Math.Max(S(30), cols.StatusW - S(12)), S(18)),
-            AccountPaint.Of(_model.StatusTone),
+        using (var brush = new SolidBrush(AccountPaint.Of(model.StatusTone)))
+            g.FillEllipse(brush, cols.StatusX, mid - dot / 2, dot, dot);
+        TextRenderer.DrawText(g, model.StatusText, AccountFonts.Meta,
+            new Rectangle(cols.StatusX + S(10), mid - S(9), Math.Max(S(30), cols.StatusW - S(12)), S(18)),
+            AccountPaint.Of(model.StatusTone),
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
         // Row action
-        TextRenderer.DrawText(g, _model.Expanded ? "收起" : "编辑", AccountFonts.Meta,
-            new Rectangle(cols.OpsX, Height / 2 - S(9), Width - cols.OpsX - cols.PadRight, S(18)),
-            selected || _model.Expanded ? accent : secondary,
+        TextRenderer.DrawText(g, model.Expanded ? "收起" : "编辑", AccountFonts.Meta,
+            new Rectangle(cols.OpsX, mid - S(9), Width - cols.OpsX - cols.PadRight, S(18)),
+            selected || model.Expanded ? accent : secondary,
             TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
         g.SmoothingMode = SmoothingMode.None;
         using (var line = new SolidBrush(UiChrome.ColorOf(pal.Hairline)))
-            g.FillRectangle(line, S(14), Height - 1, Math.Max(1, Width - S(28)), 1);
+            g.FillRectangle(line, S(14), top + rowH - 1, Math.Max(1, Width - S(28)), 1);
         g.SmoothingMode = SmoothingMode.AntiAlias;
     }
 }
 
-/// <summary>
-/// The editor that hangs off the selected row: a 编辑 caption, the account name, text links, a
-/// three-column field grid built from the settings form's existing inputs, and the cost note.
-/// Doubao rows reuse the same shell with a note instead of Cursor-only fields.
-/// </summary>
 sealed class AccountEditorPanel : Panel
 {
     public const string DoubaoNote = "豆包额度只在本机显示，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。";

@@ -1116,7 +1116,7 @@ sealed class SettingsForm : Form
         // 同样的行状态反复刷新（保存回调会再来一遍）时别再重建一遍控件。
         var signature = string.Join("|", rows.Select(r =>
             $"{r.Account.Id}:{r.Percent}:{r.Selected}:{r.Expanded}:{r.StatusText}")) + "#" + (_expanded ? 1 : 0);
-        if (signature != _rowSignature || _accountCard.Controls.Count == 0)
+        if (signature != _rowSignature || _accountCard.RowCount == 0)
         {
             _rowSignature = signature;
             _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
