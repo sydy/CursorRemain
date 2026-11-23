@@ -186,6 +186,53 @@ class ApiTests(unittest.TestCase):
         strong = "S" * JWT_SECRET_MIN_LEN
         self.assertEqual(resolve_jwt_secret(strong, allow_dev=False), strong)
 
+    def test_refresh_reuses_token_and_slides_expiry(self) -> None:
+        from datetime import timedelta
+
+        from app.auth import now, now_iso
+        from app.db import get_conn, lock
+
+        self._register("reuse@harker.cn")
+        first = self.last_tokens
+        refresh = first["refresh_token"]
+
+        refreshed = self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        self.assertEqual(refreshed.status_code, 200, refreshed.text)
+        # A dropped response must be retryable: the same refresh token stays valid.
+        self.assertEqual(refreshed.json()["refresh_token"], refresh)
+        self.assertGreater(refreshed.json()["expires_in"], 0)
+        self.assertGreater(refreshed.json()["refresh_expires_in"], 0)
+        again = self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        self.assertEqual(again.status_code, 200, again.text)
+        self.assertEqual(again.json()["refresh_token"], refresh)
+
+        # Sliding expiry: a token close to its deadline is pushed back out.
+        fresh_window = now_iso(now() + timedelta(days=2))
+        with lock():
+            conn = get_conn()
+            conn.execute("UPDATE refresh_tokens SET expires_at = ? WHERE token_hash != ''", (fresh_window,))
+            conn.commit()
+        self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        with lock():
+            row = get_conn().execute("SELECT expires_at FROM refresh_tokens").fetchone()
+        expires = datetime.fromisoformat(str(row["expires_at"]).replace("Z", "+00:00"))
+        self.assertGreater(expires, now() + timedelta(days=settings.REFRESH_DAYS - 1))
+
+        # An actually expired token is still rejected and revoked.
+        with lock():
+            conn = get_conn()
+            conn.execute("UPDATE refresh_tokens SET expires_at = ?", (now_iso(now() - timedelta(minutes=1)),))
+            conn.commit()
+        dead = self.client.post("/v1/auth/refresh", json={"refresh_token": refresh})
+        self.assertEqual(dead.status_code, 401)
+
+        # Logout still revokes immediately.
+        logged = self.client.post("/v1/auth/login", json={"email": "reuse@harker.cn", "password": "password1"})
+        token = logged.json()["refresh_token"]
+        self.client.post("/v1/auth/logout", json={"refresh_token": token})
+        revoked = self.client.post("/v1/auth/refresh", json={"refresh_token": token})
+        self.assertEqual(revoked.status_code, 401)
+
     def test_import_rejects_empty_jwt_secret(self) -> None:
         server_root = Path(__file__).resolve().parents[1]
         env = os.environ.copy()

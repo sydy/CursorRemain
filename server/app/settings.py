@@ -43,8 +43,8 @@ def resolve_jwt_secret(raw: str | None = None, *, allow_dev: bool | None = None)
 
 
 JWT_SECRET = resolve_jwt_secret()
-ACCESS_MINUTES = max(5, _int("ACCESS_MINUTES", 15))
-REFRESH_DAYS = max(1, _int("REFRESH_DAYS", 30))
+ACCESS_MINUTES = max(5, _int("ACCESS_MINUTES", 60))
+REFRESH_DAYS = max(1, _int("REFRESH_DAYS", 180))
 VERIFY_CODE_MINUTES = max(5, _int("VERIFY_CODE_MINUTES", 15))
 SMTP_HOST = os.environ.get("SMTP_HOST", "").strip()
 SMTP_PORT = max(1, _int("SMTP_PORT", 587))

@@ -164,7 +164,16 @@ def revoke_refresh(raw: str) -> None:
         conn.commit()
 
 
-def rotate_refresh(raw: str) -> tuple[str, str]:
+def use_refresh(raw: str) -> str:
+    """Validate a refresh token and slide its expiry forward.
+
+    Refresh tokens are deliberately *not* rotated: rotation made every dropped
+    response (network hiccup, timeout, 5xx) permanently invalidate the session,
+    which is why clients kept landing on "登录已过期". Reuse is safe here because
+    only the client holds the raw token; logout and password changes still
+    revoke it server-side. Sliding expiry means an actively used app never
+    expires.
+    """
     digest = hash_refresh(raw)
     with lock():
         conn = get_conn()
@@ -182,13 +191,12 @@ def rotate_refresh(raw: str) -> tuple[str, str]:
             conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE id = ?", (row["id"],))
             conn.commit()
             raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
-        conn.execute("UPDATE refresh_tokens SET revoked = 1 WHERE id = ?", (row["id"],))
+        conn.execute(
+            "UPDATE refresh_tokens SET expires_at = ? WHERE id = ?",
+            (now_iso(now() + timedelta(days=settings.REFRESH_DAYS)), row["id"]),
+        )
         conn.commit()
-        user_id = str(row["user_id"])
-    user = get_user(user_id)
-    if user is None:
-        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
-    return create_access_token(user["id"], user["email"]), issue_refresh(user["id"])
+        return str(row["user_id"])
 
 
 def get_user(user_id: str) -> dict | None:
@@ -374,4 +382,5 @@ def token_payload(user: dict, refresh: str) -> dict:
         "email": user["email"],
         "sync_storage": user.get("sync_storage") or "server",
         "expires_in": settings.ACCESS_MINUTES * 60,
+        "refresh_expires_in": settings.REFRESH_DAYS * 86400,
     }

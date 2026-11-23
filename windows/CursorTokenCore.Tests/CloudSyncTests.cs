@@ -299,6 +299,7 @@ public class CloudSyncTests
         var cfg = LoggedIn();
         var handler = new ScriptedHandler
         {
+            RepeatLast = true,
             Steps =
             [
                 (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
@@ -308,6 +309,7 @@ public class CloudSyncTests
         };
         using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
         CloudSync.TestHttp = http;
+        var fast = ShortRetries();
         try
         {
             var status = await CloudSync.ReconcileAsync(cfg, write: false);
@@ -315,11 +317,95 @@ public class CloudSyncTests
             Assert.True(cfg.CloudLoggedIn);
             Assert.Equal("refresh-token", cfg.CloudRefreshToken);
             Assert.Equal("t@example.com", cfg.CloudEmail);
+            // A 5xx is retried a few times before the sync is reported as failed.
+            Assert.Equal(CloudSync.RefreshAttempts, handler.Calls.Count(c => c == "POST /v1/auth/refresh"));
         }
         finally
         {
+            CloudSync.RefreshAttempts = fast.Attempts;
+            CloudSync.RetryDelayMs = fast.Delay;
             CloudSync.TestHttp = null;
         }
+    }
+
+    [Fact]
+    public async Task RefreshRetriesTransient500ThenSucceeds()
+    {
+        var cfg = LoggedIn();
+        var handler = new ScriptedHandler
+        {
+            Steps =
+            [
+                (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
+                (HttpMethod.Post, "/v1/auth/refresh", 500, """{"detail":"Internal Server Error"}"""),
+                (HttpMethod.Post, "/v1/auth/refresh", 200, """{"access_token":"access-2","refresh_token":"refresh-2"}"""),
+                (HttpMethod.Get, "/v1/sync", 200, """{"revision":0}"""),
+            ],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        var fast = ShortRetries();
+        string? persisted = null;
+        CloudSync.PersistSession = c => { persisted = c.CloudRefreshToken; return Task.CompletedTask; };
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg, write: false);
+            Assert.True(status.Ok, status.Message);
+            Assert.Equal("access-2", cfg.CloudAccessToken);
+            Assert.Equal("refresh-2", cfg.CloudRefreshToken);
+            Assert.Equal("refresh-2", persisted);
+            Assert.Equal(
+                ["GET /v1/sync", "POST /v1/auth/refresh", "POST /v1/auth/refresh", "GET /v1/sync"],
+                handler.Calls);
+        }
+        finally
+        {
+            CloudSync.PersistSession = null;
+            CloudSync.RefreshAttempts = fast.Attempts;
+            CloudSync.RetryDelayMs = fast.Delay;
+            CloudSync.TestHttp = null;
+        }
+    }
+
+    [Fact]
+    public async Task RefreshUsesLatestTokenAfterConcurrentRefresh()
+    {
+        var cfg = LoggedIn();
+        var handler = new ScriptedHandler
+        {
+            Steps =
+            [
+                (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
+                (HttpMethod.Post, "/v1/auth/refresh", 200, """{"access_token":"access-2","refresh_token":"refresh-2"}"""),
+                // The retried data call still 401s because another sync rotated meanwhile.
+                (HttpMethod.Get, "/v1/sync", 401, """{"detail":"Token expired"}"""),
+                (HttpMethod.Post, "/v1/auth/refresh", 200, """{"access_token":"access-3","refresh_token":"refresh-2"}"""),
+                (HttpMethod.Get, "/v1/sync", 200, """{"revision":0}"""),
+            ],
+        };
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        CloudSync.TestHttp = http;
+        var fast = ShortRetries();
+        try
+        {
+            var status = await CloudSync.ReconcileAsync(cfg, write: false);
+            Assert.True(status.Ok, status.Message);
+            Assert.Equal("access-3", cfg.CloudAccessToken);
+            Assert.Equal("refresh-2", cfg.CloudRefreshToken);
+        }
+        finally
+        {
+            CloudSync.RefreshAttempts = fast.Attempts;
+            CloudSync.RetryDelayMs = fast.Delay;
+            CloudSync.TestHttp = null;
+        }
+    }
+
+    static (int Attempts, int Delay) ShortRetries()
+    {
+        var previous = (CloudSync.RefreshAttempts, CloudSync.RetryDelayMs);
+        CloudSync.RetryDelayMs = 1;
+        return previous;
     }
 
     [Fact]
@@ -364,11 +450,15 @@ public class CloudSyncTests
     {
         public List<(HttpMethod Method, string Path, int Status, string Body)> Steps { get; init; } = [];
         public List<string> Calls { get; } = [];
+        public bool RepeatLast { get; init; }
         int _i;
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var step = Steps[_i++];
+            if (_i >= Steps.Count && !RepeatLast)
+                throw new InvalidOperationException("unexpected HTTP call: " + request.RequestUri);
+            var step = _i < Steps.Count ? Steps[_i] : Steps[^1];
+            _i++;
             Calls.Add($"{request.Method.Method} {request.RequestUri!.AbsolutePath}");
             return Task.FromResult(new HttpResponseMessage((HttpStatusCode)step.Status)
             {

@@ -683,8 +683,30 @@ public static class ConfigStore
 
     static void AtomicWrite(string path, string contents)
     {
-        var tmp = path + ".tmp";
         var bytes = System.Text.Encoding.UTF8.GetBytes(contents);
+        IOException? last = null;
+        // Antivirus/OneDrive/indexers occasionally hold config.json open for a few
+        // milliseconds; retrying avoids losing a freshly refreshed session.
+        for (var attempt = 0; attempt < 4; attempt++)
+        {
+            if (attempt > 0) Thread.Sleep(60 * attempt);
+            try
+            {
+                AtomicWriteOnce(path, bytes);
+                RestrictToOwner(path);
+                return;
+            }
+            catch (IOException ex)
+            {
+                last = ex;
+            }
+        }
+        throw last ?? new IOException("无法写入配置");
+    }
+
+    static void AtomicWriteOnce(string path, byte[] bytes)
+    {
+        var tmp = path + ".tmp";
         using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None, 4096, FileOptions.WriteThrough))
         {
             fs.Write(bytes, 0, bytes.Length);
@@ -703,7 +725,6 @@ public static class ConfigStore
         {
             File.Move(tmp, path, true);
         }
-        RestrictToOwner(path);
     }
 
     static void RestrictToOwner(string path)

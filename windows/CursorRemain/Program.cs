@@ -175,6 +175,7 @@ sealed partial class TrayContext : ApplicationContext
     public TrayContext()
     {
         _config = ConfigStore.Load();
+        CloudSync.PersistSession = cfg => Task.Run(() => PersistCloudSession(cfg));
         AppUpdater.ConfirmPending(_config);
         _menu = new ContextMenuStrip();
         _dashboardItem = new ToolStripMenuItem();
@@ -567,6 +568,31 @@ sealed partial class TrayContext : ApplicationContext
         catch (Exception)
         {
             _icon.ShowBalloonTip(4000, "保存失败", "无法写入配置（文件忙碌或加密失败），请稍后再试。", ToolTipIcon.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Writes refreshed cloud credentials to disk immediately. A refresh token that
+    /// only lives in memory is lost on crash/restart, which forces a manual re-login.
+    /// </summary>
+    static void PersistCloudSession(AppConfig cfg)
+    {
+        try
+        {
+            ConfigStore.Update(live =>
+            {
+                live.CloudEmail = cfg.CloudEmail;
+                live.CloudAccessToken = cfg.CloudAccessToken;
+                live.CloudRefreshToken = cfg.CloudRefreshToken;
+                live.CloudAccessDecryptFailed = false;
+                live.CloudRefreshDecryptFailed = false;
+                live.StoredCloudAccessToken = "";
+                live.StoredCloudRefreshToken = "";
+            });
+        }
+        catch (Exception ex)
+        {
+            CrashLog.Write(ex);
         }
     }
 

@@ -14,6 +14,7 @@ from .auth import (
     LIMITER,
     bearer_user,
     client_ip,
+    create_access_token,
     create_user,
     create_email_code,
     consume_email_code,
@@ -26,9 +27,9 @@ from .auth import (
     maybe_purge_refresh,
     now_iso,
     revoke_refresh,
-    rotate_refresh,
     set_sync_storage,
     token_payload,
+    use_refresh,
     validate_email,
     validate_password,
     verify_password,
@@ -203,9 +204,17 @@ def login(body: AuthBody, request: Request):
 def refresh(body: RefreshBody, request: Request):
     LIMITER.check(f"auth:{client_ip(request)}", settings.AUTH_RATE_PER_MIN)
     maybe_purge_refresh()
-    access, raw = rotate_refresh(body.refresh_token.strip())
-    payload = {"access_token": access, "refresh_token": raw, "expires_in": settings.ACCESS_MINUTES * 60}
-    return payload
+    raw = body.refresh_token.strip()
+    user_id = use_refresh(raw)
+    user = get_user(user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="登录已过期，请重新登录")
+    return {
+        "access_token": create_access_token(user["id"], user["email"]),
+        "refresh_token": raw,
+        "expires_in": settings.ACCESS_MINUTES * 60,
+        "refresh_expires_in": settings.REFRESH_DAYS * 86400,
+    }
 
 
 @app.post("/v1/auth/logout")

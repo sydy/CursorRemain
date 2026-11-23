@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="CursorTokenCore.Tests" />
+    <InternalsVisibleTo Include="CursorRemain" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="$(NativeOutputDir)cursor_core.dll" Link="cursor_core.dll" CopyToOutputDirectory="Always" Condition="Exists('$(NativeOutputDir)cursor_core.dll')" />
