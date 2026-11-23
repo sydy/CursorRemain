@@ -128,6 +128,11 @@ sealed class AccountsCard : Panel
     int Dpi => DeviceDpi > 0 ? DeviceDpi : 96;
     int S(int px) => UiLayout.ScalePx(px, Dpi);
 
+    // 自绘卡片没有天然首选宽度（Panel 默认 200），而外层纵向栈按首选宽度收敛；
+    // 这里按 UiForms 写入的 MinimumSize 上报，整条 AutoSize 链才不会被压窄。
+    public override Size GetPreferredSize(Size proposed)
+        => new(Math.Max(MinimumSize.Width, S(320)), Math.Max(MinimumSize.Height, Height));
+
     public int HeaderHeight => S(HeaderDesignHeight);
     public int RowHeight => S(RowDesignHeight);
 
@@ -738,6 +743,9 @@ sealed class AccountHeaderRow : Panel
 /// <summary>Compact 豆包 block: title + state, one wrapping note, and the cookie/login actions.</summary>
 sealed class DoubaoCard : Panel
 {
+    public override Size GetPreferredSize(Size proposed)
+        => new(Math.Max(MinimumSize.Width, Math.Max(240, Width)), Math.Max(MinimumSize.Height, Height));
+
     readonly Label _title;
     readonly Label _state;
     readonly Label _hint;

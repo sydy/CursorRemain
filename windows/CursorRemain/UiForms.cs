@@ -466,6 +466,7 @@ sealed class SettingsForm : Form
             {
                 foreach (Control child in page.Controls)
                 {
+                    child.MinimumSize = new Size(inner, 0);
                     child.Width = inner;
                     CollapseHiddenRows(child);
                     StretchRows(child, Math.Max(80, inner));
@@ -737,12 +738,22 @@ sealed class SettingsForm : Form
         body.Padding = new Padding(SettingsLayout.PagePadding, 16, SettingsLayout.PagePadding, 12);
         void FitBody()
         {
-            var w = Math.Max(1, page.ClientSize.Width);
+            // 用窗体宽度推内容宽度做下界：页面在被 AutoScale/Dock 挤压的中间态里
+            // 会短暂变得很窄，若按 page.ClientSize 计算，整页会被“棘轮”式锁死在窄列。
+            var fdpi = page.DeviceDpi > 0 ? page.DeviceDpi : 96;
+            var form = page.FindForm();
+            var floor = form == null ? 0 : Math.Max(80, form.ClientSize.Width
+                - UiLayout.ScalePx(SettingsLayout.NavWidth, fdpi)
+                - UiLayout.ScalePx(SettingsLayout.PagePadding * 2, fdpi)) + body.Padding.Horizontal;
+            var w = Math.Max(floor, page.ClientSize.Width);
             body.Width = w;
             var inner = Math.Max(80, w - body.Padding.Horizontal);
             var dpi = page.DeviceDpi > 0 ? page.DeviceDpi : 96;
             foreach (Control child in body.Controls)
             {
+                // 纵向 AutoSize 栈按“子控件首选宽度”收敛；自绘卡片没有首选宽度，
+                // 用最小宽度钉住内容区宽度，避免整页被压成窄列。
+                child.MinimumSize = new Size(inner, 0);
                 child.Width = inner;
                 if (child is FieldRowPanel row)
                     row.Fit(dpi);
@@ -1060,6 +1071,9 @@ sealed class SettingsForm : Form
 
     void ApplyAccountMetrics()
     {
+        var inner = ContentInnerWidth();
+        _accountCard.MinimumSize = new Size(inner, 0);
+        _doubaoCard.MinimumSize = new Size(inner, 0);
         _accountEditor.PerformLayout();
         _accountCard.PerformLayout();
         _accountCard.Invalidate();
@@ -1969,5 +1983,7 @@ sealed class SettingsForm : Form
         var cleaned = (text ?? "").Trim().Replace("，", ".");
         return double.TryParse(cleaned, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
+
+
 
 }
