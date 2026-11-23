@@ -105,6 +105,8 @@ sealed partial class TrayContext
         }
 
         var notices = new List<(string Title, string Body, bool Warn)>();
+        // 内存当前账号集合是结构权威：后台刷新从磁盘重建副本时，不能把本轮之前已删除的账号带回。
+        var authoritativeIds = _config.Accounts.Select(a => a.Id).ToList();
         AppConfig cfg;
         try
         {
@@ -162,7 +164,7 @@ sealed partial class TrayContext
                     }
                 }
                 live.SyncLegacyFields();
-            });
+            }, liveAccountIds: authoritativeIds);
         }
         catch (Exception ex)
         {

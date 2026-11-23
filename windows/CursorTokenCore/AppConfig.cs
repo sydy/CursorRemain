@@ -373,6 +373,30 @@ public sealed class AppConfig
         return true;
     }
 
+    /// <summary>
+    /// Drop accounts that are not in the authoritative in-memory id set. The background refresh
+    /// rebuilds its working copy from disk; without this pruning a stale on-disk copy can resurrect
+    /// an account the user just deleted before the asynchronous save landed. Cursor tombstones are
+    /// preserved so a later cloud merge cannot bring the deleted account back either.
+    /// </summary>
+    public void PruneToAccounts(IEnumerable<string> liveAccountIds)
+    {
+        var keep = liveAccountIds.ToHashSet(StringComparer.Ordinal);
+        foreach (var acc in Accounts.Where(a => !keep.Contains(a.Id)).ToList())
+        {
+            if (acc.IsCursor) AccountSync.RememberDeleted(this, acc.Id);
+        }
+        Accounts.RemoveAll(a => !keep.Contains(a.Id));
+        if (!Accounts.Any(a => a.Id == ActiveAccountId))
+        {
+            ActiveAccountId = CursorAccounts.FirstOrDefault()?.Id ?? "";
+            SessionActiveAccountId = ActiveAccountId;
+        }
+        if (!Accounts.Any(a => a.Id == ActiveDoubaoAccountId))
+            ActiveDoubaoAccountId = DoubaoAccounts.FirstOrDefault()?.Id ?? "";
+        SyncLegacyFields();
+    }
+
     public HashSet<string> ExistingTokenVariants()
     {
         var skip = new HashSet<string>();
@@ -589,7 +613,7 @@ public static class ConfigStore
     /// Reload from disk, apply <paramref name="mutate"/>, and save under the same lock
     /// so a long-running refresh cannot clobber settings saved in the meantime.
     /// </summary>
-    public static AppConfig Update(Action<AppConfig> mutate, string? directory = null)
+    public static AppConfig Update(Action<AppConfig> mutate, string? directory = null, IEnumerable<string>? liveAccountIds = null)
     {
         var dir = AppPaths.ConfigDirectory(directory);
         Directory.CreateDirectory(dir);
@@ -598,6 +622,7 @@ public static class ConfigStore
             var cfg = LoadUnlocked(dir);
             if (cfg.LoadError && cfg.Accounts.Count == 0) return cfg;
             mutate(cfg);
+            if (liveAccountIds is not null) cfg.PruneToAccounts(liveAccountIds);
             SaveUnlocked(cfg, dir);
             Remember(dir, cfg);
             return cfg;

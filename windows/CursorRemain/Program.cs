@@ -444,10 +444,11 @@ sealed partial class TrayContext : ApplicationContext
                     _config.UsdCnyRate,
                     (id, membership, start, end) =>
                     {
+                        var authoritativeIds = _config.Accounts.Select(a => a.Id).ToList();
                         _config = ConfigStore.Update(live =>
                         {
                             live.ApplySnapshot(id, membershipType: membership, billingCycleStart: start, billingCycleEnd: end);
-                        });
+                        }, liveAccountIds: authoritativeIds);
                     }));
                 _compare.FormClosed += (_, _) => _compare = null;
                 _compare.Show();
@@ -488,7 +489,8 @@ sealed partial class TrayContext : ApplicationContext
                         _config.ActiveAccount?.LastRemaining);
                 }, (id, start, end) =>
                 {
-                    _config = ConfigStore.Update(live => live.SetReportRange(id, start, end));
+                    var authoritativeIds = _config.Accounts.Select(a => a.Id).ToList();
+                    _config = ConfigStore.Update(live => live.SetReportRange(id, start, end), liveAccountIds: authoritativeIds);
                 });
                 _report.FormClosed += (_, _) => _report = null;
                 _report.Show();

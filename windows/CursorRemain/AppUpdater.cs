@@ -345,7 +345,7 @@ static class AppUpdater
                     cfg.AutoUpdateEnabled = live.AutoUpdateEnabled;
                     cfg.UpdateInstalledSha = live.UpdateInstalledSha;
                     cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
-                });
+                }, liveAccountIds: cfg.Accounts.Select(a => a.Id).ToList());
             }
             catch (Exception ex) { CrashLog.Write(ex); }
         }
@@ -417,7 +417,7 @@ static class AppUpdater
                 cfg.AutoUpdateEnabled = live.AutoUpdateEnabled;
                 cfg.UpdateInstalledSha = live.UpdateInstalledSha;
                 cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
-            });
+            }, liveAccountIds: cfg.Accounts.Select(a => a.Id).ToList());
         }
         catch (Exception ex) { CrashLog.Write(ex); }
     }
@@ -436,7 +436,7 @@ static class AppUpdater
                 cfg.UpdateLastError = "";
                 cfg.UpdateInstalledSha = live.UpdateInstalledSha;
                 cfg.UpdateInstalledAssetId = live.UpdateInstalledAssetId;
-            });
+            }, liveAccountIds: cfg.Accounts.Select(a => a.Id).ToList());
         }
         catch (Exception ex) { CrashLog.Write(ex); }
     }
