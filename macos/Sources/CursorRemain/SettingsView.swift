@@ -8,6 +8,7 @@ struct SettingsRootView: View {
     @ObservedObject var store: AppStore
     @State private var addOpen = false
     @State private var accountEditorOpen = true
+    @State private var showPasteCookie = false
     @State private var tab = "account"
     @State private var importing = false
     @State private var tokenText = ""
@@ -309,17 +310,27 @@ struct SettingsRootView: View {
                     Button("删除") { deleteDoubaoAccount(account) }
                 }
             }
-            TextEditor(text: $doubaoCookieText)
-                .font(.system(.caption, design: .monospaced))
-                .frame(height: 54)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-            HStack {
-                Button("用粘贴的 Cookie 更新当前豆包账号") { savePastedDoubaoCookie() }
-                    .disabled(store.config.activeDoubaoAccount == nil)
-                Text("页面侧栏「设置 → 账号」可复制 Cookie；也可以在登录窗口里完成扫码登录。")
+            DisclosureGroup(isExpanded: $showPasteCookie) {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextEditor(text: $doubaoCookieText)
+                        .font(.system(.caption, design: .monospaced))
+                        .frame(height: 54)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                    HStack {
+                        Button("用粘贴的 Cookie 更新当前豆包账号") { savePastedDoubaoCookie() }
+                            .disabled(store.config.activeDoubaoAccount == nil)
+                        Text("页面侧栏「设置 → 账号」可复制 Cookie。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            } label: {
+                Text("手动粘贴 Cookie")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
         }
     }
 
