@@ -83,7 +83,7 @@ enum AppUpdater {
         } catch is CancellationError {
             return "已取消更新"
         } catch {
-            let msg = "检查更新失败: \((error as? CursorAPIError)?.message ?? error.localizedDescription)"
+            let msg = "检查更新失败：\((error as? CursorAPIError)?.message ?? error.localizedDescription)"
             rememberCheck(store: store, error: msg)
             if manual && msg.contains("无法检查更新") {
                 openDownloadPage()

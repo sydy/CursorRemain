@@ -639,7 +639,7 @@ final class AppStore: ObservableObject {
             } catch let err as CursorAPIError {
                 return Outcome(id: account.id, provider: account.provider, snap: nil, error: err.message, authError: err.isAuthError, stamp: stamp)
             } catch {
-                return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败: \(error.localizedDescription)", authError: false, stamp: stamp)
+                return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败：\(error.localizedDescription)", authError: false, stamp: stamp)
             }
         }
         do {
@@ -648,7 +648,7 @@ final class AppStore: ObservableObject {
         } catch let err as CursorAPIError {
             return Outcome(id: account.id, provider: account.provider, snap: nil, error: err.message, authError: err.isAuthError, stamp: stamp)
         } catch {
-            return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败: \(error.localizedDescription)", authError: false, stamp: stamp)
+            return Outcome(id: account.id, provider: account.provider, snap: nil, error: "刷新失败：\(error.localizedDescription)", authError: false, stamp: stamp)
         }
     }
 

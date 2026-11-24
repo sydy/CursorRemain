@@ -1588,7 +1588,7 @@ sealed class SettingsForm : Form
         }
         catch (Exception ex)
         {
-            if (!IsDisposed) _updateStatus.Text = "检查更新失败: " + ex.Message;
+            if (!IsDisposed) _updateStatus.Text = "检查更新失败：" + ex.Message;
         }
         finally
         {

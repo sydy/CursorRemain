@@ -142,4 +142,10 @@ sealed class DoubaoLoginForm : Form
         DialogResult = ok ? DialogResult.OK : DialogResult.Cancel;
         if (!IsDisposed) Close();
     }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _poll.Dispose();
+        base.Dispose(disposing);
+    }
 }

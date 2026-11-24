@@ -75,7 +75,7 @@ sealed partial class TrayContext
         var others = cursorTargets.Where(a => a.Id != activeId).ToList();
 
         var outcomes = new List<RefreshOutcome>();
-        if (!string.IsNullOrEmpty(activeTarget.Id))
+        if (activeTarget is { Id: { Length: > 0 } })
         {
             var activeOutcome = await FetchOne(activeTarget);
             ApplyActiveOutcome(activeOutcome, generation);
@@ -243,7 +243,7 @@ sealed partial class TrayContext
             catch (Exception ex)
             {
                 CrashLog.Write(ex);
-                return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败: " + ex.Message, false, stamp);
+                return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败：" + ex.Message, false, stamp);
             }
         }
         try
@@ -259,7 +259,7 @@ sealed partial class TrayContext
         catch (Exception ex)
         {
             CrashLog.Write(ex);
-            return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败: " + ex.Message, false, stamp);
+            return new RefreshOutcome(acc.Id, acc.Provider, null, "刷新失败：" + ex.Message, false, stamp);
         }
     }
 }

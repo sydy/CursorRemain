@@ -465,6 +465,7 @@ sealed class ReportForm : Form
 
     static Control FilterTag(string label, Control field, bool first = false)
     {
+        using var chipFont = UiChrome.UiFont();
         var row = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -476,7 +477,7 @@ sealed class ReportForm : Form
             Text = label,
             AutoSize = false,
             Height = FormTone.FieldHeight,
-            Width = TextRenderer.MeasureText(label, UiChrome.UiFont()).Width + 4,
+            Width = TextRenderer.MeasureText(label, chipFont).Width + 4,
             TextAlign = ContentAlignment.MiddleLeft,
             Margin = new Padding(0, 2, 6, 2),
         });

@@ -39,6 +39,7 @@ sealed class CompareForm : Form
     readonly Button _syncBtn = UiChrome.Button("同步", UiButtonKind.Primary);
     readonly Button _exportBtn = UiChrome.Button("导出 CSV");
     AccountCompareReport _report = new();
+    Font? _boldFont;
     bool _syncing;
 
     public CompareForm(CursorClient client, Func<CompareState> state)
@@ -293,23 +294,45 @@ sealed class CompareForm : Form
         switch (kind)
         {
             case RowKind.Header:
-                row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
+                row.DefaultCellStyle.Font = BoldFont();
                 row.DefaultCellStyle.BackColor = UiChrome.HeaderFill();
                 break;
             case RowKind.Account:
-                row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
+                row.DefaultCellStyle.Font = BoldFont();
                 break;
             case RowKind.Category:
                 row.DefaultCellStyle.ForeColor = UiChrome.SecondaryText();
                 row.Cells["name"].Style.Padding = new Padding(18, 0, 0, 0);
                 break;
             case RowKind.Total:
-                row.DefaultCellStyle.Font = new Font(_grid.Font, FontStyle.Bold);
+                row.DefaultCellStyle.Font = BoldFont();
                 row.DefaultCellStyle.BackColor = UiChrome.HeaderFill();
                 break;
         }
         row.DefaultCellStyle.SelectionBackColor = UiChrome.SelectionFill();
         row.DefaultCellStyle.SelectionForeColor = UiChrome.ColorOf(UiChrome.Tone.Text);
+    }
+
+    /// <summary>缓存的粗体字体；按网格基础字体派生，避免每次重建行都新建 GDI 字体句柄。</summary>
+    Font BoldFont()
+    {
+        var baseFont = _grid.Font;
+        if (_boldFont is null
+            || _boldFont.FontFamily.Name != baseFont.FontFamily.Name
+            || Math.Abs(_boldFont.Size - baseFont.Size) > 0.01f
+            || _boldFont.Style != FontStyle.Bold)
+        {
+            _boldFont?.Dispose();
+            _boldFont = new Font(baseFont, FontStyle.Bold);
+        }
+        return _boldFont;
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _boldFont?.Dispose();
+        _boldFont = null;
+        base.OnFormClosed(e);
     }
 
     static object[] Line(string name, string window, string holding, string paid, string requests, string tokens, string perM, string perR) =>

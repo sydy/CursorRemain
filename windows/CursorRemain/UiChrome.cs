@@ -3474,6 +3474,9 @@ sealed class FlatMonthView : Control
         var accent = UiChrome.ColorOf(pal.Accent);
         var onAccent = UiChrome.ColorOf(pal.OnAccent);
         var hover = UiChrome.ColorOf(pal.ButtonHover);
+        using var titleFont = UiChrome.UiFont(10f, FontStyle.Bold);
+        using var todayFont = UiChrome.UiFont(9f);
+        using var timeTitleFont = UiChrome.UiFont(8.25f);
         using (var bg = new SolidBrush(window))
             g.FillRectangle(bg, ClientRectangle);
 
@@ -3485,7 +3488,7 @@ sealed class FlatMonthView : Control
         var titleAlign = _showTime
             ? TextFormatFlags.Left | TextFormatFlags.VerticalCenter
             : TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter;
-        TextRenderer.DrawText(g, title, UiChrome.UiFont(10f, FontStyle.Bold), titleBox, text,
+        TextRenderer.DrawText(g, title, titleFont, titleBox, text,
             titleAlign | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
         DrawArrow(g, NavBox(false), text, left: true);
         DrawArrow(g, NavBox(true), text, left: false);
@@ -3529,14 +3532,14 @@ sealed class FlatMonthView : Control
 
         var foot = TodayBox();
         var todayOn = _hover == 42;
-        TextRenderer.DrawText(g, "今天  " + today.ToString("M月d日"), UiChrome.UiFont(9f), foot, todayOn ? accent : secondary,
+        TextRenderer.DrawText(g, "今天  " + today.ToString("M月d日"), todayFont, foot, todayOn ? accent : secondary,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
 
         if (_showTime)
         {
             using (var pen = new Pen(UiChrome.ColorOf(pal.Hairline)))
                 g.DrawLine(pen, Divider().X, Divider().Y, Divider().X, Divider().Bottom);
-            TextRenderer.DrawText(g, "时间", UiChrome.UiFont(8.25f), TimeTitleBox(), secondary,
+            TextRenderer.DrawText(g, "时间", timeTitleFont, TimeTitleBox(), secondary,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding);
             DrawWheel(g, hour: true, text, accent, onAccent, hover);
             var colon = new Rectangle(WheelBox(true).Right, WheelBox(true).Y, Math.Max(8, WheelBox(false).X - WheelBox(true).Right), WheelBox(true).Height);

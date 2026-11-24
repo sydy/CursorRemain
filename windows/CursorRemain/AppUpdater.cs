@@ -118,7 +118,7 @@ static class AppUpdater
         }
         catch (Exception ex)
         {
-            var msg = "检查更新失败: " + ex.Message;
+            var msg = "检查更新失败：" + ex.Message;
             RememberCheck(cfg, msg);
             if (manual && msg.Contains("无法检查更新", StringComparison.Ordinal))
                 OpenDownloadPage();

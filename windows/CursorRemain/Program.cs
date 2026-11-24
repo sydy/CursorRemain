@@ -664,7 +664,7 @@ sealed partial class TrayContext : ApplicationContext
         catch (Exception ex)
         {
             CrashLog.Write(ex);
-            return "检查更新失败: " + ex.Message;
+            return "检查更新失败：" + ex.Message;
         }
     }
 
