@@ -156,6 +156,8 @@ sealed class AccountsCard : Panel
             if (_editor is not null)
             {
                 _editor.SizeChanged += OnEditorSizeChanged;
+                // 先隐藏再挂到卡片上，避免在首次布局归位前以默认 (0,0) 位置短暂绘制错位帧。
+                _editor.Visible = false;
                 Controls.Add(_editor);
             }
         }
@@ -215,17 +217,25 @@ sealed class AccountsCard : Panel
         {
             var y = HeaderHeight;
             var rowH = RowHeight;
+            var inline = _editor;
+            var placed = false;
             for (var i = 0; i < _models.Count; i++)
             {
                 y += rowH;
-                if (_models[i].Expanded && _editor is { } inline)
+                if (_models[i].Expanded && inline is not null)
                 {
                     inline.Width = width;
                     inline.PerformLayout();
                     inline.SetBounds(0, y, width, inline.Height);
+                    // 布局归位完成后再显示，挂载与摆位之间不产生可见中间帧。
+                    if (!inline.Visible) inline.Visible = true;
+                    placed = true;
                     y += inline.Height + S(4);
                 }
             }
+            // 编辑器被挂到卡片上但当前没有展开行时，保持隐藏，避免残留旧位置的一帧。
+            if (inline is not null && !placed && inline.Visible)
+                inline.Visible = false;
             var want = Math.Max(S(70), y);
             if (Height != want)
                 Height = want;
@@ -449,6 +459,7 @@ sealed class AccountEditorPanel : Panel
     bool _doubao;
     bool _laying;
     int _padDpi = -1;
+    string? _lastKey;
 
     public AccountEditorPanel(Control kindRow, Control channelRow, Control costRow, Control startRow, Control durationRow, Control endRow)
     {
@@ -523,6 +534,9 @@ sealed class AccountEditorPanel : Panel
 
     public void SetAccount(Account? account, bool doubao)
     {
+        var key = $"{account?.Id}:{doubao}:{account?.Label}";
+        if (key == _lastKey) return;
+        _lastKey = key;
         _doubao = doubao;
         _caption = doubao ? "豆包账号" : "编辑";
         _name = account?.DisplayLabel ?? "";
@@ -680,7 +694,9 @@ sealed class AccountEditorPanel : Panel
             new Rectangle(Padding.Left, y, capSize.Width + 2, Math.Max(S(18), capSize.Height)), secondary,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
         var nameX = Padding.Left + capSize.Width + S(8);
-        var nameW = Math.Max(S(40), _link1.Left - S(10) - nameX);
+        // 首次绘制、布局尚未归位时链接矩形为空，用面板右边界兜底，避免账号名被压到负宽度。
+        var link1Left = _link1.IsEmpty ? Math.Max(nameX, ClientSize.Width - Padding.Right) : _link1.Left;
+        var nameW = Math.Max(S(40), link1Left - S(10) - nameX);
         TextRenderer.DrawText(g, _name, AccountFonts.Name,
             new Rectangle(nameX, y, nameW, Math.Max(S(18), capSize.Height)), text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
@@ -690,8 +706,10 @@ sealed class AccountEditorPanel : Panel
         var c2 = LinkColor(2);
         if (_linkHover == 1) c1 = AccountPaint.Mix(c1, text, 0.5);
         if (_linkHover == 2) c2 = AccountPaint.Mix(c2, text, 0.45);
-        TextRenderer.DrawText(g, _link1Text, font, _link1, c1, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g, _link2Text, font, _link2, c2, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        if (!_link1.IsEmpty)
+            TextRenderer.DrawText(g, _link1Text, font, _link1, c1, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        if (!_link2.IsEmpty)
+            TextRenderer.DrawText(g, _link2Text, font, _link2, c2, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }
 
