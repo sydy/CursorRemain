@@ -24,12 +24,6 @@ enum MenubarIcon {
         return thickness > 0 ? thickness : 22
     }
 
-    static func remainingColor(_ remaining: Double) -> NSColor {
-        if remaining > 50 { return NSColor(calibratedRed: 46 / 255, green: 204 / 255, blue: 113 / 255, alpha: 1) }
-        if remaining >= 20 { return NSColor(calibratedRed: 241 / 255, green: 196 / 255, blue: 15 / 255, alpha: 1) }
-        return NSColor(calibratedRed: 231 / 255, green: 76 / 255, blue: 60 / 255, alpha: 1)
-    }
-
     static func percentLabel(_ remaining: Double?, error: Bool) -> String {
         StatusText.trayPercentLabel(remaining, error: error)
     }

@@ -711,8 +711,12 @@ sealed class ReportForm : Form
 
     void ShowWeeklyReport(ReportState state)
     {
+        var oldTitleFont = _weeklyTitle.Font;
+        var oldBodyFont = _weeklyBody.Font;
         _weeklyTitle.Font = UiChrome.UiFont(16f, FontStyle.Bold);
         _weeklyBody.Font = UiChrome.UiFont(11f);
+        UiChrome.DisposeOwnedFont(oldTitleFont);
+        UiChrome.DisposeOwnedFont(oldBodyFont);
         _weeklyBody.Text = StatusText.FormatXReportBody(state.Usage, state.LastRemaining);
         _root.Visible = false;
         _weeklyHost.Visible = true;

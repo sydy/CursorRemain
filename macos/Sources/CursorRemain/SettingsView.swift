@@ -1712,16 +1712,6 @@ private struct AccountStatusCell: View {
     }
 }
 
-private struct AccountColumnLine: View {
-    var visible: Bool = true
-
-    var body: some View {
-        Rectangle()
-            .fill(visible ? Color.primary.opacity(0.12) : Color.clear)
-            .frame(width: 1, height: 16)
-    }
-}
-
 private struct AccountRowLine: View {
     var body: some View {
         Rectangle()

@@ -69,12 +69,14 @@ final class StatusItemController: NSObject {
             lastIconLog = key
             AppLog.log("menubar icon applied \(key) pt=\(MenubarIcon.pointSize())")
         }
-        if let usage = store.usage {
+        if let err = store.errorMessage, !err.hasPrefix("未配置") {
+            button.toolTip = StatusText.shortError(err)
+        } else if let usage = store.usage {
             let label = store.config.activeAccount?.displayLabel ?? ""
             let pct = String(format: "%.0f%%", usage.remainingPercent)
             button.toolTip = label.isEmpty ? pct : "\(label) · \(pct)"
         } else {
-            button.toolTip = "Token"
+            button.toolTip = AppPaths.displayName
         }
         if store.flyoutVisible {
             FlyoutWindowController.shared.update(store: store)

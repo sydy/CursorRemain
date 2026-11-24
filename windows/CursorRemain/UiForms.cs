@@ -1176,7 +1176,9 @@ sealed class SettingsForm : Form
             _cloudAccount.ForeColor = cfg.CloudLoggedIn
                 ? UiChrome.ColorOf(UiChrome.Tone.Text)
                 : UiChrome.ColorOf(UiChrome.Tone.Secondary);
+            var oldCloudFont = _cloudAccount.Font;
             _cloudAccount.Font = UiChrome.UiFont(cfg.CloudLoggedIn ? 10f : 9f, cfg.CloudLoggedIn ? FontStyle.Bold : FontStyle.Regular);
+            UiChrome.DisposeOwnedFont(oldCloudFont);
             _cloudEmail.Enabled = !cfg.CloudLoggedIn;
             _cloudPassword.Enabled = !cfg.CloudLoggedIn;
             _cloudDataPassphrase.Enabled = !cfg.CloudLoggedIn;

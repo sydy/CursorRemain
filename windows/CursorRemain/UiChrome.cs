@@ -89,6 +89,14 @@ static class UiChrome
         return SystemFonts.MessageBoxFont ?? Control.DefaultFont;
     }
 
+    /// <summary>释放控件旧字体；系统共享字体由框架持有，不能 Dispose。</summary>
+    public static void DisposeOwnedFont(Font? font)
+    {
+        if (font is null) return;
+        if (ReferenceEquals(font, SystemFonts.MessageBoxFont) || ReferenceEquals(font, Control.DefaultFont)) return;
+        font.Dispose();
+    }
+
     public static Font? IconFont(float pt = 11f)
     {
         foreach (var name in new[] { "Segoe Fluent Icons", "Segoe MDL2 Assets" })
@@ -3792,8 +3800,11 @@ sealed class KpiStrip : FlowLayoutPanel
             if (i < Controls.Count && Controls[i] is TableLayoutPanel box && box.Controls.Count >= 2)
             {
                 box.Controls[0].Text = wanted[i].Label;
-                box.Controls[1].Text = wanted[i].Value;
-                box.Controls[1].Font = UiChrome.UiFont(ValuePt, FontStyle.Bold);
+                var valueLabel = box.Controls[1];
+                var oldFont = valueLabel.Font;
+                valueLabel.Text = wanted[i].Value;
+                valueLabel.Font = UiChrome.UiFont(ValuePt, FontStyle.Bold);
+                UiChrome.DisposeOwnedFont(oldFont);
                 continue;
             }
             var fresh = new TableLayoutPanel
