@@ -1103,6 +1103,27 @@ public class FixtureTests
     }
 
     [Fact]
+    public void StackedFlyoutMatchesMacosMetrics()
+    {
+        // 有豆包账号时上下两张等高卡片，圆环 92 与 macOS 一致。
+        Assert.Equal(92, FlyoutLayout.StackedRingSize);
+        Assert.Equal(7, FlyoutLayout.StackedRingLine);
+        Assert.Equal(10, FlyoutLayout.StackedCardGap);
+        Assert.Equal(14, FlyoutLayout.StackedRingGap);
+        Assert.Equal(8, FlyoutLayout.StackedToolbarGap);
+        Assert.Equal(240, FlyoutLayout.StackedCardHeight(0));
+        Assert.Equal(240, FlyoutLayout.StackedCardHeight(3));
+        // 窗口多到 240 放不下时两张卡一起长高。
+        Assert.Equal(FlyoutLayout.DoubaoHeight(8), FlyoutLayout.StackedCardHeight(8));
+        Assert.Equal(558, FlyoutLayout.StackedHeight(3));
+        Assert.Equal(280, FlyoutLayout.HeightWithDoubao(false, 3));
+        Assert.Equal(558, FlyoutLayout.HeightWithDoubao(true, 3));
+        // 圆环 + 圆环下方状态胶囊必须塞得进卡片内宽。
+        Assert.True(FlyoutLayout.StackedRingSize + FlyoutLayout.StackedRingGap * 2 < FlyoutLayout.Width - FlyoutLayout.Padding * 2 - FlyoutLayout.CardPadding * 2);
+        Assert.True(FlyoutLayout.StackedCardMinHeight >= FlyoutLayout.StackedRingSize + 40);
+    }
+
+    [Fact]
     public void FlyoutInnerStrokeStaysInsideTheWindowRadius()
     {
         var stroke = FlyoutLayout.InnerStroke(500, 280, 16, 1);

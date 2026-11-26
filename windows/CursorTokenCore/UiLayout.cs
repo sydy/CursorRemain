@@ -314,12 +314,34 @@ public static class FlyoutLayout
     public const int DoubaoTitleHeight = 18;
     public const int DoubaoRowHeight = 26;
 
+    // Stacked flyout (Doubao account added): two equal-height cards, 92px rings.
+    public const int StackedRingSize = 92;
+    public const int StackedRingLine = 7;
+    public const int StackedCardGap = 10;
+    public const int StackedRingGap = 14;
+    public const int StackedToolbarGap = 8;
+    public const int StackedCardMinHeight = 240;
+    public const int StackedPlanHeight = 28;
+    public const int StackedLineHeight = 14;
+    public const int StackedRowGap = 6;
+
     /// <summary>Doubao block grows with its window rows; shared by layout, paint and hit tests.</summary>
     public static int DoubaoHeight(int rows) =>
         CardPadding * 2 + DoubaoTitleHeight + Math.Max(1, rows) * DoubaoRowHeight;
 
+    /// <summary>Both stacked cards share one height: the Doubao list or the base minimum.</summary>
+    public static int StackedCardHeight(int rows) =>
+        Math.Max(StackedCardMinHeight, DoubaoHeight(rows));
+
+    public static int StackedHeight(int rows) =>
+        Padding * 2
+        + StackedCardHeight(rows) * 2
+        + StackedCardGap
+        + StackedToolbarGap
+        + ToolButtonHeight;
+
     public static int HeightWithDoubao(bool showsDoubao, int rows) =>
-        showsDoubao ? Height + DoubaoBlockGap + DoubaoHeight(rows) : Height;
+        showsDoubao ? StackedHeight(rows) : Height;
 
     /// <summary>
     /// Ellipse diameter for GDI <c>CreateRoundRectRgn</c>. A GraphicsPath region

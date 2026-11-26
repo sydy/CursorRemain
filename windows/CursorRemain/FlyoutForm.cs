@@ -210,18 +210,229 @@ sealed class FlyoutForm : Form
             g.DrawPath(border, path);
 
         _hits.Clear();
-        var btnH = Px(FlyoutLayout.ToolButtonHeight);
-        var btnGap = 4 * s;
-        var doubaoH = _showsDoubao ? Px(FlyoutLayout.DoubaoHeight(_doubaoWindows.Length)) : 0;
-        var doubaoGap = _showsDoubao ? Px(FlyoutLayout.DoubaoBlockGap) : 0;
-        var contentBottom = Height - pad - btnH - btnGap - doubaoH - doubaoGap;
-        var left = new RectangleF(pad, pad, leftW, Math.Max(0, contentBottom - pad));
-        DrawLeft(g, left, pal, s);
-        var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Math.Max(0, contentBottom - pad));
-        DrawRight(g, right, pal, s);
         if (_showsDoubao)
-            DrawDoubao(g, new RectangleF(pad, contentBottom + doubaoGap, Width - pad * 2, doubaoH), pal, s);
+        {
+            DrawStacked(g, pal, s);
+        }
+        else
+        {
+            var btnH = Px(FlyoutLayout.ToolButtonHeight);
+            var btnGap = 4 * s;
+            var contentBottom = Height - pad - btnH - btnGap;
+            var left = new RectangleF(pad, pad, leftW, Math.Max(0, contentBottom - pad));
+            DrawLeft(g, left, pal, s);
+            var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Math.Max(0, contentBottom - pad));
+            DrawRight(g, right, pal, s);
+        }
+        var btnH = Px(FlyoutLayout.ToolButtonHeight);
         DrawButtons(g, new RectangleF(pad, Height - pad - btnH, Width - pad * 2, btnH), pal, s);
+    }
+
+    /// <summary>Stacked mode: Cursor card on top, Doubao card below, both the same height.</summary>
+    void DrawStacked(Graphics g, FlyoutPalette pal, float s)
+    {
+        var pad = Px(FlyoutLayout.Padding);
+        var cardH = Px(FlyoutLayout.StackedCardHeight(_doubaoWindows.Length));
+        var cardGap = Px(FlyoutLayout.StackedCardGap);
+        var cardW = Width - pad * 2;
+        var cursorCard = new RectangleF(pad, pad, cardW, cardH);
+        var doubaoCard = new RectangleF(pad, cursorCard.Bottom + cardGap, cardW, cardH);
+        DrawFlyoutCard(g, cursorCard, pal);
+        DrawFlyoutCard(g, doubaoCard, pal);
+        DrawStackedCursor(g, cursorCard, pal, s);
+        DrawStackedDoubao(g, doubaoCard, pal, s);
+    }
+
+    void DrawFlyoutCard(Graphics g, RectangleF card, FlyoutPalette pal)
+    {
+        using var path = RoundRect(card, Px(FlyoutLayout.CardRadius));
+        using var bg = new SolidBrush(pal.Card);
+        g.FillPath(bg, path);
+    }
+
+    void DrawStackedCursor(Graphics g, RectangleF card, FlyoutPalette pal, float s)
+    {
+        var cp = Px(FlyoutLayout.CardPadding);
+        var ring = Px(FlyoutLayout.StackedRingSize);
+        var ringGap = Px(FlyoutLayout.StackedRingGap);
+        var inner = new RectangleF(card.X + cp, card.Y + cp, card.Width - cp * 2, card.Height - cp * 2);
+
+        var error = _usage is null && _error is { Length: > 0 };
+        var unlimited = _usage?.IsUnlimited == true;
+        var remaining = _usage?.RemainingPercent;
+        var tone = ToneColor(remaining, error, unlimited);
+
+        var gauge = new RectangleF(inner.X, inner.Y, ring, ring);
+        DrawGauge(g, gauge, remaining, error, unlimited, tone, pal, s, compact: true);
+
+        // Cursor 的状态胶囊留在圆环下方。
+        using (var pillFont = UiChrome.UiFont(7.5f))
+        {
+            var pill = StatusText.StatusPillText(remaining, error);
+            var pillSize = g.MeasureString(pill, pillFont);
+            var pillW = pillSize.Width + 14 * s;
+            var pillH = pillSize.Height + 4 * s;
+            var pillRect = new RectangleF(inner.X + (ring - pillW) / 2, gauge.Bottom + 8 * s, pillW, pillH);
+            using (var pillPath = RoundRect(pillRect, pillRect.Height / 2))
+            using (var pillBg = new SolidBrush(Color.FromArgb(64, tone)))
+                g.FillPath(pillBg, pillPath);
+            DrawString(g, pill, pillFont, pal.Text, pillRect, StringAlignment.Center, StringAlignment.Center);
+        }
+
+        var x = inner.X + ring + ringGap;
+        var w = inner.Right - x;
+        var y = inner.Y;
+        var lineH = Px(FlyoutLayout.StackedLineHeight);
+        var rowGap = Px(FlyoutLayout.StackedRowGap);
+        var barH = Px(FlyoutLayout.BarHeight);
+        var step = lineH + 4 * s + barH;
+        var planH = Px(FlyoutLayout.StackedPlanHeight);
+        using var capFont = UiChrome.UiFont(8.25f);
+        using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
+
+        if (_usage is { } usage && !error)
+        {
+            DrawString(g, StatusText.FormatPlanCaption(usage.MembershipType, _accountLabel), capFont, pal.Secondary,
+                new RectangleF(x, y, w, planH));
+            y += planH + rowGap;
+
+            if (usage.IsXSubscription && usage.PrepaidRemainingCents is { } prepaid)
+            {
+                DrawLabeled(g, "预付余额", UsageParser.FormatUsdCents(prepaid), capFont, valueFont, pal, new RectangleF(x, y, w, lineH));
+                y += lineH + rowGap;
+            }
+            if (usage.ShowsAmount)
+            {
+                DrawLabeled(g, "金额", UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents), capFont, valueFont, pal,
+                    new RectangleF(x, y, w, lineH));
+                if (usage.UsedCents is { } used && usage.LimitCents is { } limit && limit > 0)
+                    DrawBar(g, new RectangleF(x, y + lineH + 4 * s, w, barH), used / limit, Color.FromArgb(48, 209, 88), pal);
+                y += step + rowGap;
+            }
+            if (!usage.IsXSubscription && (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null || usage.ShowsGrokBot))
+            {
+                var meters = 0;
+                if (usage.AutoPercentUsed is { } auto)
+                {
+                    DrawMeter(g, new RectangleF(x, y, w, step), "First-party", auto, Color.FromArgb(50, 180, 170), capFont, valueFont, pal, s);
+                    y += step;
+                    meters++;
+                }
+                if (usage.ApiPercentUsed is { } api)
+                {
+                    if (meters > 0) y += 4 * s;
+                    DrawMeter(g, new RectangleF(x, y, w, step), "API", api, Color.FromArgb(142, 142, 147), capFont, valueFont, pal, s);
+                    y += step;
+                    meters++;
+                }
+                if (usage.ShowsGrokBot && usage.GrokBotPercentUsed is { } grok)
+                {
+                    if (meters > 0) y += 4 * s;
+                    DrawMeter(g, new RectangleF(x, y, w, step), "Grok Bot", grok, Color.FromArgb(99, 102, 241), capFont, valueFont, pal, s);
+                    y += step;
+                    meters++;
+                }
+                y += rowGap;
+            }
+
+            var parts = new List<string>();
+            if (!usage.IsXSubscription && usage.TotalTokens is > 0)
+                parts.Add("Token " + UsageParser.FormatTokenCount(usage.TotalTokens));
+            if (usage.IsXSubscription && usage.UsageResetAt is { } weeklyReset)
+                parts.Add("重置 " + StatusText.FormatResetDate(weeklyReset));
+            else if (!usage.IsXSubscription && usage.BillingCycleEnd is { } end)
+                parts.Add(StatusText.CycleEndLabel(usage) + " " + StatusText.FormatResetDate(end, usage.BillingCycleEndOverridden));
+            if (parts.Count > 0)
+            {
+                DrawString(g, string.Join(" · ", parts), capFont, pal.Secondary, new RectangleF(x, y, w, lineH));
+                y += lineH + 2 * s;
+            }
+            var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            DrawString(g, SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now), capFont, pal.Secondary,
+                new RectangleF(x, y, w, lineH));
+            y += lineH + 2 * s;
+            var est = StatusText.FormatEstimateCaption(usage);
+            DrawString(g, est, capFont, EstimateColor(est, pal), new RectangleF(x, y, w, lineH));
+            y += lineH + rowGap;
+        }
+        else
+        {
+            DrawString(g, StatusText.FormatFlyoutError(_error), capFont, pal.Secondary, new RectangleF(x, y, w, planH * 2));
+            y += planH * 2 + rowGap;
+            if (_updated is { Length: > 0 })
+            {
+                DrawString(g, "更新  " + _updated, capFont, pal.Secondary, new RectangleF(x, y, w, lineH));
+                y += lineH + rowGap;
+            }
+        }
+
+        var link = UsageParser.DashboardLinkLabel(_usage);
+        using var linkFont = UiChrome.UiFont(8.25f);
+        var linkSize = g.MeasureString(link, linkFont);
+        var linkRect = new RectangleF(x, y, Math.Min(w, linkSize.Width + 4 * s), lineH + 2 * s);
+        DrawString(g, link, linkFont, pal.Accent, linkRect, StringAlignment.Near, StringAlignment.Center);
+        _hits.Add(new("web", Rectangle.Round(linkRect)));
+    }
+
+    void DrawStackedDoubao(Graphics g, RectangleF card, FlyoutPalette pal, float s)
+    {
+        var cp = Px(FlyoutLayout.CardPadding);
+        var ring = Px(FlyoutLayout.StackedRingSize);
+        var ringGap = Px(FlyoutLayout.StackedRingGap);
+        var inner = new RectangleF(card.X + cp, card.Y + cp, card.Width - cp * 2, card.Height - cp * 2);
+        var rows = _doubaoWindows;
+        var titleH = Px(FlyoutLayout.DoubaoTitleHeight);
+        var rowH = Px(FlyoutLayout.DoubaoRowHeight);
+        using var capFont = UiChrome.UiFont(8.25f);
+        using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
+
+        var error = !string.IsNullOrWhiteSpace(_doubaoError);
+        UsageWindow? head = null;
+        foreach (var key in new[] { "1m", "package", "7d", "5h" })
+        {
+            foreach (var window in rows)
+                if (window.Key == key) { head = window; break; }
+            if (head is not null) break;
+        }
+        if (head is null && rows.Length > 0) head = rows[0];
+        var unlimited = head?.Unlimited ?? false;
+        double? remaining = null;
+        if (!error && head is not null)
+            remaining = unlimited ? 100 : 100 - head.UsedPercent;
+        var tone = ToneColor(remaining, error, unlimited);
+        // 与 Cursor 圆环一致：从卡片内边距顶部开始画，不再垂直居中。
+        var gauge = new RectangleF(inner.X, inner.Y, ring, ring);
+        DrawGauge(g, gauge, remaining, error, unlimited, tone, pal, s, compact: true);
+
+        var x = inner.X + ring + ringGap;
+        var w = inner.Right - x;
+        var title = new List<string> { "豆包" };
+        if (!string.IsNullOrWhiteSpace(_doubaoMembership)) title.Add(_doubaoMembership!);
+        if (!string.IsNullOrWhiteSpace(_doubaoUpdated)) title.Add("更新 " + ShortClock(_doubaoUpdated));
+        DrawString(g, string.Join(" · ", title), capFont, pal.Text,
+            new RectangleF(x, inner.Y, w * 0.6f, titleH));
+        if (!string.IsNullOrWhiteSpace(_doubaoLabel))
+            DrawString(g, _doubaoLabel!, capFont, pal.Secondary,
+                new RectangleF(x, inner.Y, w, titleH), StringAlignment.Far);
+
+        var y = inner.Y + titleH + Px(FlyoutLayout.StackedRowGap);
+        if (error)
+        {
+            DrawString(g, StatusText.ShortError(_doubaoError, 64), capFont, Color.FromArgb(231, 76, 60),
+                new RectangleF(x, y, w, rowH * 2));
+            return;
+        }
+        if (rows.Length == 0)
+        {
+            DrawString(g, "等待刷新…", capFont, pal.Secondary, new RectangleF(x, y, w, rowH));
+            return;
+        }
+        var row = new RectangleF(x, y, w, rowH);
+        foreach (var window in rows)
+        {
+            DrawDoubaoRow(g, row, window, pal, s, capFont, valueFont);
+            row.Y += rowH;
+        }
     }
 
     void DrawLeft(Graphics g, RectangleF box, FlyoutPalette pal, float s)
@@ -255,9 +466,9 @@ sealed class FlyoutForm : Form
         _hits.Add(new("web", Rectangle.Round(linkRect)));
     }
 
-    void DrawGauge(Graphics g, RectangleF box, double? remaining, bool error, bool unlimited, Color tone, FlyoutPalette pal, float s)
+    void DrawGauge(Graphics g, RectangleF box, double? remaining, bool error, bool unlimited, Color tone, FlyoutPalette pal, float s, bool compact = false)
     {
-        var line = Math.Max(2f, Px(FlyoutLayout.RingLine));
+        var line = Math.Max(2f, Px(compact ? FlyoutLayout.StackedRingLine : FlyoutLayout.RingLine));
         var inset = line / 2 + 0.5f;
         var ring = RectangleF.Inflate(box, -inset, -inset);
         using (var track = new Pen(pal.Track, line))
@@ -274,29 +485,36 @@ sealed class FlyoutForm : Form
             g.DrawArc(pen, ring, -90, progress * 360);
         }
 
-        using var capFont = UiChrome.UiFont(8.25f);
-        using var numFont = UiChrome.UiFont(unlimited ? 16f : 21f, FontStyle.Bold);
-        using var pctFont = UiChrome.UiFont(11f, FontStyle.Bold);
-        using var pillFont = UiChrome.UiFont(8.25f);
+        using var capFont = UiChrome.UiFont(compact ? 7.5f : 8.25f);
+        using var numFont = UiChrome.UiFont(compact ? 15f : (unlimited ? 16f : 21f), FontStyle.Bold);
+        using var pctFont = UiChrome.UiFont(compact ? 9.5f : 11f, FontStyle.Bold);
+        using var pillFont = UiChrome.UiFont(compact ? 7.5f : 8.25f);
         var cx = box.X + box.Width / 2;
         var cy = box.Y + box.Height / 2;
-        DrawString(g, "剩余", capFont, pal.Secondary, new RectangleF(box.X, cy - 36 * s, box.Width, 16 * s), StringAlignment.Center, StringAlignment.Center);
+        var capTop = compact ? cy - 24 * s : cy - 36 * s;
+        var capHeight = compact ? 12 * s : 16 * s;
+        DrawString(g, "剩余", capFont, pal.Secondary, new RectangleF(box.X, capTop, box.Width, capHeight), StringAlignment.Center, StringAlignment.Center);
 
+        var numTop = compact ? cy - 12 * s : cy - 16 * s;
+        var numHeight = compact ? 24 * s : 28 * s;
         if (unlimited)
-            DrawString(g, "不限量", numFont, pal.Text, new RectangleF(box.X, cy - 18 * s, box.Width, 28 * s), StringAlignment.Center, StringAlignment.Center);
+            DrawString(g, "不限量", numFont, pal.Text, new RectangleF(box.X, numTop, box.Width, numHeight), StringAlignment.Center, StringAlignment.Center);
         else if (remaining is { } pct && !error)
         {
             var num = pct.ToString("0.0");
             var numSize = g.MeasureString(num, numFont);
             var pctSize = g.MeasureString("%", pctFont);
             var total = numSize.Width + pctSize.Width - 4 * s;
-            var numRect = new RectangleF(cx - total / 2, cy - 16 * s, numSize.Width, 28 * s);
-            var pctRect = new RectangleF(numRect.Right - 4 * s, cy - 10 * s, pctSize.Width, 22 * s);
+            var numRect = new RectangleF(cx - total / 2, numTop, numSize.Width, numHeight);
+            var pctRect = new RectangleF(numRect.Right - 4 * s, compact ? cy - 6 * s : cy - 10 * s, pctSize.Width, compact ? 18 * s : 22 * s);
             DrawString(g, num, numFont, pal.Text, numRect, StringAlignment.Near, StringAlignment.Center);
             DrawString(g, "%", pctFont, pal.Secondary, pctRect, StringAlignment.Near, StringAlignment.Center);
         }
         else
-            DrawString(g, error ? "—" : "…", numFont, pal.Secondary, new RectangleF(box.X, cy - 18 * s, box.Width, 28 * s), StringAlignment.Center, StringAlignment.Center);
+            DrawString(g, error ? "—" : "…", numFont, pal.Secondary, new RectangleF(box.X, numTop, box.Width, numHeight), StringAlignment.Center, StringAlignment.Center);
+
+        // 叠放模式胶囊画在圆环下方，环内只有「剩余 + 百分比」。
+        if (compact) return;
 
         var pill = StatusText.StatusPillText(remaining, error);
         var pillSize = g.MeasureString(pill, pillFont);
@@ -386,66 +604,32 @@ sealed class FlyoutForm : Form
         }
     }
 
-    /// <summary>Doubao block: window rows only, never the Cursor "本期 / 按需 / API" rows.</summary>
-    void DrawDoubao(Graphics g, RectangleF box, FlyoutPalette pal, float s)
+    /// <summary>One Doubao window row: label, expiry, value, bar. Shared by both flyout modes.</summary>
+    void DrawDoubaoRow(Graphics g, RectangleF row, UsageWindow window, FlyoutPalette pal, float s, Font capFont, Font valueFont)
     {
-        using var capFont = UiChrome.UiFont(8.25f);
-        using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
-        var titleH = Px(FlyoutLayout.DoubaoTitleHeight);
-        var rowH = Px(FlyoutLayout.DoubaoRowHeight);
-        var rows = _doubaoWindows;
-        var innerH = titleH + Math.Max(1, rows.Length) * rowH;
-        DrawCard(g, box.X, box.Y, box.Width, pal, innerH, inner =>
+        var remaining = window.Unlimited ? 100 : 100 - window.UsedPercent;
+        var tone = ToneColor(remaining, false, window.Unlimited);
+        var label = window.Count is > 1 ? $"{window.Label}（{window.Count} 项）" : window.Label;
+        if (window.IsCurrentPeriod)
         {
-            var title = new List<string> { "豆包" };
-            if (!string.IsNullOrWhiteSpace(_doubaoMembership)) title.Add(_doubaoMembership!);
-            if (!string.IsNullOrWhiteSpace(_doubaoUpdated)) title.Add("更新 " + ShortClock(_doubaoUpdated));
-            DrawString(g, string.Join(" · ", title), capFont, pal.Text,
-                new RectangleF(inner.X, inner.Y, inner.Width * 0.6f, titleH));
-            if (!string.IsNullOrWhiteSpace(_doubaoLabel))
-                DrawString(g, _doubaoLabel!, capFont, pal.Secondary,
-                    new RectangleF(inner.X, inner.Y, inner.Width, titleH), StringAlignment.Far);
-
-            var y = inner.Y + titleH;
-            var row = new RectangleF(inner.X, y, inner.Width, rowH);
-            if (!string.IsNullOrWhiteSpace(_doubaoError))
-            {
-                DrawString(g, StatusText.ShortError(_doubaoError, 64), capFont, Color.FromArgb(231, 76, 60), row);
-                return;
-            }
-            if (rows.Length == 0)
-            {
-                DrawString(g, "等待刷新…", capFont, pal.Secondary, row);
-                return;
-            }
-            foreach (var window in rows)
-            {
-                var remaining = window.Unlimited ? 100 : 100 - window.UsedPercent;
-                var tone = ToneColor(remaining, false, window.Unlimited);
-                var label = window.Count is > 1 ? $"{window.Label}（{window.Count} 项）" : window.Label;
-                if (window.IsCurrentPeriod)
-                {
-                    var reset = UsageParser.DoubaoResetText(window);
-                    label += " · " + (reset.Length == 0 ? "开始使用后计时" : reset);
-                }
-                else if (window.Key == "incentive" && !string.IsNullOrWhiteSpace(window.ResetAt))
-                {
-                    var expiry = ExpiryCaption(window.ResetAt!);
-                    if (expiry.Length > 0) label += " · " + expiry;
-                }
-                using (var dot = new SolidBrush(tone))
-                    g.FillEllipse(dot, row.X, row.Y + 4 * s, 6 * s, 6 * s);
-                DrawString(g, label, capFont, pal.Secondary, new RectangleF(row.X + 12 * s, row.Y, row.Width * 0.7f, 16 * s));
-                var value = UsageParser.DoubaoWindowText(window);
-                if (window.Key == "incentive" && !window.Unlimited && !window.Exhausted)
-                    value += " · 剩 " + PercentText(100 - window.UsedPercent);
-                DrawString(g, value, valueFont, pal.Text,
-                    new RectangleF(row.X, row.Y, row.Width, 16 * s), StringAlignment.Far);
-                DrawBar(g, new RectangleF(row.X, row.Y + 18 * s, row.Width, Px(FlyoutLayout.BarHeight)),
-                    window.Unlimited ? 1 : window.UsedPercent / 100, tone, pal);
-                row.Y += rowH;
-            }
-        });
+            var reset = UsageParser.DoubaoResetText(window);
+            label += " · " + (reset.Length == 0 ? "开始使用后计时" : reset);
+        }
+        else if (window.Key == "incentive" && !string.IsNullOrWhiteSpace(window.ResetAt))
+        {
+            var expiry = ExpiryCaption(window.ResetAt!);
+            if (expiry.Length > 0) label += " · " + expiry;
+        }
+        using (var dot = new SolidBrush(tone))
+            g.FillEllipse(dot, row.X, row.Y + 4 * s, 6 * s, 6 * s);
+        DrawString(g, label, capFont, pal.Secondary, new RectangleF(row.X + 12 * s, row.Y, row.Width * 0.7f, 16 * s));
+        var value = UsageParser.DoubaoWindowText(window);
+        if (window.Key == "incentive" && !window.Unlimited && !window.Exhausted)
+            value += " · 剩 " + PercentText(100 - window.UsedPercent);
+        DrawString(g, value, valueFont, pal.Text,
+            new RectangleF(row.X, row.Y, row.Width, 16 * s), StringAlignment.Far);
+        DrawBar(g, new RectangleF(row.X, row.Y + 18 * s, row.Width, Px(FlyoutLayout.BarHeight)),
+            window.Unlimited ? 1 : window.UsedPercent / 100, tone, pal);
     }
 
     static string ExpiryCaption(string iso)
