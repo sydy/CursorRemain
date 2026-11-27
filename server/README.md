@@ -31,7 +31,7 @@ Docker：在 `server/` 设置 `JWT_SECRET` 后执行 `docker compose up -d --bui
 
 `PUT /v1/sync` 的信封约限制 1MB，`PUT /v1/store` 约限制 8MB。revision 不一致返回 409。两种存储互不覆盖。SQLite 距上次备份超过 24 小时会复制到 `data/backups/`，最多保留 7 份。
 
-认证路径以 `/v1/auth/` 开头，包括注册、验证邮箱、登录、重置密码、刷新、退出和修改密码。登录密码至少 8 位。验证码 15 分钟内最多尝试 5 次。Access token 15 分钟，refresh token 30 天。
+认证路径以 `/v1/auth/` 开头，包括注册、验证邮箱、登录、重置密码、刷新、退出和修改密码。登录密码至少 8 位。验证码 15 分钟内最多尝试 5 次。Access token 与 refresh token 默认 10 年长期有效，不会因到期掉线。
 
 同步路径：`GET/PUT /v1/sync` 是信封，`GET/PUT /v1/store` 是逐字段落库加密的明细（客户端拿到的仍是明文 JSON）。`GET /v1/me`、`PUT /v1/me/storage` 和 `DELETE /v1/me` 管理账号与存储方式。`GET /health` 是健康检查。
 
