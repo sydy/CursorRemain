@@ -288,7 +288,8 @@ struct SettingsRootView: View {
                         .font(.callout)
                         .fontWeight(account.id == store.config.activeDoubaoAccountId ? .semibold : .regular)
                         .lineLimit(1)
-                    if !account.membershipType.isEmpty {
+                    if !account.membershipType.isEmpty,
+                       account.membershipType.lowercased() != account.displayLabel.lowercased() {
                         Text(account.membershipType)
                             .font(.caption)
                             .foregroundStyle(.secondary)

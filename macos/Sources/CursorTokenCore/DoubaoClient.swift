@@ -5,7 +5,9 @@ import Foundation
 /// 接口没有公开文档：HTTP 状态码恒为 200，成功与否只看响应体的 `code`。
 public struct DoubaoClient: Sendable {
     public static let quotaURL = "https://www.doubao.com/alice/commerce/sale/subscription/quota/summary/"
+    public static let profileURL = "https://www.doubao.com/chat/"
     public static let requestBody: [String: Any] = ["product_line": "membership"]
+    static let browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
     public var session: URLSession
     public var timeout: TimeInterval
@@ -25,6 +27,40 @@ public struct DoubaoClient: Sendable {
             result.error ?? "查询失败：接口返回格式异常",
             statusCode: result.authError ? 401 : nil
         )
+    }
+
+    /// 取账号真实用户名：`/chat` 页面的 SSR 数据里带着账号昵称。
+    /// 只在登录后或账号还没有名字时调用，不跟着每次额度刷新重复拉。
+    public func fetchAccountName(cookie rawCookie: String, timeout: TimeInterval? = nil) async throws -> String {
+        let cookie = DoubaoCredentials.normalize(rawCookie)
+        if cookie.isEmpty { throw CursorAPIError("未配置豆包 Cookie", statusCode: 401) }
+        guard let url = URL(string: Self.profileURL) else {
+            throw CursorAPIError("接口地址无效")
+        }
+        var request = URLRequest(url: url, timeoutInterval: timeout ?? self.timeout)
+        request.httpMethod = "GET"
+        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
+        request.setValue("https://www.doubao.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.doubao.com/chat/", forHTTPHeaderField: "Referer")
+        request.setValue(Self.browserUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue(cookie, forHTTPHeaderField: "Cookie")
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw CursorAPIError("网络错误: \(error.localizedDescription)")
+        }
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401 || status == 403 {
+            throw CursorAPIError(DoubaoCredentials.authMessage, statusCode: 401)
+        }
+        if status >= 400 {
+            throw CursorAPIError("HTTP \(status)", statusCode: status)
+        }
+        guard let html = String(data: data, encoding: .utf8), !html.isEmpty else { return "" }
+        return UsageParser.doubaoAccountName(html: html)
     }
 
     /// 只做登录态探测：`code` 不是 710012001 就认为已登录。不解析额度。

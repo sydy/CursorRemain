@@ -45,6 +45,8 @@ final class AppStore: ObservableObject {
     private var lastCloudNotify = ""
     /// 豆包额度官方约 5 分钟更新一次：每个账号至少隔 5 分钟再拉，手动刷新不受限。
     private var doubaoNextFetch: [String: Date] = [:]
+    /// 真实用户名只拉一次；失败后不跟着每轮额度刷新反复拉整页 HTML。
+    private var doubaoNameTried: Set<String> = []
 
     init(directory: URL? = nil) {
         settingsDirectory = directory
@@ -469,6 +471,10 @@ final class AppStore: ObservableObject {
             live.syncLegacyFields()
         }
         config = cfg
+        // 老账号（添加时没有名字）在下一轮刷新补一次真实用户名。
+        for doubao in cfg.doubaoAccounts where doubao.label.trimmingCharacters(in: .whitespaces).isEmpty {
+            refreshDoubaoAccountName(accountId: doubao.id)
+        }
         if let active = outcomes.first(where: { $0.id == cfg.activeAccountId }) {
             applyActiveOutcome(active, generation: generation)
         } else if cfg.cursorAccounts.isEmpty {
@@ -559,8 +565,33 @@ final class AppStore: ObservableObject {
         doubaoError = nil
         doubaoUpdatedAt = nil
         doubaoNextRefreshAt = nil
+        doubaoNameTried.removeAll()
         applyConfig(cfg, refresh: true)
+        refreshDoubaoAccountName(accountId: existingId ?? cfg.activeDoubaoAccountId, force: true)
         return ""
+    }
+
+    /// 豆包账号真实用户名来自 `/chat` 页面的 SSR 数据：登录后或账号还没有名字时补一次。
+    func refreshDoubaoAccountName(accountId: String? = nil, force: Bool = false) {
+        let targetId = (accountId ?? config.activeDoubaoAccountId).trimmingCharacters(in: .whitespaces)
+        guard let idx = config.accounts.firstIndex(where: { $0.id == targetId && $0.isDoubao }) else { return }
+        if !force && doubaoNameTried.contains(targetId) { return }
+        doubaoNameTried.insert(targetId)
+        let token = config.accounts[idx].token
+        guard !token.isEmpty, !config.accounts[idx].tokenDecryptFailed else { return }
+        Task { @MainActor in
+            let name = ((try? await self.doubaoClient.fetchAccountName(cookie: token, timeout: 20)) ?? "")
+                .trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty else { return }
+            guard let current = self.config.accounts.first(where: { $0.id == targetId }),
+                  current.label.trimmingCharacters(in: .whitespaces) != name else { return }
+            let cfg = ConfigStore.update(from: self.settingsDirectory) { live in
+                guard let i = live.accounts.firstIndex(where: { $0.id == targetId && $0.isDoubao }) else { return }
+                live.accounts[i].label = name
+            }
+            self.config = cfg
+            self.objectWillChange.send()
+        }
     }
 
     /// 浮窗失效状态下的「一键重新登录」：直接开内嵌登录窗口，成功后原地换 Cookie 并刷新。

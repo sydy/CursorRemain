@@ -1,0 +1,37 @@
+[
+  {
+    "name": "name_first",
+    "html": "<script nonce=\"x\">window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"name\":\"狂风里的蜗牛\",\"screen_name\":\"狂风里的蜗牛\"}}}}}}</script>",
+    "expected": "狂风里的蜗牛"
+  },
+  {
+    "name": "screen_name_fallback",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"name\":\"  \",\"screen_name\":\" 测试昵称 \"}}}}}}</script>",
+    "expected": "测试昵称"
+  },
+  {
+    "name": "connect_fallback",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"connects\":[{\"platform\":\"aweme_v2\",\"platform_screen_name\":\"绑定平台昵称\"}]}}}}}}</script>",
+    "expected": "绑定平台昵称"
+  },
+  {
+    "name": "no_marker",
+    "html": "<html><body>未登录的聊天页</body></html>",
+    "expected": ""
+  },
+  {
+    "name": "broken_json",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":</script>",
+    "expected": ""
+  },
+  {
+    "name": "empty_fields",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"name\":\"\",\"screen_name\":\"\",\"connects\":[]}}}}}}</script>",
+    "expected": ""
+  },
+  {
+    "name": "trailing_semicolon",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"screen_name\":\"带分号的昵称\"}}}}}};</script>",
+    "expected": "带分号的昵称"
+  }
+]

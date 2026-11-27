@@ -50,6 +50,7 @@ fn dispatch(op: &str, input: &Value) -> Value {
         "extract_jwt" => json!(token::extract_jwt(text(input, "input"))),
         "parse_usage_summary" => usage::parse_usage_summary(&input["payload"], input["now"].as_str()),
         "parse_doubao_quota" => doubao::parse_doubao_quota(&input["payload"], input["now"].as_str()),
+        "doubao_account_name" => json!(doubao::account_name(text(input, "html"))),
         "doubao_window_text" => json!(doubao::window_text(&input["window"])),
         "doubao_reset_text" => json!(doubao::reset_text(&input["window"], input["now"].as_str())),
         "doubao_identity" => doubao::identity(&input["payload"], text(input, "cookie")),

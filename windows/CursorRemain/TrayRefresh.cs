@@ -43,6 +43,8 @@ sealed partial class TrayContext
     static readonly TimeSpan DoubaoMinInterval = TimeSpan.FromMinutes(5);
     readonly DoubaoClient _doubaoClient = new();
     readonly Dictionary<string, DateTimeOffset> _doubaoNextFetch = new(StringComparer.Ordinal);
+    /// <summary>真实用户名只拉一次；失败后不跟着每轮额度刷新反复拉整页 HTML。</summary>
+    readonly HashSet<string> _doubaoNameTried = new(StringComparer.Ordinal);
     UsageSnapshot? _doubaoUsage;
     string? _doubaoError;
     string? _doubaoUpdated;
@@ -105,6 +107,8 @@ sealed partial class TrayContext
         }
 
         var notices = new List<(string Title, string Body, bool Warn)>();
+        // 账号还没有名字时补一次真实用户名（豆包昵称在 /chat 页面的 SSR 数据里）。
+        var doubaoNameFills = await FetchMissingDoubaoNames();
         // 内存当前账号集合是结构权威：后台刷新从磁盘重建副本时，不能把本轮之前已删除的账号带回。
         var authoritativeIds = _config.Accounts.Select(a => a.Id).ToList();
         AppConfig cfg;
@@ -164,6 +168,11 @@ sealed partial class TrayContext
                     }
                 }
                 live.SyncLegacyFields();
+                foreach (var (id, name) in doubaoNameFills)
+                {
+                    var acc = live.Accounts.FirstOrDefault(a => a.Id == id && a.IsDoubao);
+                    if (acc is not null && string.IsNullOrWhiteSpace(acc.Label)) acc.Label = name;
+                }
             }, liveAccountIds: authoritativeIds);
         }
         catch (Exception ex)
@@ -191,6 +200,28 @@ sealed partial class TrayContext
                 _icon.ShowBalloonTip(n.Warn ? 5000 : 4000, n.Title, n.Body, n.Warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
             if (_settings is { IsDisposed: false }) _settings.FinishAccountCheck(!_refreshNow);
         });
+    }
+
+    /// <summary>豆包账号真实用户名：从 `/chat` 页面的 SSR 数据里补，每个账号只试一次。</summary>
+    async Task<Dictionary<string, string>> FetchMissingDoubaoNames()
+    {
+        var fills = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var acc in _config.DoubaoAccounts)
+        {
+            if (!string.IsNullOrWhiteSpace(acc.Label)) continue;
+            if (acc.TokenDecryptFailed || string.IsNullOrWhiteSpace(acc.Token)) continue;
+            if (!_doubaoNameTried.Add(acc.Id)) continue;
+            try
+            {
+                var name = await _doubaoClient.FetchAccountName(acc.Token, 20);
+                if (!string.IsNullOrWhiteSpace(name)) fills[acc.Id] = name.Trim();
+            }
+            catch
+            {
+                // 名字只是展示项，失败保持套餐名兜底，不打扰用户。
+            }
+        }
+        return fills;
     }
 
     void ApplyActiveOutcome(RefreshOutcome o, long generation)

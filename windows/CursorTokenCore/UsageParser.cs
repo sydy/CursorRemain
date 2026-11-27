@@ -340,6 +340,10 @@ public static class UsageParser
         return rows;
     }
 
+    /// <summary>豆包真实用户名：从 `/chat` 的 SSR 页面里取，取不到返回空串。</summary>
+    public static string DoubaoAccountName(string html) =>
+        RustCore.String("doubao_account_name", new { html = html ?? "" });
+
     public static string DoubaoWindowText(UsageWindow window) =>
         RustCore.String("doubao_window_text", new { window = WindowInput(window) });
 

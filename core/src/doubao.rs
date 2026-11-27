@@ -127,6 +127,47 @@ fn subscription_display_name(data: &Value) -> String {
     String::new()
 }
 
+/// 从 `www.doubao.com/chat/` 返回的 SSR 页面里取账号的真实用户名。
+///
+/// 页面把账号信息放在 `window._ROUTER_DATA` 的
+/// `loaderData.chat_layout.chat_layout.accountInfo.data`：`name` 是昵称，
+/// `screen_name` 是同一份展示名，第三方绑定（抖音）的昵称在 `connects` 里。
+/// 都取不到时返回空串，界面回退到套餐名，不编造名字。
+pub fn account_name(page: &str) -> String {
+    let Some(raw) = router_payload(page) else { return String::new() };
+    let Ok(value) = serde_json::from_str::<Value>(raw) else { return String::new() };
+    let layout = child(child(child(&value, "loaderData"), "chat_layout"), "chat_layout");
+    let info = child(child(layout, "accountInfo"), "data");
+    for key in ["name", "screen_name"] {
+        if let Some(name) = clean_name(get(info, key)) {
+            return name;
+        }
+    }
+    for connect in get(info, "connects").as_array().into_iter().flatten() {
+        if let Some(name) = clean_name(get(connect, "platform_screen_name")) {
+            return name;
+        }
+    }
+    String::new()
+}
+
+fn clean_name(raw: &Value) -> Option<String> {
+    let text = as_string(raw)?;
+    let trimmed = text.trim();
+    if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+}
+
+/// 抠出 `window._ROUTER_DATA = {...}` 这一整段 JSON，去掉行尾分号。
+fn router_payload(page: &str) -> Option<&str> {
+    let marker = page.find("window._ROUTER_DATA")?;
+    let rest = &page[marker..];
+    let after_eq = &rest[rest.find('=')? + 1..];
+    let start = after_eq.find('{')?;
+    let body = &after_eq[start..];
+    let end = body.find("</script>")?;
+    Some(body[..end].trim().trim_end_matches(';').trim())
+}
+
 fn window_rows(section: &Value, mode: SectionMode) -> Vec<Value> {
     let mut rows: Vec<Value> = Vec::new();
     if !section.is_object() || is_empty(section) {

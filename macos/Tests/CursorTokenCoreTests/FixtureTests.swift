@@ -1770,4 +1770,15 @@ final class DoubaoQuotaFixtureTests: XCTestCase {
             XCTAssertEqual(accountId, text(row["account_id"]), text(row["name"]))
         }
     }
+
+    func testDoubaoAccountName() throws {
+        let root = try XCTUnwrap(try json("doubao_account_name_cases.json") as? [[String: Any]])
+        for cse in root {
+            XCTAssertEqual(
+                UsageParser.doubaoAccountName(html: text(cse["html"])),
+                text(cse["expected"]),
+                text(cse["name"])
+            )
+        }
+    }
 }

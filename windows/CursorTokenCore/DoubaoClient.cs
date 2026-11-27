@@ -25,8 +25,9 @@ public sealed class DoubaoQuotaResult
 public sealed class DoubaoClient
 {
     public const string QuotaUrl = "https://www.doubao.com/alice/commerce/sale/subscription/quota/summary/";
-    /// <summary>Landing page for the membership subscription ("打开豆包订阅").</summary>
+    /// <summary>Chat page. Doubao has no separate subscription page: the SSR payload here also carries the account name.</summary>
     public const string SubscriptionUrl = "https://www.doubao.com/chat/";
+    const string BrowserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
     public static readonly string Body = "{\"product_line\":\"membership\"}";
 
     readonly HttpClient _http;
@@ -44,6 +45,27 @@ public sealed class DoubaoClient
         var result = UsageParser.ParseDoubaoQuota(payload);
         if (result.Snapshot is not null) return result.Snapshot;
         throw new CursorApiException(result.Error ?? "查询失败：接口返回格式异常", result.AuthError ? 401 : null);
+    }
+
+    /// <summary>取账号真实用户名：`/chat` 页面的 SSR 数据里带昵称，取不到返回空串。</summary>
+    public async Task<string> FetchAccountName(string rawCookie, double timeout = 20, CancellationToken ct = default)
+    {
+        var cookie = DoubaoCredentials.Normalize(rawCookie);
+        if (cookie.Length == 0) throw new CursorApiException("未配置豆包 Cookie", 401);
+        using var req = new HttpRequestMessage(HttpMethod.Get, SubscriptionUrl);
+        req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml");
+        req.Headers.TryAddWithoutValidation("Origin", "https://www.doubao.com");
+        req.Headers.TryAddWithoutValidation("Referer", "https://www.doubao.com/chat/");
+        req.Headers.TryAddWithoutValidation("User-Agent", BrowserUserAgent);
+        req.Headers.TryAddWithoutValidation("Cookie", cookie);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(timeout));
+        using var resp = await _http.SendAsync(req, cts.Token);
+        var status = (int)resp.StatusCode;
+        if (status is 401 or 403) throw new CursorApiException(DoubaoCredentials.AuthMessage, 401);
+        if (status >= 400) throw new CursorApiException($"HTTP {status}", status);
+        var html = await resp.Content.ReadAsStringAsync(cts.Token);
+        return html.Length == 0 ? "" : UsageParser.DoubaoAccountName(html);
     }
 
     /// <summary>Login probe only: any code other than 710012001 counts as logged in.</summary>
