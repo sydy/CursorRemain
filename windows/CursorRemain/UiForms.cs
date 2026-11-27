@@ -1104,34 +1104,46 @@ sealed class SettingsForm : Form
 
     void FillAccountRows()
     {
-        // 刷新时保留用户选中的行，避免视线和选中行被「当前 Cursor 账号」抢走。
-        if (_selectedId.Length > 0 && !_cfg.Accounts.Any(a => a.Id == _selectedId))
-            _selectedId = "";
-        var selected = DisplaySelection();
-        var rows = _cfg.Accounts
-            .Where(a => !a.IsDoubao)
-            .Concat(_cfg.DoubaoAccounts)
-            .Select(a => RowModel(a, selected))
-            .ToList();
-        // 同样的行状态反复刷新（保存回调会再来一遍）时别再重建一遍控件。
-        var signature = string.Join("|", rows.Select(r =>
-            $"{r.Account.Id}:{r.Percent}:{r.Selected}:{r.Expanded}:{r.StatusText}")) + "#" + (_expanded ? 1 : 0);
-        if (signature != _rowSignature || _accountCard.RowCount == 0)
+        // 整轮刷新（换账号、展开/收起、回填状态）期间挂起布局与重绘，结束后一次性重排，
+        // 避免逐行/逐控件先以过渡位置、过渡宽度绘制一帧再归位，切换时出现错位框与闪烁卡顿。
+        _accountCard.SuspendLayout();
+        _accountEditor.SuspendLayout();
+        try
         {
-            _rowSignature = signature;
-            _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+            // 刷新时保留用户选中的行，避免视线和选中行被「当前 Cursor 账号」抢走。
+            if (_selectedId.Length > 0 && !_cfg.Accounts.Any(a => a.Id == _selectedId))
+                _selectedId = "";
+            var selected = DisplaySelection();
+            var rows = _cfg.Accounts
+                .Where(a => !a.IsDoubao)
+                .Concat(_cfg.DoubaoAccounts)
+                .Select(a => RowModel(a, selected))
+                .ToList();
+            // 同样的行状态反复刷新（保存回调会再来一遍）时别再重建一遍控件。
+            var signature = string.Join("|", rows.Select(r =>
+                $"{r.Account.Id}:{r.Percent}:{r.Selected}:{r.Expanded}:{r.StatusText}")) + "#" + (_expanded ? 1 : 0);
+            if (signature != _rowSignature || _accountCard.RowCount == 0)
+            {
+                _rowSignature = signature;
+                _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+            }
+            else if (_accountCard.EditorMounted != (_expanded && selected is not null))
+            {
+                _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+            }
+            if (selected is not null)
+            {
+                _accountEditor.SetAccount(selected, selected.IsDoubao);
+                _accountEditor.SetTemporary(selected.IsTemporary);
+            }
+            UpdateAccountMeta();
+            UpdateAccountButtons();
         }
-        else if (_accountCard.EditorMounted != (_expanded && selected is not null))
+        finally
         {
-            _accountCard.SetContent(rows, _expanded && selected is not null ? _accountEditor : null);
+            _accountEditor.ResumeLayout(true);
+            _accountCard.ResumeLayout(true);
         }
-        if (selected is not null)
-        {
-            _accountEditor.SetAccount(selected, selected.IsDoubao);
-            _accountEditor.SetTemporary(selected.IsTemporary);
-        }
-        UpdateAccountMeta();
-        UpdateAccountButtons();
     }
 
     void LoadFrom(AppConfig cfg)
