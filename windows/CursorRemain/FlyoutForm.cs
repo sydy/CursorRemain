@@ -210,13 +210,13 @@ sealed class FlyoutForm : Form
             g.DrawPath(border, path);
 
         _hits.Clear();
+        var btnH = Px(FlyoutLayout.ToolButtonHeight);
         if (_showsDoubao)
         {
             DrawStacked(g, pal, s);
         }
         else
         {
-            var btnH = Px(FlyoutLayout.ToolButtonHeight);
             var btnGap = 4 * s;
             var contentBottom = Height - pad - btnH - btnGap;
             var left = new RectangleF(pad, pad, leftW, Math.Max(0, contentBottom - pad));
@@ -224,7 +224,6 @@ sealed class FlyoutForm : Form
             var right = new RectangleF(pad + leftW + gap, pad, Width - pad * 2 - leftW - gap, Math.Max(0, contentBottom - pad));
             DrawRight(g, right, pal, s);
         }
-        var btnH = Px(FlyoutLayout.ToolButtonHeight);
         DrawButtons(g, new RectangleF(pad, Height - pad - btnH, Width - pad * 2, btnH), pal, s);
     }
 
