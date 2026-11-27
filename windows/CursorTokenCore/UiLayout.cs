@@ -312,36 +312,79 @@ public static class FlyoutLayout
     public const int ToolButtonIconGap = 4;
     public const int DoubaoBlockGap = 8;
     public const int DoubaoTitleHeight = 18;
-    public const int DoubaoRowHeight = 26;
+    public const int DoubaoRowHeight = 28;
 
-    // Stacked flyout (Doubao account added): two equal-height cards, 92px rings.
+    // Stacked flyout: 92px rings, each card as tall as its own content.
     public const int StackedRingSize = 92;
     public const int StackedRingLine = 7;
     public const int StackedCardGap = 10;
     public const int StackedRingGap = 14;
     public const int StackedToolbarGap = 8;
-    public const int StackedCardMinHeight = 240;
     public const int StackedPlanHeight = 28;
     public const int StackedLineHeight = 14;
     public const int StackedRowGap = 6;
+    public const int StackedPillGap = 6;
+    public const int StackedPillHeight = 18;
+    public const int StackedMeterGap = 4;
+    public const int StackedInfoGap = 3;
 
-    /// <summary>Doubao block grows with its window rows; shared by layout, paint and hit tests.</summary>
-    public static int DoubaoHeight(int rows) =>
-        CardPadding * 2 + DoubaoTitleHeight + Math.Max(1, rows) * DoubaoRowHeight;
+    /// <summary>Cursor ring plus the status pill under it. The Doubao ring has no pill.</summary>
+    public static int StackedRingColumn => StackedRingSize + StackedPillGap + StackedPillHeight;
 
-    /// <summary>Both stacked cards share one height: the Doubao list or the base minimum.</summary>
-    public static int StackedCardHeight(int rows) =>
-        Math.Max(StackedCardMinHeight, DoubaoHeight(rows));
+    /// <summary>Right-hand text column. Matches the stacked card's vertical stack.</summary>
+    public static int StackedCursorText(int meters, bool prepaid, bool amount, int infoLines, bool error, bool updated)
+    {
+        var parts = new List<int>();
+        if (error)
+        {
+            parts.Add(StackedPlanHeight * 2);
+            if (updated) parts.Add(StackedLineHeight);
+            parts.Add(StackedLineHeight);
+        }
+        else
+        {
+            parts.Add(StackedPlanHeight);
+            if (prepaid) parts.Add(StackedLineHeight);
+            if (amount) parts.Add(StackedLineHeight + StackedMeterGap + BarHeight);
+            if (meters > 0)
+            {
+                var row = StackedLineHeight + StackedMeterGap + BarHeight;
+                parts.Add(meters * row + (meters - 1) * StackedMeterGap);
+            }
+            if (infoLines > 0)
+                parts.Add(infoLines * StackedLineHeight + (infoLines - 1) * StackedInfoGap);
+            parts.Add(StackedLineHeight);
+        }
+        return parts.Sum() + Math.Max(0, parts.Count - 1) * StackedRowGap;
+    }
 
-    public static int StackedHeight(int rows) =>
+    public static int StackedCursorInner(int meters, bool prepaid, bool amount, int infoLines, bool error, bool updated) =>
+        Math.Max(StackedRingColumn, StackedCursorText(meters, prepaid, amount, infoLines, error, updated));
+
+    public static int StackedDoubaoText(int rows, bool error)
+    {
+        int body;
+        if (error) body = StackedPlanHeight * 2;
+        else if (rows <= 0) body = DoubaoRowHeight;
+        else body = rows * DoubaoRowHeight + Math.Max(0, rows - 1) * StackedRowGap;
+        return DoubaoTitleHeight + StackedRowGap + body;
+    }
+
+    public static int StackedDoubaoInner(int rows, bool error) =>
+        Math.Max(StackedRingSize, StackedDoubaoText(rows, error));
+
+    public static int StackedCard(int inner) => CardPadding * 2 + inner;
+
+    public static int StackedPanel(int cursorInner, int doubaoInner) =>
         Padding * 2
-        + StackedCardHeight(rows) * 2
+        + StackedCard(cursorInner)
         + StackedCardGap
+        + StackedCard(doubaoInner)
         + StackedToolbarGap
         + ToolButtonHeight;
 
-    public static int HeightWithDoubao(bool showsDoubao, int rows) =>
-        showsDoubao ? StackedHeight(rows) : Height;
+    public static int HeightWithDoubao(bool showsDoubao, int cursorInner, int doubaoInner) =>
+        showsDoubao ? StackedPanel(cursorInner, doubaoInner) : Height;
 
     /// <summary>
     /// Ellipse diameter for GDI <c>CreateRoundRectRgn</c>. A GraphicsPath region

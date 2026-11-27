@@ -1105,22 +1105,31 @@ public class FixtureTests
     [Fact]
     public void StackedFlyoutMatchesMacosMetrics()
     {
-        // 有豆包账号时上下两张等高卡片，圆环 92 与 macOS 一致。
+        // 有豆包账号时上下两张卡片按内容收高，圆环 92 与 macOS 一致。
         Assert.Equal(92, FlyoutLayout.StackedRingSize);
         Assert.Equal(7, FlyoutLayout.StackedRingLine);
         Assert.Equal(10, FlyoutLayout.StackedCardGap);
         Assert.Equal(14, FlyoutLayout.StackedRingGap);
         Assert.Equal(8, FlyoutLayout.StackedToolbarGap);
-        Assert.Equal(240, FlyoutLayout.StackedCardHeight(0));
-        Assert.Equal(240, FlyoutLayout.StackedCardHeight(3));
-        // 窗口多到 240 放不下时两张卡一起长高。
-        Assert.Equal(FlyoutLayout.DoubaoHeight(8), FlyoutLayout.StackedCardHeight(8));
-        Assert.Equal(558, FlyoutLayout.StackedHeight(3));
-        Assert.Equal(280, FlyoutLayout.HeightWithDoubao(false, 3));
-        Assert.Equal(558, FlyoutLayout.HeightWithDoubao(true, 3));
+        Assert.Equal(116, FlyoutLayout.StackedRingColumn);
+        // 截图这种三条额度 + Token/趋势/预计：Cursor 卡跟文字列走，豆包一行只跟圆环走。
+        Assert.Equal(185, FlyoutLayout.StackedCursorText(3, false, false, 3, false, false));
+        Assert.Equal(185, FlyoutLayout.StackedCursorInner(3, false, false, 3, false, false));
+        Assert.Equal(52, FlyoutLayout.StackedDoubaoText(1, false));
+        Assert.Equal(92, FlyoutLayout.StackedDoubaoInner(1, false));
+        Assert.Equal(205, FlyoutLayout.StackedCard(185));
+        Assert.Equal(112, FlyoutLayout.StackedCard(92));
+        Assert.Equal(395, FlyoutLayout.StackedPanel(185, 92));
+        Assert.True(FlyoutLayout.StackedCard(FlyoutLayout.StackedDoubaoInner(1, false)) < FlyoutLayout.StackedCard(FlyoutLayout.StackedCursorInner(3, false, false, 3, false, false)));
+        // 窗口多到圆环放不下时，只有豆包卡变高。
+        Assert.Equal(290, FlyoutLayout.StackedDoubaoText(8, false));
+        Assert.Equal(290, FlyoutLayout.StackedDoubaoInner(8, false));
+        Assert.Equal(116, FlyoutLayout.StackedCursorInner(0, false, false, 0, true, false));
+        Assert.Equal(280, FlyoutLayout.HeightWithDoubao(false, 0, 0));
+        Assert.Equal(395, FlyoutLayout.HeightWithDoubao(true, 185, 92));
         // 圆环 + 圆环下方状态胶囊必须塞得进卡片内宽。
         Assert.True(FlyoutLayout.StackedRingSize + FlyoutLayout.StackedRingGap * 2 < FlyoutLayout.Width - FlyoutLayout.Padding * 2 - FlyoutLayout.CardPadding * 2);
-        Assert.True(FlyoutLayout.StackedCardMinHeight >= FlyoutLayout.StackedRingSize + 40);
+        Assert.True(FlyoutLayout.StackedRingColumn + FlyoutLayout.CardPadding * 2 <= FlyoutLayout.StackedCard(FlyoutLayout.StackedRingColumn));
     }
 
     [Fact]

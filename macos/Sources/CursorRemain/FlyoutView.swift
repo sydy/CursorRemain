@@ -23,38 +23,108 @@ enum FlyoutLayout {
     static let doubaoTitleHeight: CGFloat = 18
     static let doubaoRowHeight: CGFloat = 28
 
-    // 已添加豆包账号后的上下叠放模式：两张等高卡片，圆环缩到 92。
+    // 已添加豆包账号后的上下叠放：圆环 92，两张卡各自按内容收高，不再撑成一样高。
     static let stackedRingSize: CGFloat = 92
     static let stackedRingLine: CGFloat = 7
     static let stackedCardGap: CGFloat = 10
     static let stackedRingGap: CGFloat = 14
     static let stackedToolbarGap: CGFloat = 8
-    static let stackedCardMinHeight: CGFloat = 240
     static let stackedPlanHeight: CGFloat = 28
     static let stackedLineHeight: CGFloat = 14
     static let stackedRowGap: CGFloat = 6
+    static let stackedPillGap: CGFloat = 6
+    static let stackedPillHeight: CGFloat = 18
+    static let stackedMeterGap: CGFloat = 4
+    static let stackedInfoGap: CGFloat = 3
 
-    /// 豆包区块按窗口数长高，列表与错误文案共用一套高度。
-    static func doubaoHeight(rows: Int) -> CGFloat {
-        cardPadding * 2 + doubaoTitleHeight + CGFloat(max(1, rows)) * doubaoRowHeight
+    /// Cursor 圆环加下方状态胶囊。豆包圆环没有胶囊。
+    static var stackedRingColumn: CGFloat { stackedRingSize + stackedPillGap + stackedPillHeight }
+
+    /// 右侧文字列的设计高度，和叠放卡片里的 VStack 一一对应。
+    static func stackedCursorText(meters: Int, prepaid: Bool, amount: Bool, infoLines: Int, error: Bool, updated: Bool) -> CGFloat {
+        var parts: [CGFloat] = []
+        if error {
+            parts.append(stackedPlanHeight * 2)
+            if updated { parts.append(stackedLineHeight) }
+            parts.append(stackedLineHeight)
+        } else {
+            parts.append(stackedPlanHeight)
+            if prepaid { parts.append(stackedLineHeight) }
+            if amount { parts.append(stackedLineHeight + stackedMeterGap + barHeight) }
+            if meters > 0 {
+                let row = stackedLineHeight + stackedMeterGap + barHeight
+                parts.append(CGFloat(meters) * row + CGFloat(meters - 1) * stackedMeterGap)
+            }
+            let lines = max(0, infoLines)
+            if lines > 0 {
+                parts.append(CGFloat(lines) * stackedLineHeight + CGFloat(lines - 1) * stackedInfoGap)
+            }
+            parts.append(stackedLineHeight)
+        }
+        return parts.reduce(0, +) + CGFloat(max(0, parts.count - 1)) * stackedRowGap
     }
 
-    /// 叠放模式两张卡强制等高：取豆包列表所需高度与基准高度的较大值。
-    static func stackedCardHeight(rows: Int) -> CGFloat {
-        max(stackedCardMinHeight, doubaoHeight(rows: rows))
+    static func stackedCursorInner(meters: Int, prepaid: Bool, amount: Bool, infoLines: Int, error: Bool, updated: Bool) -> CGFloat {
+        max(stackedRingColumn, stackedCursorText(meters: meters, prepaid: prepaid, amount: amount, infoLines: infoLines, error: error, updated: updated))
     }
 
-    static func panelHeight(showsDoubao: Bool, rows: Int) -> CGFloat {
-        guard showsDoubao else { return height }
-        return padding * 2
-            + stackedCardHeight(rows: rows) * 2
+    static func stackedDoubaoText(rows: Int, error: Bool) -> CGFloat {
+        let body: CGFloat
+        if error {
+            body = stackedPlanHeight * 2
+        } else if rows <= 0 {
+            body = doubaoRowHeight
+        } else {
+            body = CGFloat(rows) * doubaoRowHeight + CGFloat(max(0, rows - 1)) * stackedRowGap
+        }
+        return doubaoTitleHeight + stackedRowGap + body
+    }
+
+    static func stackedDoubaoInner(rows: Int, error: Bool) -> CGFloat {
+        max(stackedRingSize, stackedDoubaoText(rows: rows, error: error))
+    }
+
+    static func stackedCard(inner: CGFloat) -> CGFloat { cardPadding * 2 + inner }
+
+    static func panelHeight(cursorInner: CGFloat, doubaoInner: CGFloat) -> CGFloat {
+        padding * 2
+            + stackedCard(inner: cursorInner)
             + stackedCardGap
+            + stackedCard(inner: doubaoInner)
             + stackedToolbarGap
             + toolButtonHeight
     }
 
-    static func panelSize(showsDoubao: Bool, rows: Int) -> CGSize {
-        CGSize(width: width, height: panelHeight(showsDoubao: showsDoubao, rows: rows))
+    static func cursorMeters(_ usage: UsageSnapshot) -> Int {
+        guard !usage.isXSubscription else { return 0 }
+        guard usage.autoPercentUsed != nil || usage.apiPercentUsed != nil || usage.showsGrokBot else { return 0 }
+        var count = 0
+        if usage.autoPercentUsed != nil { count += 1 }
+        if usage.apiPercentUsed != nil { count += 1 }
+        if usage.grokBotPercentUsed != nil { count += 1 }
+        return count
+    }
+
+    /// 趋势和预计各占一行；有 Token 或重置日时再加一行。
+    static func cursorInfoLines(_ usage: UsageSnapshot) -> Int {
+        let meta = (!usage.isXSubscription && (usage.totalTokens ?? 0) > 0)
+            || (usage.isXSubscription && usage.usageResetAt != nil)
+            || (!usage.isXSubscription && usage.billingCycleEnd != nil)
+        return meta ? 3 : 2
+    }
+
+    static func stackedCursorInner(usage: UsageSnapshot?, updated: Bool) -> CGFloat {
+        guard let usage else {
+            return stackedCursorInner(meters: 0, prepaid: false, amount: false, infoLines: 0, error: true, updated: updated)
+        }
+        return stackedCursorInner(
+            meters: cursorMeters(usage),
+            prepaid: usage.isXSubscription && usage.prepaidRemainingCents != nil,
+            amount: usage.showsAmount,
+            infoLines: cursorInfoLines(usage),
+            error: false,
+            updated: false
+        )
     }
 }
 
@@ -64,8 +134,17 @@ struct FlyoutView: View {
 
     var showsDoubao: Bool { store.config.activeDoubaoAccount != nil }
     var doubaoRows: [UsageWindow] { store.doubaoUsage?.windows ?? [] }
+    var cursorInner: CGFloat {
+        FlyoutLayout.stackedCursorInner(usage: store.usage, updated: store.updatedAt != nil)
+    }
+
+    var doubaoInner: CGFloat {
+        FlyoutLayout.stackedDoubaoInner(rows: doubaoRows.count, error: store.doubaoError != nil)
+    }
+
     var contentHeight: CGFloat {
-        FlyoutLayout.panelHeight(showsDoubao: showsDoubao, rows: doubaoRows.count)
+        guard showsDoubao else { return FlyoutLayout.height }
+        return FlyoutLayout.panelHeight(cursorInner: cursorInner, doubaoInner: doubaoInner)
     }
 
     var body: some View {
@@ -77,7 +156,7 @@ struct FlyoutView: View {
             }
         }
         .padding(FlyoutLayout.padding)
-        .frame(width: FlyoutLayout.width, height: contentHeight)
+        .frame(width: FlyoutLayout.width, height: contentHeight, alignment: .top)
         .background {
             RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous)
                 .fill(panelFill)
@@ -102,18 +181,17 @@ struct FlyoutView: View {
         }
     }
 
-    /// 有豆包账号：上下两张等高卡片，工具栏横跨整张浮窗。
+    /// 有豆包账号：上下两张卡片按各自内容收高，短的一侧相对圆环垂直居中。
     var stackedBody: some View {
-        let cardHeight = FlyoutLayout.stackedCardHeight(rows: doubaoRows.count)
-        return VStack(spacing: 0) {
-            stackedCard(height: cardHeight) {
-                HStack(alignment: .top, spacing: FlyoutLayout.stackedRingGap) {
+        VStack(spacing: 0) {
+            stackedCard(height: FlyoutLayout.stackedCard(inner: cursorInner)) {
+                HStack(alignment: .center, spacing: FlyoutLayout.stackedRingGap) {
                     cursorRingColumn
                     stackedCursorRight
                 }
             }
-            stackedCard(height: cardHeight) {
-                HStack(alignment: .top, spacing: FlyoutLayout.stackedRingGap) {
+            stackedCard(height: FlyoutLayout.stackedCard(inner: doubaoInner)) {
+                HStack(alignment: .center, spacing: FlyoutLayout.stackedRingGap) {
                     doubaoRingColumn
                     stackedDoubaoRight
                 }
@@ -187,12 +265,12 @@ struct FlyoutView: View {
 
     // MARK: - 叠放模式（已添加豆包账号）
 
-    /// 叠放卡片：内边距固定，高度由 FlyoutLayout 统一给，两张卡必然等高。
+    /// 叠放卡片：高度按内容给定，内容在卡片内垂直居中。
     func stackedCard<Content: View>(height: CGFloat, @ViewBuilder _ content: () -> Content) -> some View {
         content()
             .padding(FlyoutLayout.cardPadding)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-            .frame(height: height, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: height, alignment: .center)
             .background(cardFill, in: RoundedRectangle(cornerRadius: FlyoutLayout.cardRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: FlyoutLayout.cardRadius, style: .continuous)
@@ -202,7 +280,7 @@ struct FlyoutView: View {
 
     /// Cursor 圆环 + 圆环下方的状态胶囊。
     var cursorRingColumn: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: FlyoutLayout.stackedPillGap) {
             RemainingGauge(
                 remaining: remaining,
                 error: isError,
@@ -212,7 +290,6 @@ struct FlyoutView: View {
                 lineWidth: FlyoutLayout.stackedRingLine
             ) { EmptyView() }
             pillChip
-            Spacer(minLength: 0)
         }
         .frame(width: FlyoutLayout.stackedRingSize)
     }
@@ -222,7 +299,7 @@ struct FlyoutView: View {
             .font(.system(size: 10))
             .lineLimit(1)
             .padding(.horizontal, 8)
-            .padding(.vertical, 2)
+            .frame(height: FlyoutLayout.stackedPillHeight)
             .background(gaugeColor.opacity(0.25), in: Capsule())
     }
 
@@ -277,7 +354,6 @@ struct FlyoutView: View {
                 }
                 dashboardLink
             }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -351,7 +427,6 @@ struct FlyoutView: View {
                 size: FlyoutLayout.stackedRingSize,
                 lineWidth: FlyoutLayout.stackedRingLine
             ) { EmptyView() }
-            Spacer(minLength: 0)
         }
         .frame(width: FlyoutLayout.stackedRingSize)
     }
@@ -385,7 +460,6 @@ struct FlyoutView: View {
                     }
                 }
             }
-            Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -738,8 +812,10 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
 
     /// 豆包区块可能让浮窗变高：窗口尺寸与 SwiftUI 根视图必须一起更新。
     func contentSize(store: AppStore) -> NSSize {
-        let rows = store.doubaoUsage?.windows.count ?? 0
-        return FlyoutLayout.panelSize(showsDoubao: store.config.activeDoubaoAccount != nil, rows: rows)
+        guard store.config.activeDoubaoAccount != nil else { return FlyoutLayout.size }
+        let cursor = FlyoutLayout.stackedCursorInner(usage: store.usage, updated: store.updatedAt != nil)
+        let doubao = FlyoutLayout.stackedDoubaoInner(rows: store.doubaoUsage?.windows.count ?? 0, error: store.doubaoError != nil)
+        return CGSize(width: FlyoutLayout.width, height: FlyoutLayout.panelHeight(cursorInner: cursor, doubaoInner: doubao))
     }
 
     func applyAppearance(_ mode: String) {

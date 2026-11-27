@@ -227,15 +227,15 @@ sealed class FlyoutForm : Form
         DrawButtons(g, new RectangleF(pad, Height - pad - btnH, Width - pad * 2, btnH), pal, s);
     }
 
-    /// <summary>Stacked mode: Cursor card on top, Doubao card below, both the same height.</summary>
+    /// <summary>Stacked mode: each card is only as tall as its content, and the shorter column is centered.</summary>
     void DrawStacked(Graphics g, FlyoutPalette pal, float s)
     {
         var pad = Px(FlyoutLayout.Padding);
-        var cardH = Px(FlyoutLayout.StackedCardHeight(_doubaoWindows.Length));
+        StackedInners(out var cursorInner, out var doubaoInner);
         var cardGap = Px(FlyoutLayout.StackedCardGap);
         var cardW = Width - pad * 2;
-        var cursorCard = new RectangleF(pad, pad, cardW, cardH);
-        var doubaoCard = new RectangleF(pad, cursorCard.Bottom + cardGap, cardW, cardH);
+        var cursorCard = new RectangleF(pad, pad, cardW, Px(FlyoutLayout.StackedCard(cursorInner)));
+        var doubaoCard = new RectangleF(pad, cursorCard.Bottom + cardGap, cardW, Px(FlyoutLayout.StackedCard(doubaoInner)));
         DrawFlyoutCard(g, cursorCard, pal);
         DrawFlyoutCard(g, doubaoCard, pal);
         DrawStackedCursor(g, cursorCard, pal, s);
@@ -261,7 +261,11 @@ sealed class FlyoutForm : Form
         var remaining = _usage?.RemainingPercent;
         var tone = ToneColor(remaining, error, unlimited);
 
-        var gauge = new RectangleF(inner.X, inner.Y, ring, ring);
+        CursorStack(out var meterCount, out var hasPrepaid, out var hasAmount, out var infoLines, out var cursorError, out var updated);
+        var textH = Px(FlyoutLayout.StackedCursorText(meterCount, hasPrepaid, hasAmount, infoLines, cursorError, updated));
+        var ringCol = Px(FlyoutLayout.StackedRingColumn);
+        var ringY = inner.Y + Math.Max(0, (inner.Height - ringCol) / 2f);
+        var gauge = new RectangleF(inner.X, ringY, ring, ring);
         DrawGauge(g, gauge, remaining, error, unlimited, tone, pal, s, compact: true);
 
         // Cursor 的状态胶囊留在圆环下方。
@@ -270,8 +274,8 @@ sealed class FlyoutForm : Form
             var pill = StatusText.StatusPillText(remaining, error);
             var pillSize = g.MeasureString(pill, pillFont);
             var pillW = pillSize.Width + 14 * s;
-            var pillH = pillSize.Height + 4 * s;
-            var pillRect = new RectangleF(inner.X + (ring - pillW) / 2, gauge.Bottom + 8 * s, pillW, pillH);
+            var pillH = Px(FlyoutLayout.StackedPillHeight);
+            var pillRect = new RectangleF(inner.X + (ring - pillW) / 2, gauge.Bottom + Px(FlyoutLayout.StackedPillGap), pillW, pillH);
             using (var pillPath = RoundRect(pillRect, pillRect.Height / 2))
             using (var pillBg = new SolidBrush(Color.FromArgb(64, tone)))
                 g.FillPath(pillBg, pillPath);
@@ -280,11 +284,12 @@ sealed class FlyoutForm : Form
 
         var x = inner.X + ring + ringGap;
         var w = inner.Right - x;
-        var y = inner.Y;
+        var y = inner.Y + Math.Max(0, (inner.Height - textH) / 2f);
         var lineH = Px(FlyoutLayout.StackedLineHeight);
         var rowGap = Px(FlyoutLayout.StackedRowGap);
         var barH = Px(FlyoutLayout.BarHeight);
-        var step = lineH + 4 * s + barH;
+        var meterGap = Px(FlyoutLayout.StackedMeterGap);
+        var step = lineH + meterGap + barH;
         var planH = Px(FlyoutLayout.StackedPlanHeight);
         using var capFont = UiChrome.UiFont(8.25f);
         using var valueFont = UiChrome.UiFont(8.25f, FontStyle.Bold);
@@ -305,7 +310,7 @@ sealed class FlyoutForm : Form
                 DrawLabeled(g, "金额", UsageParser.FormatSpendRange(usage.UsedCents, usage.LimitCents), capFont, valueFont, pal,
                     new RectangleF(x, y, w, lineH));
                 if (usage.UsedCents is { } used && usage.LimitCents is { } limit && limit > 0)
-                    DrawBar(g, new RectangleF(x, y + lineH + 4 * s, w, barH), used / limit, Color.FromArgb(48, 209, 88), pal);
+                    DrawBar(g, new RectangleF(x, y + lineH + meterGap, w, barH), used / limit, Color.FromArgb(48, 209, 88), pal);
                 y += step + rowGap;
             }
             if (!usage.IsXSubscription && (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null || usage.ShowsGrokBot))
@@ -319,14 +324,14 @@ sealed class FlyoutForm : Form
                 }
                 if (usage.ApiPercentUsed is { } api)
                 {
-                    if (meters > 0) y += 4 * s;
+                    if (meters > 0) y += meterGap;
                     DrawMeter(g, new RectangleF(x, y, w, step), "API", api, Color.FromArgb(142, 142, 147), capFont, valueFont, pal, s);
                     y += step;
                     meters++;
                 }
                 if (usage.ShowsGrokBot && usage.GrokBotPercentUsed is { } grok)
                 {
-                    if (meters > 0) y += 4 * s;
+                    if (meters > 0) y += meterGap;
                     DrawMeter(g, new RectangleF(x, y, w, step), "Grok Bot", grok, Color.FromArgb(99, 102, 241), capFont, valueFont, pal, s);
                     y += step;
                     meters++;
@@ -344,12 +349,12 @@ sealed class FlyoutForm : Form
             if (parts.Count > 0)
             {
                 DrawString(g, string.Join(" · ", parts), capFont, pal.Secondary, new RectangleF(x, y, w, lineH));
-                y += lineH + 2 * s;
+                y += lineH + Px(FlyoutLayout.StackedInfoGap);
             }
             var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             DrawString(g, SparklineGeometry.TrendSummary(_history, _dailyAvg, CurrentRemaining(), now), capFont, pal.Secondary,
                 new RectangleF(x, y, w, lineH));
-            y += lineH + 2 * s;
+            y += lineH + Px(FlyoutLayout.StackedInfoGap);
             var est = StatusText.FormatEstimateCaption(usage);
             DrawString(g, est, capFont, EstimateColor(est, pal), new RectangleF(x, y, w, lineH));
             y += lineH + rowGap;
@@ -399,8 +404,10 @@ sealed class FlyoutForm : Form
         if (!error && head is not null)
             remaining = unlimited ? 100 : 100 - head.UsedPercent;
         var tone = ToneColor(remaining, error, unlimited);
-        // 与 Cursor 圆环一致：从卡片内边距顶部开始画，不再垂直居中。
-        var gauge = new RectangleF(inner.X, inner.Y, ring, ring);
+        var textH = Px(FlyoutLayout.StackedDoubaoText(rows.Length, error));
+        var ringY = inner.Y + Math.Max(0, (inner.Height - ring) / 2f);
+        var textY = inner.Y + Math.Max(0, (inner.Height - textH) / 2f);
+        var gauge = new RectangleF(inner.X, ringY, ring, ring);
         DrawGauge(g, gauge, remaining, error, unlimited, tone, pal, s, compact: true);
 
         var x = inner.X + ring + ringGap;
@@ -409,16 +416,16 @@ sealed class FlyoutForm : Form
         if (!string.IsNullOrWhiteSpace(_doubaoMembership)) title.Add(_doubaoMembership!);
         if (!string.IsNullOrWhiteSpace(_doubaoUpdated)) title.Add("更新 " + ShortClock(_doubaoUpdated));
         DrawString(g, string.Join(" · ", title), capFont, pal.Text,
-            new RectangleF(x, inner.Y, w * 0.6f, titleH));
+            new RectangleF(x, textY, w * 0.6f, titleH));
         if (!string.IsNullOrWhiteSpace(_doubaoLabel))
             DrawString(g, _doubaoLabel!, capFont, pal.Secondary,
-                new RectangleF(x, inner.Y, w, titleH), StringAlignment.Far);
+                new RectangleF(x, textY, w, titleH), StringAlignment.Far);
 
-        var y = inner.Y + titleH + Px(FlyoutLayout.StackedRowGap);
+        var y = textY + titleH + Px(FlyoutLayout.StackedRowGap);
         if (error)
         {
             DrawString(g, StatusText.ShortError(_doubaoError, 64), capFont, Color.FromArgb(231, 76, 60),
-                new RectangleF(x, y, w, rowH * 2));
+                new RectangleF(x, y, w, Px(FlyoutLayout.StackedPlanHeight) * 2));
             return;
         }
         if (rows.Length == 0)
@@ -427,10 +434,11 @@ sealed class FlyoutForm : Form
             return;
         }
         var row = new RectangleF(x, y, w, rowH);
-        foreach (var window in rows)
+        for (var i = 0; i < rows.Length; i++)
         {
-            DrawDoubaoRow(g, row, window, pal, s, capFont, valueFont);
+            DrawDoubaoRow(g, row, rows[i], pal, s, capFont, valueFont);
             row.Y += rowH;
+            if (i + 1 < rows.Length) row.Y += Px(FlyoutLayout.StackedRowGap);
         }
     }
 
@@ -772,10 +780,47 @@ sealed class FlyoutForm : Form
 
     FlyoutPalette Palette { get; set; } = FlyoutPalette.For(false);
 
+    /// <summary>Which stacked-cursor rows are visible. Mirrors the macOS text-column height.</summary>
+    void CursorStack(out int meters, out bool prepaid, out bool amount, out int infoLines, out bool error, out bool updated)
+    {
+        meters = 0;
+        prepaid = false;
+        amount = false;
+        infoLines = 0;
+        updated = _updated is { Length: > 0 };
+        if (_usage is not { } usage)
+        {
+            error = true;
+            return;
+        }
+        error = false;
+        updated = false;
+        if (!usage.IsXSubscription && (usage.AutoPercentUsed is not null || usage.ApiPercentUsed is not null || usage.ShowsGrokBot))
+        {
+            if (usage.AutoPercentUsed is not null) meters++;
+            if (usage.ApiPercentUsed is not null) meters++;
+            if (usage.GrokBotPercentUsed is not null) meters++;
+        }
+        prepaid = usage.IsXSubscription && usage.PrepaidRemainingCents is not null;
+        amount = usage.ShowsAmount;
+        var meta = (!usage.IsXSubscription && usage.TotalTokens is > 0)
+            || (usage.IsXSubscription && usage.UsageResetAt is not null)
+            || (!usage.IsXSubscription && usage.BillingCycleEnd is not null);
+        infoLines = meta ? 3 : 2;
+    }
+
+    void StackedInners(out int cursorInner, out int doubaoInner)
+    {
+        CursorStack(out var meters, out var prepaid, out var amount, out var infoLines, out var error, out var updated);
+        cursorInner = FlyoutLayout.StackedCursorInner(meters, prepaid, amount, infoLines, error, updated);
+        doubaoInner = FlyoutLayout.StackedDoubaoInner(_doubaoWindows.Length, !string.IsNullOrWhiteSpace(_doubaoError));
+    }
+
     void ApplyScaledSize()
     {
         var w = UiLayout.ScalePx(FlyoutLayout.Width, DeviceDpi);
-        var h = UiLayout.ScalePx(FlyoutLayout.HeightWithDoubao(_showsDoubao, _doubaoWindows.Length), DeviceDpi);
+        StackedInners(out var cursorInner, out var doubaoInner);
+        var h = UiLayout.ScalePx(FlyoutLayout.HeightWithDoubao(_showsDoubao, cursorInner, doubaoInner), DeviceDpi);
         ClientSize = new Size(w, h);
         ApplyRoundedRegion();
     }
