@@ -70,6 +70,8 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn('REPO/VERSION', script)
         self.assertIn("CFBundleShortVersionString", script)
         self.assertIn("CFBundleVersion", script)
+        self.assertIn("BUILD_VERSION", script)
+        self.assertIn("BuildVersion", script)
         self.assertIn("assert_portable_linkage", script)
         self.assertIn("normalize_linkage.sh", script)
         self.assertIn("libcursor_core.a", script)
@@ -77,6 +79,30 @@ class VersionConsistencyTests(unittest.TestCase):
         # Cargo does not always write deps/libcursor_core.dylib; an unguarded
         # mv under `set -e` aborted macOS packaging on CI.
         self.assertIn('[[ -e "$dylib" ]] || continue', script)
+
+    def test_build_version_is_commit_timestamp(self) -> None:
+        # 每次发版的版本号 = 提交时间戳（北京时间 YYYY.MM.DD.HHMM）。
+        # macOS 在打包时写进 Info.plist，Windows 由打包脚本写进程序集元数据，
+        # 都不依赖 CI 注入，保证两端构建出同一个版本。
+        swift = (ROOT / "macos" / "Sources" / "CursorTokenCore" / "AppUpdate.swift").read_text(encoding="utf-8")
+        self.assertIn('forInfoDictionaryKey: "BuildVersion"', swift)
+        stamp = (ROOT / "windows" / "packaging" / "build_version.ps1").read_text(encoding="utf-8")
+        self.assertIn("FromHours(8)", stamp)
+        self.assertIn("yyyy.MM.dd.HHmm", stamp)
+        self.assertIn("AssemblyMetadata", stamp)
+        targets = (ROOT / "windows" / "Directory.Build.targets").read_text(encoding="utf-8")
+        self.assertIn("build_version.ps1", targets)
+        self.assertIn("CursorBuildVersion.g.cs", targets)
+        installer = (ROOT / "windows" / "packaging" / "build_installer.ps1").read_text(encoding="utf-8")
+        self.assertIn("build_version.ps1", installer)
+        cs = (ROOT / "windows" / "CursorTokenCore" / "AppUpdate.cs").read_text(encoding="utf-8")
+        self.assertIn("AssemblyMetadataAttribute", cs)
+        self.assertIn("BuildVersion", cs)
+        for name in ("update-latest-release.sh", "publish-official-release.sh"):
+            script = (ROOT / ".github" / "scripts" / name).read_text(encoding="utf-8")
+            self.assertIn("STAMP=", script)
+            self.assertIn("TZ=Asia/Shanghai git log -1", script)
+            self.assertIn("**版本**", script)
 
     def test_normalize_linkage_makes_app_portable(self) -> None:
         script = (ROOT / "macos" / "scripts" / "normalize_linkage.sh").read_text(encoding="utf-8")

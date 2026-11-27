@@ -20,6 +20,8 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 TAG="v${VERSION}"
+# 发版版本号 = 提交时间戳（北京时间），与安装包/客户端里的版本保持一致。
+STAMP="$(TZ=Asia/Shanghai git log -1 --format=%cd --date=format:'%Y.%m.%d.%H%M' "${GITHUB_SHA}")"
 SHORT_SHA="${GITHUB_SHA:0:7}"
 SUBJECT="$(git -C "${ROOT}" log -1 --format=%s "${GITHUB_SHA}" | tr -d '\r')"
 TIME_UTC="$(date -u +"%Y-%m-%d %H:%M UTC")"
@@ -38,7 +40,8 @@ write_notes() {
   {
     printf '%s\n' "Cursor 余量 **${VERSION}** 正式版。"
     printf '%s\n' ""
-    printf '%s\n' "- **版本**: \`${VERSION}\`"
+    printf '%s\n' "- **版本**: \`${STAMP}\`"
+    printf '%s\n' "- **产品版本**: \`${VERSION}\`"
     printf '%s\n' "- **提交**: [\`${SHORT_SHA}\`](${COMMIT_URL}) \`${GITHUB_SHA}\`"
     printf '%s\n' "- **说明**: ${SUBJECT}"
     printf '%s\n' "- **打包时间**: ${TIME_UTC}"

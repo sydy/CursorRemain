@@ -67,3 +67,7 @@ cargo test --manifest-path core/Cargo.toml
 配置文件路径：
 - Windows: `%APPDATA%\CursorRemain\config.json`
 - macOS: `~/Library/Application Support/CursorRemain/config.json`
+
+### 版本号
+
+每次发版的版本号 = 该提交的提交时间戳（北京时间 `YYYY.MM.DD.HHMM`，如 `2026.11.27.2120`），由打包脚本统一算出后写进 macOS 的 `BuildVersion` 和 Windows 的程序集元数据，两端显示一致；应用里「当前版本」后面的短哈希仍用来对齐具体提交。`VERSION` 文件只决定正式版 tag（`v2.2.7`），不再随每次构建变化。

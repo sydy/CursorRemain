@@ -274,8 +274,11 @@ public class AppUpdateTests
     {
         var version = AppUpdate.ProductVersion;
         Assert.False(string.IsNullOrWhiteSpace(version));
-        Assert.Equal(version, AppUpdate.DisplayVersion(""));
-        Assert.Equal($"{version} (518192b)", AppUpdate.DisplayVersion("518192b000000000000000000000000000000000"));
+        // 显示版本用发版时间戳（BuildVersion），不是产品版本号。
+        var build = AppUpdate.BuildVersion;
+        Assert.False(string.IsNullOrWhiteSpace(build));
+        Assert.Equal(build, AppUpdate.DisplayVersion(""));
+        Assert.Equal($"{build} (518192b)", AppUpdate.DisplayVersion("518192b000000000000000000000000000000000"));
         Assert.Equal("518192b", AppUpdate.ShaFromInformationalVersion(version + "+518192b"));
         Assert.Equal("", AppUpdate.ShaFromInformationalVersion(version));
         Assert.Equal(version, AppUpdate.NormalizeProductVersion("v" + version));

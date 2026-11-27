@@ -66,6 +66,19 @@ public static class AppUpdate
         }
     }
 
+    /// <summary>Release build version: commit timestamp (YYYY.MM.DD.HHMM, UTC+8) baked in by packaging. Falls back to the product version.</summary>
+    public static string BuildVersion
+    {
+        get
+        {
+            var value = typeof(AppUpdate).Assembly
+                .GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(attr => attr.Key == "BuildVersion")?.Value ?? "";
+            value = value.Trim();
+            return value.Length > 0 ? value : ProductVersion;
+        }
+    }
+
     public static string OfficialLatestPageUrl =>
         $"https://github.com/{RepoOwner}/{RepoName}/releases/latest";
 
@@ -290,7 +303,7 @@ public static class AppUpdate
     {
         var value = NormalizeSha(sha ?? CurrentCommitSha());
         if (value.Length > 7) value = value[..7];
-        return value.Length == 0 ? ProductVersion : $"{ProductVersion} ({value})";
+        return value.Length == 0 ? BuildVersion : $"{BuildVersion} ({value})";
     }
 
     public static bool IsAllowedDownloadUrl(string? url) =>

@@ -1,0 +1,11 @@
+<Project>
+  <!-- 每次发版的版本号由提交时间戳生成，写进程序集元数据，客户端「当前版本」直接显示。
+       不依赖 CI 注入，本地打包与 CI 出来的是同一个值。 -->
+  <Target Name="GenerateBuildVersionStamp" BeforeTargets="CoreCompile"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)packaging\build_version.ps1&quot; -OutputFile &quot;$(IntermediateOutputPath)CursorBuildVersion.g.cs&quot;" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)CursorBuildVersion.g.cs" />
+    </ItemGroup>
+  </Target>
+</Project>

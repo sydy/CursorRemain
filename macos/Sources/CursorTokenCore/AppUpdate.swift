@@ -80,6 +80,13 @@ public enum AppUpdate {
     public static let macAppName = "CursorRemain.app"
     public static let legacyMacAppName = "CursorTokenTray.app"
     public static let productVersion = "2.2.7"
+
+    /// 发版时打进 Info.plist 的时间戳（`YYYY.MM.DD.HHMM`，北京时间）。
+    /// 每次构建都不同；开发态（`swift test` / 直跑二进制）没有这个键，回退产品版本。
+    public static var buildVersion: String {
+        let raw = (Bundle.main.object(forInfoDictionaryKey: "BuildVersion") as? String ?? "").trimmingCharacters(in: .whitespaces)
+        return raw.isEmpty ? productVersion : raw
+    }
     public static let maxZipBytes: Int64 = 140 * 1024 * 1024
     public static let maxLightZipBytes: Int64 = 40 * 1024 * 1024
     public static let autoCheckInterval: TimeInterval = 12 * 60 * 60
@@ -252,7 +259,7 @@ public enum AppUpdate {
     public static func displayVersion(_ sha: String? = nil) -> String {
         var value = normalizeSha(sha ?? currentCommitSha)
         if value.count > 7 { value = String(value.prefix(7)) }
-        return value.isEmpty ? productVersion : "\(productVersion) (\(value))"
+        return value.isEmpty ? buildVersion : "\(buildVersion) (\(value))"
     }
 
     public static func isAllowedDownloadURL(_ raw: String?) -> Bool {

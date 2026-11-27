@@ -23,6 +23,15 @@ $core = Join-Path $PublishDir "cursor_core.dll"
 if (-not (Test-Path -LiteralPath $core)) {
     throw "Missing $core. Build core/ in release before publishing."
 }
+# Release version is the commit timestamp (YYYY.MM.DD.HHMM), same as the value
+# the client shows. A semver passed in by CI (VERSION) must not win over it.
+$stampScript = Join-Path $PSScriptRoot "build_version.ps1"
+if (Test-Path -LiteralPath $stampScript) {
+    $stamp = "$(& $stampScript)".Trim()
+    if ($stamp -match '^\d{4}\.\d{2}\.\d{2}\.\d{4}$') {
+        $AppVersion = $stamp
+    }
+}
 if (-not $AppVersion) {
     $versionFile = Join-Path $RepoRoot "VERSION"
     if (Test-Path -LiteralPath $versionFile) {

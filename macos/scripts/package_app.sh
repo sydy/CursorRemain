@@ -93,7 +93,22 @@ fi
 
 cp "$ROOT/Resources/Info.plist" "$DIST/Contents/Info.plist"
 VERSION="$(tr -d '[:space:]' < "$REPO/VERSION" 2>/dev/null || true)"
-if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+# 每次发版的版本号 = 提交时间戳（北京时间 `YYYY.MM.DD.HHMM`）。CI 通过
+# BUILD_VERSION 传入（与 Windows 同值），本地打包按当前提交时间推算；
+# 都拿不到时退回 VERSION，避免打出一个没有版本号的包。
+BUILD_VERSION="${BUILD_VERSION:-}"
+if [[ -z "$BUILD_VERSION" ]]; then
+  BUILD_VERSION="$(TZ=Asia/Shanghai git -C "$REPO" log -1 --format=%cd --date=format:'%Y.%m.%d.%H%M' 2>/dev/null || true)"
+fi
+if [[ "$BUILD_VERSION" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]{4}$ ]]; then
+  # 展示用的发版版本号走 BuildVersion；CFBundleVersion 按 Apple 约定存构建号。
+  if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$DIST/Contents/Info.plist"
+  fi
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_VERSION}" "$DIST/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Add :BuildVersion string ${BUILD_VERSION}" "$DIST/Contents/Info.plist" 2>/dev/null \
+    || /usr/libexec/PlistBuddy -c "Set :BuildVersion ${BUILD_VERSION}" "$DIST/Contents/Info.plist"
+elif [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$DIST/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "$DIST/Contents/Info.plist"
 fi
