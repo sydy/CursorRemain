@@ -50,6 +50,16 @@ public sealed class Account
     public string BillingCycleEnd { get; set; } = "";
     public string ReportStartDate { get; set; } = "";
     public string ReportEndDate { get; set; } = "";
+    /// <summary>Doubao only: real avatar from the web SSR (<c>accountInfo.data.avatar_url</c>). Empty for Cursor accounts.</summary>
+    public string AvatarUrl { get; set; } = "";
+
+    /// <summary>Avatar accepts an absolute http(s) URL; anything else becomes empty.</summary>
+    public static string SanitizeAvatarUrl(string? raw)
+    {
+        var url = (raw ?? "").Trim();
+        var lower = url.ToLowerInvariant();
+        return lower.StartsWith("http://", StringComparison.Ordinal) || lower.StartsWith("https://", StringComparison.Ordinal) ? url : "";
+    }
 
     public string DisplayLabel
     {
@@ -979,6 +989,7 @@ public static class ConfigStore
         var reportEnd = Str(raw, "report_end_date");
         if (reportEnd.Length == 0) reportEnd = Str(raw, "reportEndDate");
         acc.ReportEndDate = UsageEvents.SanitizeReportDate(reportEnd);
+        acc.AvatarUrl = Account.SanitizeAvatarUrl(Str(raw, "avatar_url", Str(raw, "avatarUrl")));
         return acc;
     }
 
@@ -1004,6 +1015,7 @@ public static class ConfigStore
         var membership = Str(raw, "membership_type");
         if (membership.Length == 0) membership = Str(raw, "membershipType");
         acc.MembershipType = membership.Trim();
+        acc.AvatarUrl = Account.SanitizeAvatarUrl(Str(raw, "avatar_url", Str(raw, "avatarUrl")));
         acc.AccountKind = AccountValidity.LongTerm;
         acc.TempStartAt = "";
         acc.TempValidDays = 0;
@@ -1091,6 +1103,7 @@ public static class ConfigStore
             ["billing_cycle_end"] = a.BillingCycleEnd,
             ["report_start_date"] = a.ReportStartDate,
             ["report_end_date"] = a.ReportEndDate,
+            ["avatar_url"] = a.AvatarUrl ?? "",
         }).ToList(),
         active_account_id = cfg.ActiveAccountId,
         active_account_updated_at = cfg.ActiveAccountUpdatedAt,

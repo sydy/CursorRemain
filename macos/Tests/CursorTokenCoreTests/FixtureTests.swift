@@ -1781,4 +1781,15 @@ final class DoubaoQuotaFixtureTests: XCTestCase {
             )
         }
     }
+
+    func testDoubaoAccountAvatar() throws {
+        let root = try XCTUnwrap(try json("doubao_account_avatar_cases.json") as? [[String: Any]])
+        for cse in root {
+            XCTAssertEqual(
+                UsageParser.doubaoAccountAvatar(html: text(cse["html"])),
+                text(cse["expected"]),
+                text(cse["name"])
+            )
+        }
+    }
 }

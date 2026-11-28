@@ -157,6 +157,34 @@ fn clean_name(raw: &Value) -> Option<String> {
     if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
 }
 
+/// 同一份 SSR 页面里的头像地址（`accountInfo.data.avatar_url`）。
+/// 取不到返回空串，界面回退到首字母头像。
+pub fn account_avatar(page: &str) -> String {
+    let Some(raw) = router_payload(page) else { return String::new() };
+    let Ok(value) = serde_json::from_str::<Value>(raw) else { return String::new() };
+    let layout = child(child(child(&value, "loaderData"), "chat_layout"), "chat_layout");
+    let info = child(child(layout, "accountInfo"), "data");
+    if let Some(url) = clean_avatar(get(info, "avatar_url")) {
+        return url;
+    }
+    for connect in get(info, "connects").as_array().into_iter().flatten() {
+        if let Some(url) = clean_avatar(get(connect, "platform_avatar_url")) {
+            return url;
+        }
+    }
+    String::new()
+}
+
+fn clean_avatar(raw: &Value) -> Option<String> {
+    let text = as_string(raw)?;
+    let trimmed = text.trim();
+    // 只放行 http(s) 绝对地址，避免把任意字符串塞进图片请求。
+    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
 /// 抠出 `window._ROUTER_DATA = {...}` 这一整段 JSON，去掉行尾分号。
 fn router_payload(page: &str) -> Option<&str> {
     let marker = page.find("window._ROUTER_DATA")?;

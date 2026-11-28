@@ -108,7 +108,7 @@ sealed partial class TrayContext
 
         var notices = new List<(string Title, string Body, bool Warn)>();
         // 账号还没有名字时补一次真实用户名（豆包昵称在 /chat 页面的 SSR 数据里）。
-        var doubaoNameFills = await FetchMissingDoubaoNames();
+        var doubaoIdentityFills = await FetchMissingDoubaoIdentities();
         // 内存当前账号集合是结构权威：后台刷新从磁盘重建副本时，不能把本轮之前已删除的账号带回。
         var authoritativeIds = _config.Accounts.Select(a => a.Id).ToList();
         AppConfig cfg;
@@ -168,10 +168,14 @@ sealed partial class TrayContext
                     }
                 }
                 live.SyncLegacyFields();
-                foreach (var (id, name) in doubaoNameFills)
+                foreach (var (id, identity) in doubaoIdentityFills)
                 {
                     var acc = live.Accounts.FirstOrDefault(a => a.Id == id && a.IsDoubao);
-                    if (acc is not null && string.IsNullOrWhiteSpace(acc.Label)) acc.Label = name;
+                    if (acc is null) continue;
+                    if (string.IsNullOrWhiteSpace(acc.Label) && !string.IsNullOrWhiteSpace(identity.Name))
+                        acc.Label = identity.Name;
+                    var avatar = Account.SanitizeAvatarUrl(identity.AvatarUrl);
+                    if (avatar.Length > 0 && acc.AvatarUrl != avatar) acc.AvatarUrl = avatar;
                 }
             }, liveAccountIds: authoritativeIds);
         }
@@ -203,22 +207,23 @@ sealed partial class TrayContext
     }
 
     /// <summary>豆包账号真实用户名：从 `/chat` 页面的 SSR 数据里补，每个账号只试一次。</summary>
-    async Task<Dictionary<string, string>> FetchMissingDoubaoNames()
+    async Task<Dictionary<string, DoubaoIdentity>> FetchMissingDoubaoIdentities()
     {
-        var fills = new Dictionary<string, string>(StringComparer.Ordinal);
+        var fills = new Dictionary<string, DoubaoIdentity>(StringComparer.Ordinal);
         foreach (var acc in _config.DoubaoAccounts)
         {
-            if (!string.IsNullOrWhiteSpace(acc.Label)) continue;
+            if (!string.IsNullOrWhiteSpace(acc.Label) && !string.IsNullOrWhiteSpace(acc.AvatarUrl)) continue;
             if (acc.TokenDecryptFailed || string.IsNullOrWhiteSpace(acc.Token)) continue;
             if (!_doubaoNameTried.Add(acc.Id)) continue;
             try
             {
-                var name = await _doubaoClient.FetchAccountName(acc.Token, 20);
-                if (!string.IsNullOrWhiteSpace(name)) fills[acc.Id] = name.Trim();
+                var identity = await _doubaoClient.FetchAccountIdentity(acc.Token, 20);
+                if (!string.IsNullOrWhiteSpace(identity.Name) || !string.IsNullOrWhiteSpace(identity.AvatarUrl))
+                    fills[acc.Id] = identity;
             }
             catch
             {
-                // 名字只是展示项，失败保持套餐名兜底，不打扰用户。
+                // 名字/头像只是展示项，失败保持套餐名兜底，不打扰用户。
             }
         }
         return fills;

@@ -116,6 +116,15 @@ public class DoubaoFixtureTests
     }
 
     [Fact]
+    public void AccountAvatarCases()
+    {
+        foreach (var cse in Load("doubao_account_avatar_cases.json").EnumerateArray())
+        {
+            Assert.Equal(Text(cse, "expected"), UsageParser.DoubaoAccountAvatar(Text(cse, "html")));
+        }
+    }
+
+    [Fact]
     public void AccountNameCases()
     {
         foreach (var cse in Load("doubao_account_name_cases.json").EnumerateArray())

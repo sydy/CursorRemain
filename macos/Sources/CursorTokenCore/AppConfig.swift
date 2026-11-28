@@ -160,6 +160,8 @@ public struct Account: Equatable, Sendable, Codable {
     public var billingCycleEnd: String
     public var reportStartDate: String
     public var reportEndDate: String
+    /// 豆包账号的真实头像地址（登录/刷新时从网页 SSR 取），Cursor 账号留空。
+    public var avatarURL: String
 
     public init(
         id: String = "",
@@ -192,6 +194,7 @@ public struct Account: Equatable, Sendable, Codable {
         billingCycleEnd: String = "",
         reportStartDate: String = "",
         reportEndDate: String = "",
+        avatarURL: String = "",
         provider: String = AccountProvider.cursor
     ) {
         self.id = id
@@ -225,6 +228,16 @@ public struct Account: Equatable, Sendable, Codable {
         self.billingCycleEnd = billingCycleEnd.trimmingCharacters(in: .whitespaces)
         self.reportStartDate = UsageEvents.sanitizeReportDate(reportStartDate)
         self.reportEndDate = UsageEvents.sanitizeReportDate(reportEndDate)
+        self.avatarURL = Account.sanitizeAvatarURL(avatarURL)
+    }
+
+    /// 头像只接受 http(s) 绝对地址，其他字符串一律清掉。
+    public static func sanitizeAvatarURL(_ raw: String) -> String {
+        let url = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard url.lowercased().hasPrefix("https://") || url.lowercased().hasPrefix("http://") else {
+            return ""
+        }
+        return url
     }
 
     public var displayLabel: String {
@@ -1095,6 +1108,7 @@ public enum ConfigStore {
             .trimmingCharacters(in: .whitespaces)
         acc.reportStartDate = UsageEvents.sanitizeReportDate(raw["report_start_date"] ?? raw["reportStartDate"])
         acc.reportEndDate = UsageEvents.sanitizeReportDate(raw["report_end_date"] ?? raw["reportEndDate"])
+        acc.avatarURL = Account.sanitizeAvatarURL(raw["avatar_url"] as? String ?? raw["avatarURL"] as? String ?? "")
         return acc
     }
 
@@ -1139,6 +1153,7 @@ public enum ConfigStore {
         acc.authErrorNotified = boolValue(raw["auth_error_notified"])
         acc.exhaustionNotified = boolValue(raw["exhaustion_notified"])
         acc.lowQuotaNotified = boolValue(raw["low_quota_notified"])
+        acc.avatarURL = Account.sanitizeAvatarURL(raw["avatar_url"] as? String ?? raw["avatarURL"] as? String ?? "")
         return acc
     }
 
@@ -1222,6 +1237,7 @@ public enum ConfigStore {
                 d["billing_cycle_end"] = acc.billingCycleEnd
                 d["report_start_date"] = acc.reportStartDate
                 d["report_end_date"] = acc.reportEndDate
+                d["avatar_url"] = acc.avatarURL
                 return d
             },
             "active_account_id": cfg.activeAccountId,

@@ -1,0 +1,32 @@
+[
+  {
+    "name": "avatar_url",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"name\":\"狂风里的蜗牛\",\"avatar_url\":\"https://p3-flow-imagex.doubaoapp.com/avatar.png\"}}}}}}</script>",
+    "expected": "https://p3-flow-imagex.doubaoapp.com/avatar.png"
+  },
+  {
+    "name": "http_avatar",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"avatar_url\":\" http://cdn.example.com/a.png \"}}}}}}</script>",
+    "expected": "http://cdn.example.com/a.png"
+  },
+  {
+    "name": "connect_fallback",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"connects\":[{\"platform_screen_name\":\"绑定平台\",\"platform_avatar_url\":\"https://p3.douyinpic.com/b.jpeg\"}]}}}}}}</script>",
+    "expected": "https://p3.douyinpic.com/b.jpeg"
+  },
+  {
+    "name": "empty_avatar",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"name\":\"只有名字\",\"avatar_url\":\"\"}}}}}}</script>",
+    "expected": ""
+  },
+  {
+    "name": "rejects_non_http",
+    "html": "<script>window._ROUTER_DATA = {\"loaderData\":{\"chat_layout\":{\"chat_layout\":{\"accountInfo\":{\"data\":{\"avatar_url\":\"javascript:alert(1)\"}}}}}}</script>",
+    "expected": ""
+  },
+  {
+    "name": "no_marker",
+    "html": "<html><body>未登录</body></html>",
+    "expected": ""
+  }
+]

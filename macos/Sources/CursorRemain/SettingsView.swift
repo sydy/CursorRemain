@@ -283,6 +283,7 @@ struct SettingsRootView: View {
             }
             ForEach(store.config.doubaoAccounts, id: \.id) { account in
                 HStack(spacing: 8) {
+                    AccountAvatar(account: account, active: account.id == store.config.activeDoubaoAccountId)
                     Text(account.displayLabel)
                         .font(.callout)
                         .fontWeight(account.id == store.config.activeDoubaoAccountId ? .semibold : .regular)
@@ -1638,15 +1639,89 @@ private struct AccountAvatar: View {
     let account: Account
     let active: Bool
 
+    private var avatarURL: URL? {
+        let raw = account.avatarURL.trimmingCharacters(in: .whitespaces)
+        guard !raw.isEmpty, let url = URL(string: raw) else { return nil }
+        return url
+    }
+
     var body: some View {
+        Group {
+            if let avatarURL {
+                RemoteAvatar(url: avatarURL) {
+                    monogram
+                }
+            } else {
+                monogram
+            }
+        }
+        .frame(width: 24, height: 24)
+    }
+
+    private var monogram: some View {
         let text = account.isDoubao ? "豆" : String(account.displayLabel.prefix(1))
-        Text(text)
+        return Text(text)
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(active ? Color.accentColor : Color.secondary)
             .frame(width: 24, height: 24)
             .background(
                 Circle().fill(active ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.06))
             )
+            .clipShape(Circle())
+    }
+}
+
+/// 头像网络图：内存缓存 + 每个地址只请求一次，避免每次重绘都打网络。
+/// 没加载出来时显示占位（豆包用「豆」字，Cursor 用首字母）。
+private struct RemoteAvatar<Placeholder: View>: View {
+    let url: URL
+    let placeholder: () -> Placeholder
+    @State private var image: NSImage?
+
+    var body: some View {
+        ZStack {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 24, height: 24)
+                    .clipShape(Circle())
+            } else {
+                placeholder()
+            }
+        }
+        .task(id: url.absoluteString) {
+            image = await AvatarImageCache.shared.image(for: url)
+        }
+    }
+}
+
+@MainActor
+private final class AvatarImageCache {
+    static let shared = AvatarImageCache()
+    private let cache = NSCache<NSURL, NSImage>()
+    private var inflight: [NSURL: Task<NSImage?, Never>] = [:]
+
+    func image(for url: URL) async -> NSImage? {
+        let key = url as NSURL
+        if let cached = cache.object(forKey: key) { return cached }
+        if let running = inflight[key] { return await running.value }
+        let task = Task<NSImage?, Never> {
+            var request = URLRequest(url: url, timeoutInterval: 20)
+            request.setValue(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                forHTTPHeaderField: "User-Agent"
+            )
+            guard let (data, response) = try? await URLSession.shared.data(for: request) else { return nil }
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { return nil }
+            guard let image = NSImage(data: data), image.size.width > 0 else { return nil }
+            return image
+        }
+        inflight[key] = task
+        let image = await task.value
+        inflight[key] = nil
+        if let image { cache.setObject(image, forKey: key) }
+        return image
     }
 }
 

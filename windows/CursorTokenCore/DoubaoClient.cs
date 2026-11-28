@@ -22,6 +22,9 @@ public sealed class DoubaoQuotaResult
 /// Doubao quota client (option A: plain HTTP). The endpoint has no public docs:
 /// HTTP status is always 200, success is decided by the body's <c>code</c>.
 /// </summary>
+/// <summary>Identity parsed from Doubao's web SSR (both fields may be empty).</summary>
+public sealed record DoubaoIdentity(string Name, string AvatarUrl);
+
 public sealed class DoubaoClient
 {
     public const string QuotaUrl = "https://www.doubao.com/alice/commerce/sale/subscription/quota/summary/";
@@ -47,8 +50,8 @@ public sealed class DoubaoClient
         throw new CursorApiException(result.Error ?? "查询失败：接口返回格式异常", result.AuthError ? 401 : null);
     }
 
-    /// <summary>取账号真实用户名：`/chat` 页面的 SSR 数据里带昵称，取不到返回空串。</summary>
-    public async Task<string> FetchAccountName(string rawCookie, double timeout = 20, CancellationToken ct = default)
+    /// <summary>取账号真实用户名 + 头像：`/chat` 页面的 SSR 数据里带昵称与头像，取不到返回空值。</summary>
+    public async Task<DoubaoIdentity> FetchAccountIdentity(string rawCookie, double timeout = 20, CancellationToken ct = default)
     {
         var cookie = DoubaoCredentials.Normalize(rawCookie);
         if (cookie.Length == 0) throw new CursorApiException("未配置豆包 Cookie", 401);
@@ -65,8 +68,15 @@ public sealed class DoubaoClient
         if (status is 401 or 403) throw new CursorApiException(DoubaoCredentials.AuthMessage, 401);
         if (status >= 400) throw new CursorApiException($"HTTP {status}", status);
         var html = await resp.Content.ReadAsStringAsync(cts.Token);
-        return html.Length == 0 ? "" : UsageParser.DoubaoAccountName(html);
+        if (html.Length == 0) return new DoubaoIdentity("", "");
+        return new DoubaoIdentity(
+            UsageParser.DoubaoAccountName(html),
+            Account.SanitizeAvatarUrl(UsageParser.DoubaoAccountAvatar(html)));
     }
+
+    /// <summary>Back-compat: name only.</summary>
+    public async Task<string> FetchAccountName(string rawCookie, double timeout = 20, CancellationToken ct = default) =>
+        (await FetchAccountIdentity(rawCookie, timeout, ct)).Name;
 
     /// <summary>Login probe only: any code other than 710012001 counts as logged in.</summary>
     public static async Task<bool> CookieIsLoggedIn(string cookie, double timeout = 12, CancellationToken ct = default)

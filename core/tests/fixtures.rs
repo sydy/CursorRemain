@@ -475,6 +475,19 @@ fn doubao_account_name_cases() {
 }
 
 #[test]
+fn doubao_account_avatar_cases() {
+    for case in fixture("doubao_account_avatar_cases.json").as_array().unwrap() {
+        let name = case["name"].as_str().unwrap_or("");
+        let html = case["html"].as_str().unwrap_or("");
+        assert_eq!(
+            cursor_core::doubao::account_avatar(html),
+            case["expected"].as_str().unwrap_or(""),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn account_validity_cases() {
     let root = fixture("account_validity_cases.json");
     for row in root["kind"].as_array().unwrap() {

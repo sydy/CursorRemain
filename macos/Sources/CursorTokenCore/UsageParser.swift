@@ -392,6 +392,11 @@ public enum UsageParser {
         RustCore.string("doubao_account_name", ["html": html])
     }
 
+    /// 豆包「真实头像」：同一份 SSR 页面里的 `avatar_url`，取不到返回空串。
+    public static func doubaoAccountAvatar(html: String) -> String {
+        RustCore.string("doubao_account_avatar", ["html": html])
+    }
+
     /// 豆包额度。`code` 非 0 时返回 error，不伪造 0%。
     public static func parseDoubaoQuota(_ payload: JSONValue, now: Date = Date()) -> DoubaoQuotaResult {
         let result = RustCore.call("parse_doubao_quota", ["payload": payload.raw, "now": isoNow(now)]) as? [String: Any] ?? [:]

@@ -344,6 +344,10 @@ public static class UsageParser
     public static string DoubaoAccountName(string html) =>
         RustCore.String("doubao_account_name", new { html = html ?? "" });
 
+    /// <summary>Doubao real avatar from the same SSR page; empty when missing.</summary>
+    public static string DoubaoAccountAvatar(string html) =>
+        RustCore.String("doubao_account_avatar", new { html = html ?? "" });
+
     public static string DoubaoWindowText(UsageWindow window) =>
         RustCore.String("doubao_window_text", new { window = WindowInput(window) });
 

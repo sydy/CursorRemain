@@ -488,9 +488,9 @@ final class AppStore: ObservableObject {
             live.syncLegacyFields()
         }
         config = cfg
-        // 老账号（添加时没有名字）在下一轮刷新补一次真实用户名。
-        for doubao in cfg.doubaoAccounts where doubao.label.trimmingCharacters(in: .whitespaces).isEmpty {
-            refreshDoubaoAccountName(accountId: doubao.id)
+        // 老账号（添加时没有名字/头像）在下一轮刷新补一次真实昵称与头像。
+        for doubao in cfg.doubaoAccounts where doubao.label.trimmingCharacters(in: .whitespaces).isEmpty || doubao.avatarURL.isEmpty {
+            refreshDoubaoIdentity(accountId: doubao.id)
         }
         if let active = outcomes.first(where: { $0.id == cfg.activeAccountId }) {
             applyActiveOutcome(active, generation: generation)
@@ -584,27 +584,35 @@ final class AppStore: ObservableObject {
         doubaoNextRefreshAt = nil
         doubaoNameTried.removeAll()
         applyConfig(cfg, refresh: true)
-        refreshDoubaoAccountName(accountId: existingId ?? cfg.activeDoubaoAccountId, force: true)
+        refreshDoubaoIdentity(accountId: existingId ?? cfg.activeDoubaoAccountId, force: true)
         return ""
     }
 
-    /// 豆包账号真实用户名来自 `/chat` 页面的 SSR 数据：登录后或账号还没有名字时补一次。
-    func refreshDoubaoAccountName(accountId: String? = nil, force: Bool = false) {
+    /// 豆包账号真实用户名/头像来自 `/chat` 页面的 SSR 数据：登录后或账号还缺名字、头像时补一次。
+    func refreshDoubaoIdentity(accountId: String? = nil, force: Bool = false) {
         let targetId = (accountId ?? config.activeDoubaoAccountId).trimmingCharacters(in: .whitespaces)
         guard let idx = config.accounts.firstIndex(where: { $0.id == targetId && $0.isDoubao }) else { return }
         if !force && doubaoNameTried.contains(targetId) { return }
+        let known = config.accounts[idx]
+        let hasName = !known.label.trimmingCharacters(in: .whitespaces).isEmpty
+        if !force && hasName && !known.avatarURL.isEmpty { return }
         doubaoNameTried.insert(targetId)
-        let token = config.accounts[idx].token
-        guard !token.isEmpty, !config.accounts[idx].tokenDecryptFailed else { return }
+        let token = known.token
+        guard !token.isEmpty, !known.tokenDecryptFailed else { return }
         Task { @MainActor in
-            let name = ((try? await self.doubaoClient.fetchAccountName(cookie: token, timeout: 20)) ?? "")
-                .trimmingCharacters(in: .whitespaces)
-            guard !name.isEmpty else { return }
-            guard let current = self.config.accounts.first(where: { $0.id == targetId }),
-                  current.label.trimmingCharacters(in: .whitespaces) != name else { return }
+            let identity = (try? await self.doubaoClient.fetchAccountIdentity(cookie: token, timeout: 20))
+                ?? DoubaoIdentity()
+            let name = identity.name.trimmingCharacters(in: .whitespaces)
+            let avatar = Account.sanitizeAvatarURL(identity.avatarURL)
+            guard !name.isEmpty || !avatar.isEmpty else { return }
+            guard let current = self.config.accounts.first(where: { $0.id == targetId }) else { return }
+            let nameChanged = !name.isEmpty && current.label.trimmingCharacters(in: .whitespaces) != name
+            let avatarChanged = !avatar.isEmpty && current.avatarURL != avatar
+            guard nameChanged || avatarChanged else { return }
             let cfg = ConfigStore.update(from: self.settingsDirectory) { live in
                 guard let i = live.accounts.firstIndex(where: { $0.id == targetId && $0.isDoubao }) else { return }
-                live.accounts[i].label = name
+                if nameChanged { live.accounts[i].label = name }
+                if avatarChanged { live.accounts[i].avatarURL = avatar }
             }
             self.config = cfg
             self.objectWillChange.send()
