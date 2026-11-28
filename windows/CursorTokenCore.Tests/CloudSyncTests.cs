@@ -340,8 +340,11 @@ public class CloudSyncTests
         {
             var status = await CloudSync.ReconcileAsync(cfg, write: false);
             Assert.False(status.Ok);
+            Assert.True(status.AuthExpired);
             Assert.False(cfg.CloudLoggedIn);
+            Assert.False(cfg.SyncEnabled);
             Assert.Equal("", cfg.CloudRefreshToken);
+            Assert.Equal("t@example.com", cfg.CloudEmail);
             Assert.Equal("登录已过期，请重新登录", status.Message);
         }
         finally

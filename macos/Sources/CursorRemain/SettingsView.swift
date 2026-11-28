@@ -1163,7 +1163,11 @@ struct SettingsRootView: View {
 
     /// Background reconcile updates the store after login. Keep the "登录成功" line until that result arrives.
     func adoptCloudSyncStatus() {
-        guard store.config.cloudLoggedIn else { return }
+        guard store.config.cloudLoggedIn else {
+            // 会话被服务端判定失效后界面已切回登录表单，状态行要继续显示过期原因。
+            syncStatus = cloudStatusLine()
+            return
+        }
         let line = cloudStatusLine()
         if line == "尚未同步", syncStatus.hasPrefix("登录成功") { return }
         if !line.isEmpty { syncStatus = line }

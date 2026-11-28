@@ -255,6 +255,7 @@ public static class CloudSync
         catch (CursorApiException ex) when (ex.StatusCode == 401)
         {
             ClearSession(cfg);
+            status.AuthExpired = true;
             status.Message = "登录已过期，请重新登录";
             cfg.SyncLastError = status.Message;
             return status;
@@ -356,6 +357,7 @@ public static class CloudSync
         catch (CursorApiException ex) when (ex.StatusCode == 401)
         {
             ClearSession(cfg);
+            status.AuthExpired = true;
             status.Message = "登录已过期，请重新登录";
             cfg.SyncLastError = status.Message;
             return status;

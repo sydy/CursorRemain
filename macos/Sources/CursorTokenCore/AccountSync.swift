@@ -162,12 +162,22 @@ public struct SyncStatus: Sendable {
     public var pushed: Bool
     public var message: String
     public var path: String
-    public init(ok: Bool = false, changed: Bool = false, pushed: Bool = false, message: String = "", path: String = "") {
+    /// 服务端判定登录凭证失效（refresh token 已被轮换/注销），调用方需要把清空后的会话落回真实配置。
+    public var authExpired: Bool
+    public init(
+        ok: Bool = false,
+        changed: Bool = false,
+        pushed: Bool = false,
+        message: String = "",
+        path: String = "",
+        authExpired: Bool = false
+    ) {
         self.ok = ok
         self.changed = changed
         self.pushed = pushed
         self.message = message
         self.path = path
+        self.authExpired = authExpired
     }
 }
 

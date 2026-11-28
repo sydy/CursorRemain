@@ -860,6 +860,13 @@ sealed class SettingsForm : Form
             UiChrome.Apply(_addDialog);
     }
 
+    /// <summary>云同步会话被服务端判定失效后，让设置页立即从「已登录」切回登录表单。</summary>
+    public void RefreshCloudUi()
+    {
+        if (IsDisposed || _loading) return;
+        LoadFrom(_cfg);
+    }
+
     public void FocusToken()
     {
         _tabs.SelectedIndex = 0;

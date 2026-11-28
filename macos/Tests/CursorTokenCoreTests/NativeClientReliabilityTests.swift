@@ -316,6 +316,30 @@ final class NativeClientReliabilityTests: XCTestCase {
         XCTAssertTrue(status.message.contains("无法加密") || status.message.contains("同步"))
         #endif
     }
+
+    func testExpiredRefreshClearsSessionAndMarksAuthExpired() {
+        var cfg = loggedIn()
+        cfg.syncStorage = "server"
+        CloudSync.testSend = { method, path, _, _ in
+            switch (method, path) {
+            case ("GET", "/v1/store"):
+                throw CursorAPIError("Token expired", statusCode: 401)
+            case ("POST", "/v1/auth/refresh"):
+                throw CursorAPIError("登录已过期，请重新登录", statusCode: 401)
+            default:
+                throw CursorAPIError("unexpected \(method) \(path)")
+            }
+        }
+        let status = CloudSync.reconcile(&cfg)
+        XCTAssertFalse(status.ok)
+        XCTAssertTrue(status.authExpired)
+        XCTAssertFalse(cfg.cloudLoggedIn)
+        XCTAssertEqual(cfg.cloudAccessToken, "")
+        XCTAssertEqual(cfg.cloudRefreshToken, "")
+        XCTAssertFalse(cfg.syncEnabled)
+        XCTAssertEqual(cfg.cloudEmail, "t@example.com")
+        XCTAssertEqual(status.message, "登录已过期，请重新登录")
+    }
 }
 
 private func loggedIn() -> AppConfig {

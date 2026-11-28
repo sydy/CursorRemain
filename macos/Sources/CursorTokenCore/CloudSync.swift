@@ -197,6 +197,7 @@ public enum CloudSync {
             return status
         } catch let err as CursorAPIError where err.statusCode == 401 {
             clearSession(&cfg)
+            status.authExpired = true
             status.message = "登录已过期，请重新登录"
             cfg.syncLastError = status.message
             return status
@@ -282,6 +283,7 @@ public enum CloudSync {
             return status
         } catch let err as CursorAPIError where err.statusCode == 401 {
             clearSession(&cfg)
+            status.authExpired = true
             status.message = "登录已过期，请重新登录"
             cfg.syncLastError = status.message
             return status

@@ -605,10 +605,17 @@ sealed partial class TrayContext : ApplicationContext
                     if (AccountSync.AdoptReconciled(_config, captured)) _reconcileAgain = true;
                     AccountSync.KeepLiveActiveAccount(_config, startedActive, _config.SessionActiveAccountId);
                 }
-                if (save || status.Changed || status.Ok)
+                if (save || status.Changed || status.Ok || status.AuthExpired)
                 {
                     try { await Task.Run(() => ConfigStore.Save(_config)); }
                     catch (Exception ex) { CrashLog.Write(ex); }
+                }
+                if (status.AuthExpired)
+                {
+                    // captured may no longer be the live instance; make sure the live config drops the dead session too.
+                    if (_config.CloudLoggedIn) CloudSync.ClearSession(_config);
+                    _config.SyncLastError = status.Message;
+                    OnUi(() => _settings?.RefreshCloudUi());
                 }
                 NotifyCloudSync(status);
                 var curAccountsFingerprint = string.Join("|", _config.Accounts.Select(a => $"{a.Id}:{a.Token}:{a.Label}"));

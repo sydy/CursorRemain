@@ -378,6 +378,15 @@ final class AppStore: ObservableObject {
             return status.changed || kept || diverged
         }
         config.syncLastError = status.message
+        // 服务端判定登录凭证已失效：后台副本里 clearSession 的结果必须落回真实配置，
+        // 否则顶部仍按旧 token 显示「已登录」，和下面的过期提示自相矛盾。
+        if status.authExpired && config.cloudLoggedIn {
+            CloudSync.clearSession(&config)
+            config.syncLastError = status.message
+            if !ConfigStore.save(config, to: settingsDirectory) {
+                AppLog.log("云同步会话清理写入配置失败")
+            }
+        }
         notifyCloudSync(status)
         objectWillChange.send()
         return false

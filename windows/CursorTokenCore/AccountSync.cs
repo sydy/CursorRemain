@@ -75,6 +75,8 @@ public sealed class SyncStatus
     public bool Pushed { get; set; }
     public string Message { get; set; } = "";
     public string Path { get; set; } = "";
+    /// <summary>Server said the session is dead (refresh token rotated/revoked); caller must persist the cleared session.</summary>
+    public bool AuthExpired { get; set; }
 }
 
 public static class AccountSync
