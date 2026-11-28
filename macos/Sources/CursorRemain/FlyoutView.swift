@@ -166,7 +166,6 @@ struct FlyoutView: View {
             RoundedRectangle(cornerRadius: FlyoutLayout.cornerRadius, style: .continuous)
                 .strokeBorder(Color.primary.opacity(colorScheme == .light ? 0.16 : 0.12), lineWidth: 0.5)
         )
-        .preferredColorScheme(ColorModeAppearance.colorScheme(store.config.colorMode))
     }
 
     /// 没有豆包账号：保持原来的 500×280 左右分栏。
@@ -857,6 +856,7 @@ final class FlyoutWindowController: NSObject, NSWindowDelegate {
             panel.hidesOnDeactivate = false
             panel.delegate = self
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            ColorModeAppearance.apply(to: panel, mode: store.config.colorMode)
             window = panel
         }
         window?.setContentSize(size)

@@ -230,7 +230,6 @@ struct ReportRootView: View {
         }
         .padding(16)
         .frame(minWidth: 980, minHeight: 620)
-        .preferredColorScheme(ColorModeAppearance.colorScheme(store.app.config.colorMode))
         .onChange(of: store.teamScope) { _ in
             Task { await store.sync() }
         }
@@ -460,6 +459,7 @@ final class ReportWindowController: NSObject, NSWindowDelegate {
             win.minSize = NSSize(width: 940, height: 580)
             win.isReleasedWhenClosed = false
             win.delegate = self
+            ColorModeAppearance.apply(to: win, mode: app.config.colorMode)
             window = win
         }
         if store == nil {

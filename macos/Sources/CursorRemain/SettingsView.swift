@@ -61,7 +61,6 @@ struct SettingsRootView: View {
         }
         .padding(SettingsMetrics.padding)
         .frame(width: SettingsMetrics.width, height: pageHeight)
-        .preferredColorScheme(ColorModeAppearance.colorScheme(store.config.colorMode))
         .onPreferenceChange(SettingsBodyHeightKey.self) { height in
             guard height > fittedBody + 1 else { return }
             fittedBody = height
@@ -863,7 +862,7 @@ struct SettingsRootView: View {
     var colorBinding: Binding<String> {
         Binding(
             get: { store.config.colorMode },
-            set: { v in applySetting { $0.colorMode = AppConfig.normalizeColorMode(v) } }
+            set: { v in store.applyColorMode(v) }
         )
     }
 
@@ -1752,9 +1751,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let chrome = win.frame.height - win.contentLayoutRect.height
         var frame = win.frame
         let newH = height + chrome
+        let delta = abs(newH - frame.height)
         frame.origin.y += frame.height - newH
         frame.size.height = newH
-        win.setFrame(frame, display: true, animate: true)
+        // 主题切换会让文字量测有 1~2pt 抖动，每次都动画会看起来一直在抽动；
+        // 只有真正换页/展开时才做平滑动画。
+        win.setFrame(frame, display: true, animate: delta > 24)
     }
 
     func show(store: AppStore, focusToken: Bool, startImport: Bool) {
@@ -1774,6 +1776,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             window = win
         }
         let wasHidden = window?.isVisible != true
+        // 外观只走窗口级 NSAppearance，不再用 preferredColorScheme 二次覆盖：
+        // 两套主题来源不同步时，会出现「窗口还是浅色、按钮已经变深色」的半截状态。
+        if let win = window {
+            ColorModeAppearance.apply(to: win, mode: store.config.colorMode)
+        }
         // NSWindow always installs an empty contentView; only skip rebuild
         // when the settings hosting view is already there.
         if window?.contentView is NSHostingView<SettingsRootView> {

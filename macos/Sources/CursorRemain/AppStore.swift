@@ -154,6 +154,23 @@ final class AppStore: ObservableObject {
         objectWillChange.send()
     }
 
+    /// 只切外观：不写同步标记、不重算报表、不重建整棵视图。
+    /// 外观改成延后一轮 runloop 应用——在按钮的鼠标事件里立刻改 NSAppearance
+    /// 会重绘整窗并吞掉抬起事件，表现就是「要点两下」。
+    func applyColorMode(_ mode: String) {
+        let normalized = AppConfig.normalizeColorMode(mode)
+        guard normalized != config.colorMode else { return }
+        config.colorMode = normalized
+        if !ConfigStore.save(config, to: settingsDirectory) {
+            saveError = "无法写入配置（文件忙碌或加密失败），请稍后再试。"
+        } else {
+            saveError = ""
+        }
+        DispatchQueue.main.async {
+            self.applyAppearance()
+        }
+    }
+
     func applyAppearance() {
         ColorModeAppearance.apply(config.colorMode)
         SettingsWindowController.shared.applyAppearance(config.colorMode)
@@ -694,7 +711,10 @@ final class AppStore: ObservableObject {
 
 enum ColorModeAppearance {
     static func apply(_ mode: String) {
-        NSApp.appearance = nsAppearance(mode)
+        let appearance = nsAppearance(mode)
+        if NSApp.appearance !== appearance {
+            NSApp.appearance = appearance
+        }
     }
 
     static func nsAppearance(_ mode: String) -> NSAppearance? {
@@ -715,5 +735,7 @@ enum ColorModeAppearance {
 
     static func apply(to window: NSWindow?, mode: String) {
         window?.appearance = nsAppearance(mode)
+        // 外观切换后主动触发一次重绘，避免窗口底色/自绘按钮停在旧主题。
+        window?.contentView?.needsDisplay = true
     }
 }
