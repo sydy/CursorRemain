@@ -3715,11 +3715,12 @@ sealed class FlatMonthView : Control
     }
 }
 
+/// 说明块：默认只显示一个小「ⓘ」图标，点一下才展开文字，避免设置页堆满描述。
 sealed class HintBlock : TableLayoutPanel
 {
-    readonly Label _summary;
     readonly Label _detail;
     readonly LinkLabel _toggle;
+    readonly ToolTip _tip = new();
     bool _open;
 
     public HintBlock(string summary, string detail)
@@ -3728,14 +3729,7 @@ sealed class HintBlock : TableLayoutPanel
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         ColumnCount = 1;
         Dock = DockStyle.Top;
-        Margin = new Padding(0, 0, 0, 8);
-        _summary = new Label
-        {
-            Text = summary,
-            AutoSize = true,
-            ForeColor = Color.DimGray,
-            Margin = new Padding(0, 2, 8, 0),
-        };
+        Margin = new Padding(0, 0, 0, 4);
         _detail = new Label
         {
             Text = detail,
@@ -3746,25 +3740,24 @@ sealed class HintBlock : TableLayoutPanel
         };
         _toggle = new LinkLabel
         {
-            Text = "了解更多",
+            Text = "ⓘ",
             AutoSize = true,
-            Margin = new Padding(0, 2, 0, 0),
+            Margin = Padding.Empty,
             LinkBehavior = LinkBehavior.HoverUnderline,
         };
+        _tip.SetToolTip(_toggle, summary);
         _toggle.LinkClicked += (_, _) =>
         {
             _open = !_open;
             _detail.Visible = _open;
-            _toggle.Text = _open ? "收起" : "了解更多";
         };
         var line = new FlowLayoutPanel
         {
             AutoSize = true,
-            WrapContents = true,
+            WrapContents = false,
             Margin = Padding.Empty,
             Padding = Padding.Empty,
         };
-        line.Controls.Add(_summary);
         line.Controls.Add(_toggle);
         Controls.Add(line);
         Controls.Add(_detail);
@@ -3772,9 +3765,7 @@ sealed class HintBlock : TableLayoutPanel
 
     public void SetInnerWidth(int width)
     {
-        var inner = Math.Max(160, width);
-        _summary.MaximumSize = new Size(inner, 0);
-        _detail.MaximumSize = new Size(inner, 0);
+        _detail.MaximumSize = new Size(Math.Max(160, width), 0);
     }
 }
 

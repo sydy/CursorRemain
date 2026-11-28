@@ -244,16 +244,13 @@ struct SettingsRootView: View {
             if store.config.doubaoAccounts.isEmpty {
                 HStack(spacing: 8) {
                     Text("豆包账号").font(.callout).fontWeight(.semibold)
+                    InfoHint(text: "额度只在本机读取；Cookie 加密保存，不参与云同步。刷新最短 5 分钟。")
                     Spacer()
                     Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
                         .controlSize(.small)
                         .buttonStyle(.borderedProminent)
                         .disabled(doubaoLoginRunning)
                 }
-                Text("豆包额度只在本机读取，Cookie 加密保存且不参与云同步；拉取间隔最短 5 分钟。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 doubaoAccountsPanel
             }
@@ -274,9 +271,7 @@ struct SettingsRootView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("豆包账号").font(.headline)
-                Text("Cookie 只存本机，不参与云同步")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                InfoHint(text: "Cookie 只存本机，不参与云同步；额度只在本机读取。")
                 Spacer()
                 Button("登录新账号") { loginDoubaoAccount(existing: nil) }
                     .disabled(doubaoLoginRunning)
@@ -380,13 +375,17 @@ struct SettingsRootView: View {
     var addAccountSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("添加账号").font(.headline)
-            Button("登录新账号") { loginNewAccount() }
-                .buttonStyle(.borderedProminent)
-                .disabled(importing)
-            Text("在这个账号单独的窗口里登录，完成后自动保存，不会影响其他账号。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text("粘贴已有 Token").font(.headline).padding(.top, 4)
+            HStack(spacing: 6) {
+                Button("登录新账号") { loginNewAccount() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(importing)
+                InfoHint(text: "在独立窗口里登录，完成后自动保存，不影响其他账号。")
+            }
+            HStack(spacing: 6) {
+                Text("粘贴已有 Token").font(.headline)
+                InfoHint(text: "每行一个 Token；已在 Cursor 登录时点「从 Cursor 导入」即可。")
+            }
+            .padding(.top, 4)
             TextEditor(text: $tokenText)
                 .font(.system(.body, design: .monospaced))
                 .frame(minHeight: 88, maxHeight: 120)
@@ -400,31 +399,28 @@ struct SettingsRootView: View {
                 Spacer()
                 Button("完成") { addOpen = false }
             }
-            Text("每行一个 Token。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(store.importStatus.isEmpty ? "已在 Cursor 里登录时，点「从 Cursor 导入」。" : store.importStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if !store.importStatus.isEmpty {
+                Text(store.importStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             Divider().padding(.vertical, 4)
-            Text("豆包账号").font(.headline)
+            HStack(spacing: 6) {
+                Text("豆包账号").font(.headline)
+                InfoHint(text: "独立窗口登录后自动保存 Cookie；Cookie 只存本机，不参与云同步。")
+            }
             Button("登录豆包账号") { loginDoubaoAccount(existing: nil) }
                 .disabled(doubaoLoginRunning)
-            Text("在独立窗口里完成豆包登录，成功后自动保存 Cookie；Cookie 只存本机，不参与云同步。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             TextEditor(text: $doubaoCookieText)
                 .font(.system(.caption, design: .monospaced))
                 .frame(minHeight: 54, maxHeight: 84)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
-            HStack {
+            HStack(spacing: 6) {
                 Button("添加豆包账号（粘贴 Cookie）") { addPastedDoubaoAccount() }
+                InfoHint(text: "也可在豆包网页侧栏「设置 → 账号」里复制 Cookie。")
                 Spacer()
-                Text("也可以在豆包网页侧栏「设置 → 账号」里复制 Cookie。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
         }
         .padding(20)
@@ -448,17 +444,24 @@ struct SettingsRootView: View {
             Text("刷新与通知").font(.title3.bold())
             fieldCaption("刷新间隔（分钟）")
             fieldWidth(TextField("10", text: $intervalText).textFieldStyle(.plain), max: 96)
-            fieldCaption("月费（美元）")
+            HStack(spacing: 4) {
+                fieldCaption("月费（美元）")
+                InfoHint(text: "填 0 时按套餐预填：Plus $8 / Premium $30 / Super $100 / Ultra $200，旧 Pro $20 / Pro+ $60；年付填折合月费。实际成本在「账户」按账号填写。")
+            }
             fieldWidth(TextField("20", text: $planUsdText).textFieldStyle(.plain), max: 96)
             fieldCaption("美元兑人民币")
             fieldWidth(TextField("7.5", text: $cnyRateText).textFieldStyle(.plain), max: 96)
-            Text("月费填 0 则按套餐预填：Plus $8 / Premium $30 / Super $100 / Ultra $200，旧套餐 Pro $20 / Pro+ $60。年付请填折合月费。实际成本在「账户」里按账号填写。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            fieldCaption("告警阈值，例如 50,20,5")
+            HStack(spacing: 4) {
+                fieldCaption("告警阈值")
+                InfoHint(text: "剩余额度跌破每一档时提醒一次，逗号分隔，例如 50,20,5。")
+            }
             fieldWidth(TextField("50,20,5", text: $thresholdText).textFieldStyle(.plain), max: 160)
             Toggle("启用用量通知", isOn: notifyBinding)
-            Toggle("启用耗尽风险通知", isOn: exhaustBinding)
+            HStack(spacing: 4) {
+                Toggle("启用耗尽风险通知", isOn: exhaustBinding)
+                    .fixedSize()
+                InfoHint(text: "按本月消耗速度估算，可能在周期结束前用完时提醒。")
+            }
         }
     }
 
@@ -482,24 +485,32 @@ struct SettingsRootView: View {
             Text("当前版本  \(AppUpdate.displayVersion())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            Button("检查更新") {
-                Task { await store.checkForUpdate(manual: true) }
+            HStack(spacing: 6) {
+                Button("检查更新") {
+                    Task { await store.checkForUpdate(manual: true) }
+                }
+                .disabled(store.updateBusy)
+                InfoHint(text: "对照 GitHub 正式版（v*）。打包版下载替换后重启；开发运行则打开下载页。")
             }
-            .disabled(store.updateBusy)
-            Text(store.updateStatus.isEmpty ? "对照 GitHub 正式版（v*）。打包版会下载替换后重启；开发运行则打开下载页。更新后若再要钥匙串密码，允许一次即可：密钥会写到本机配置目录，之后不再弹。" : store.updateStatus)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if !store.updateStatus.isEmpty {
+                Text(store.updateStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     var syncPage: some View {
         settingsPage(spacing: 12) {
             Text("云同步").font(.title3.bold())
-            Picker("同步方式", selection: storageBinding) {
-                Text("服务器保存明细").tag("server")
-                Text("本机加密信封").tag("envelope")
+            HStack(spacing: 6) {
+                Picker("同步方式", selection: storageBinding) {
+                    Text("服务器保存明细").tag("server")
+                    Text("本机加密信封").tag("envelope")
+                }
+                .pickerStyle(.menu)
+                InfoHint(text: storageHint(for: store.config.syncStorage))
             }
-            .pickerStyle(.menu)
             if store.config.cloudLoggedIn {
                 Text("已登录  \(store.config.cloudEmail)")
                 HStack {
@@ -564,15 +575,16 @@ struct SettingsRootView: View {
                     Button("重置登录密码") { confirmPasswordReset() }
                 }
             }
-            Text(store.config.syncStorage == "envelope"
-                ? "登录密码只用于账户认证；同步数据由独立口令在本机加密，服务器只保存密文。登录密码可通过验证邮箱重置；数据加密口令至少 16 位并需自行保存，遗失后无法解密云端数据。请定期导出加密备份。"
-                : "服务器直接保存账号、设置和用量明细，登录密码重置后数据仍在。Token 和账号密码对同步服务器可见。选择「本机加密信封」则改回原来的端到端加密。两台设备要用同一种方式。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
             Text(syncStatus.isEmpty ? " " : syncStatus)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    func storageHint(for storage: String) -> String {
+        storage == "envelope"
+            ? "数据在本机加密后再上传，服务器只存密文。口令遗失无法恢复，请定期导出备份。两台设备需用同一种方式。"
+            : "服务器保存账号、设置和用量明细；Token 和账号密码对服务器可见。两台设备需用同一种方式。"
     }
 
     var pageHeight: CGFloat {
@@ -751,7 +763,10 @@ struct SettingsRootView: View {
                     .disabled(store.config.activeAccount == nil)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    fieldCaption("实际成本（¥）")
+                    HStack(spacing: 4) {
+                        fieldCaption("实际成本（¥）")
+                        InfoHint(text: "仅当前账号。短期号按买价÷天数×30；企业/团队额度不是真实支出。填了实际成本则优先于月费分摊。")
+                    }
                     fieldWidth(TextField("0", text: $actualCnyText).textFieldStyle(.plain), max: 120)
                         .disabled(store.config.activeAccount == nil)
                 }
@@ -767,14 +782,13 @@ struct SettingsRootView: View {
                         settingsDurationField(days: daysBinding, hours: hoursBinding)
                     }
                 }
-                Text(endCaption)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text(endCaption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    InfoHint(text: "按开始时间 + 有效期计算，优先于管理端重置日。")
+                }
             }
-            Text("仅当前账号。短期号请买价÷天数×30。企业 / 团队额度不是真实支出；填了实际成本则按该成本分摊（含按需），优先于月费。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, AccountTableLayout.horizontalPadding)
         .padding(.vertical, 10)
@@ -825,7 +839,7 @@ struct SettingsRootView: View {
         guard let acc = store.config.activeAccount,
               let end = AccountValidity.accountEndIso(acc)
         else { return "请设置有效时间（天和小时可组合）" }
-        return "结束时间 \(StatusText.formatResetDate(end, includeTime: true))（按开始时间计算，覆盖管理端重置日）"
+        return "结束于 \(StatusText.formatResetDate(end, includeTime: true))"
     }
 
     func setValidity(kind: String? = nil, start: Date? = nil, days: Int? = nil, hours: Int? = nil, refresh: Bool = false) {
@@ -1523,6 +1537,32 @@ struct SettingsRootView: View {
     func parseDecimal(_ text: String) -> Double? {
         let cleaned = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "，", with: ".")
         return Double(cleaned)
+    }
+}
+
+/// 设置项说明：默认只显示一个小信息图标，点开才展示文字，避免整页堆描述。
+private struct InfoHint: View {
+    let text: String
+    @State private var show = false
+
+    var body: some View {
+        Button { show.toggle() } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(.secondary)
+                .padding(2)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("说明")
+        .popover(isPresented: $show, arrowEdge: .top) {
+            Text(text)
+                .font(.callout)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 300, alignment: .leading)
+                .padding(12)
+        }
     }
 }
 
